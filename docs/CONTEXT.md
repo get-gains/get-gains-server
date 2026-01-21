@@ -293,7 +293,159 @@ try {
 
 ## Environment Variables
 
-| Variable    | Description                               | Default |
-| ----------- | ----------------------------------------- | ------- |
-| `PORT`      | Server port                               | `3000`  |
-| `LOG_LEVEL` | Logging verbosity (DEBUG/INFO/WARN/ERROR) | `DEBUG` |
+| Variable               | Description                               | Default                     |
+| ---------------------- | ----------------------------------------- | --------------------------- |
+| `PORT`                 | Server port                               | `3000`                      |
+| `LOG_LEVEL`            | Logging verbosity (DEBUG/INFO/WARN/ERROR) | `DEBUG`                     |
+| `DATABASE_URL`         | PostgreSQL connection string              | Required                    |
+| `JWT_SECRET`           | Secret key for signing JWTs               | Required                    |
+| `JWT_EXPIRATION`       | JWT token expiration (e.g., "7d", "24h")  | `7d`                        |
+| `GOOGLE_CLIENT_ID`     | Google OAuth client ID                    | Optional                    |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret                | Optional                    |
+| `GOOGLE_CALLBACK_URL`  | Google OAuth callback URL                 | `/api/auth/google/callback` |
+
+---
+
+## Authentication
+
+This server uses PassportJS for authentication with support for:
+
+- **Local Strategy**: Email/password authentication
+- **Google OAuth**: Sign in with Google
+- **JWT**: Bearer token authentication for protected routes
+
+### Authentication Files
+
+```
+src/
+├── config/
+│   ├── database.ts       # Prisma client singleton
+│   └── passport.ts       # Passport strategies configuration
+├── middleware/
+│   └── auth.middleware.ts  # Authentication middlewares
+├── schemas/
+│   └── auth.schema.ts    # Login/register validation schemas
+└── utils/
+    ├── jwt.ts            # JWT generation/verification
+    └── password.ts       # Password hashing utilities
+```
+
+### Protecting Routes
+
+Use the `authenticate` middleware to protect routes:
+
+```typescript
+import { Router } from "express";
+import { authenticate } from "../middleware/auth.middleware";
+import { getProfile } from "../controllers/user.controller";
+
+const router = Router();
+
+// Protected route - requires Bearer token
+router.get("/profile", authenticate, getProfile);
+
+export default router;
+```
+
+After authentication, the user is available on `req.user`:
+
+```typescript
+import { Request, Response } from "express";
+import { sendSuccess } from "../utils/response";
+
+export const getProfile = async (req: Request, res: Response) => {
+  const user = req.user!; // Authenticated user
+  sendSuccess(res, {
+    user: { id: user.id, email: user.email, name: user.name },
+  });
+};
+```
+
+### Optional Authentication
+
+For routes that work for both authenticated and unauthenticated users:
+
+```typescript
+import { optionalAuth } from "../middleware/auth.middleware";
+
+router.get("/public", optionalAuth, (req, res) => {
+  if (req.user) {
+    // User is authenticated
+  } else {
+    // User is a guest
+  }
+});
+```
+
+### Local Authentication (Login)
+
+Use the `authenticateLocal` middleware for login routes:
+
+```typescript
+import { authenticateLocal } from "../middleware/auth.middleware";
+import { generateToken } from "../utils/jwt";
+
+router.post(
+  "/login",
+  validateRequest(LoginSchema),
+  authenticateLocal,
+  (req, res) => {
+    const user = req.user!;
+    const token = generateToken({ userId: user.id, email: user.email });
+    sendSuccess(res, {
+      token,
+      user: { id: user.id, email: user.email, name: user.name },
+    });
+  },
+);
+```
+
+### User Registration
+
+Use the password utility to hash passwords:
+
+```typescript
+import { hashPassword } from "../utils/password";
+import prisma from "../config/database";
+import { generateToken } from "../utils/jwt";
+
+export const register = async (req: Request, res: Response) => {
+  const { email, password, name, nickname } = req.body;
+
+  // Hash password before storing
+  const hashedPassword = await hashPassword(password);
+
+  const user = await prisma.user.create({
+    data: {
+      email: email.toLowerCase(),
+      password: hashedPassword,
+      name,
+      nickname,
+    },
+  });
+
+  const token = generateToken({ userId: user.id, email: user.email });
+  sendSuccess(
+    res,
+    { token, user: { id: user.id, email: user.email, name: user.name } },
+    201,
+  );
+};
+```
+
+### Auth Schemas
+
+Available schemas in `/schemas/auth.schema.ts`:
+
+```typescript
+import {
+  RegisterSchema,
+  LoginSchema,
+  RegisterInput,
+  LoginInput,
+} from "../schemas/auth.schema";
+
+// Use with validateRequest middleware
+router.post("/register", validateRequest(RegisterSchema), registerController);
+router.post("/login", validateRequest(LoginSchema), loginController);
+```
