@@ -2,6 +2,9 @@ import express, { Request, Response, NextFunction } from 'express';
 import { logPath } from './utils/console-message';
 import { logger } from './utils/logger';
 import userRoutes from './routes/user.routes';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const startServer = () => {
   const app = express();
