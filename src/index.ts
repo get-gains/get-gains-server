@@ -1,6 +1,9 @@
 import express, { Request, Response, NextFunction } from 'express';
+import cors from 'cors';
+import passport from 'passport';
 import { logPath } from './utils/console-message';
 import { logger } from './utils/logger';
+import { initializePassport } from './config/passport';
 import userRoutes from './routes/user.routes';
 import dotenv from 'dotenv';
 
@@ -11,9 +14,13 @@ const startServer = () => {
   const PORT = process.env.PORT || 3000;
 
   // Middleware
+  app.use(cors());
   app.use(express.json());
-
   app.use(express.urlencoded({ extended: true }));
+
+  // Initialize Passport
+  initializePassport();
+  app.use(passport.initialize());
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     logPath(req.method, req.path, res.statusCode);
