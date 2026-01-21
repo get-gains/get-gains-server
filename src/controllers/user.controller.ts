@@ -7,7 +7,7 @@ import {
   UpdateUserParams,
   UpdateUserBody,
 } from '../schemas/user.schema';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 
 /**
  * GET /users/:id
