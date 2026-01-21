@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { logPath } from './utils/console-message';
 import { logger } from './utils/logger';
+import userRoutes from './routes/user.routes';
 
 const startServer = () => {
   const app = express();
@@ -24,6 +25,9 @@ const startServer = () => {
   app.get('/health', (req: Request, res: Response) => {
     res.json({ status: 'OK', timestamp: new Date().toISOString() });
   });
+
+  // API Routes
+  app.use('/api/users', userRoutes);
 
   // Error Handlers
 
