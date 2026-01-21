@@ -1,0 +1,40 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Test files
+coverage
+.nyc_output
+
+# Documentation
+docs
+*.md
+!README.md
+
+# Development files
+nodemon.json
+eslint.config.mjs
+.prettierrc
+.husky
