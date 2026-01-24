@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+const passwordRegex = /[!@#$%^&*()_+=[\]{};':"\\|,.<>/?`~]/;
+
 /**
  * Schema for user registration
  */
@@ -9,7 +11,11 @@ export const RegisterSchema = z.object({
     password: z
       .string()
       .min(8, 'Password must be at least 8 characters')
-      .max(100, 'Password must be less than 100 characters'),
+      .max(100, 'Password must be less than 100 characters')
+      .refine(
+        (password) => passwordRegex.test(password),
+        'Password must contain at least 1 special character'
+      ),
     name: z
       .string()
       .min(1, 'Name is required')
