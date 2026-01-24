@@ -131,3 +131,35 @@ export const authenticateLocal = (
     }
   )(req, res, next);
 };
+
+//Middleware for Google OAuth authentication
+export const authenticateGoogle = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
+  passport.authenticate(
+    'google',
+    { session: false },
+    (
+      err: Error | null,
+      user: Express.User | false,
+      info: { message: string } | undefined
+    ) => {
+      if (err) {
+        logger.error('Google authentication error', err);
+        return sendSingleError(res, 'Authentication error', 500);
+      }
+
+      if (!user) {
+        const message = info?.message || 'Google authentication failed';
+        logger.debug('Google authentication failed', { message });
+        return sendSingleError(res, message, 401);
+      }
+
+      req.user = user;
+      logger.debug('Google authentication successful', { userId: user.id });
+      next();
+    }
+  )(req, res, next);
+};
