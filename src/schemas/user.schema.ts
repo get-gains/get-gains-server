@@ -3,7 +3,7 @@ import { z } from 'zod';
 // Schema for GET /users/:id
 export const GetUserSchema = z.object({
   params: z.object({
-    id: z.string().uuid('Invalid user ID format'),
+    id: z.string(),
   }),
 });
 
@@ -19,7 +19,7 @@ export const CreateUserSchema = z.object({
 // Schema for PUT /users/:id
 export const UpdateUserSchema = z.object({
   params: z.object({
-    id: z.string().uuid('Invalid user ID format'),
+    id: z.string(),
   }),
   body: z.object({
     email: z.email('Invalid email address').optional(),
