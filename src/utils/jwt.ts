@@ -6,7 +6,7 @@ import type { StringValue } from 'ms';
  * JWT payload structure for our tokens
  */
 export interface TokenPayload {
-  userId: number;
+  userId: string;
   email: string;
 }
 
