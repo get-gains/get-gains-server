@@ -5,11 +5,15 @@ import {
   GoogleSignInSchema,
   LoginSchema,
   RegisterSchema,
+  ResetPasswordSchema,
+  SendRecoveryEmailSchema,
 } from '../schemas/auth.schema';
 import {
   loginWithEmailAndPassword,
   refreshToken,
   registerWithEmailAndPassword,
+  resetPassword,
+  sendRecoveryEmail,
   signInWithGoogle,
   signInWithGoogleWithUserData,
 } from '../controllers/auth.controller';
@@ -73,4 +77,27 @@ router.post(
   validateRequest(GoogleSignInSchema),
   signInWithGoogleWithUserData
 );
+
+/**
+ * @route   POST /auth/send-recovery-email
+ * @desc    Send password recovery email
+ * @access  Public
+ */
+router.post(
+  '/send-recovery-email',
+  validateRequest(SendRecoveryEmailSchema),
+  sendRecoveryEmail
+);
+
+/** * @route   POST /auth/reset-password
+ * @desc    Reset user password
+ * @access  Protected
+ */
+router.post(
+  '/reset-password',
+  authenticateSupabaseUser,
+  validateRequest(ResetPasswordSchema),
+  resetPassword
+);
+
 export default router;

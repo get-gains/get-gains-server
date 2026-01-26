@@ -6,6 +6,8 @@ import {
   GoogleSignInInput,
   LoginInput,
   RegisterInput,
+  ResetPasswordInput,
+  SendRecoveryEmailInput,
 } from '../schemas/auth.schema';
 import supabase from '../config/supabase';
 import { createUser, getUserBySupabaseId } from './user.controller';
@@ -321,6 +323,70 @@ export const refreshToken = async (
     return;
   } catch (error) {
     logger.error('Token refresh error', error);
+    sendSingleError(res, 'Internal server error', 500);
+    return;
+  }
+};
+
+export const sendRecoveryEmail = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { email }: SendRecoveryEmailInput = req.body;
+
+    const { error } = await supabase.auth.resetPasswordForEmail(
+      email.toLowerCase(),
+      {
+        redirectTo: process.env.FLUTTER_RESET_PASSWORD_PAGE,
+      }
+    );
+
+    if (error) {
+      logger.error('Password recovery email failed', { email, error });
+      sendSingleError(res, 'Failed to send recovery email', 500);
+      return;
+    }
+
+    sendSuccess(
+      res,
+      { message: 'Password recovery email sent successfully' },
+      200
+    );
+    return;
+  } catch (error) {
+    logger.error('Password recovery error', error);
+    sendSingleError(res, 'Internal server error', 500);
+    return;
+  }
+};
+
+export const resetPassword = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { accessToken, newPassword }: ResetPasswordInput = req.body;
+
+    if (!accessToken || typeof accessToken !== 'string') {
+      sendSingleError(res, 'Access token is required', 400);
+      return;
+    }
+
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+
+    if (error) {
+      logger.error('Password reset failed', { error });
+      sendSingleError(res, 'Failed to reset password', 500);
+      return;
+    }
+
+    sendSuccess(res, { message: 'Password reset successfully' }, 200);
+    return;
+  } catch (error) {
+    logger.error('Password reset error', error);
     sendSingleError(res, 'Internal server error', 500);
     return;
   }
