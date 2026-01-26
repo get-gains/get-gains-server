@@ -142,3 +142,41 @@ export const signInWithGoogle = async (
     return;
   }
 };
+
+export const refreshToken = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+      sendSingleError(res, 'No token provided', 401);
+      return;
+    }
+
+    // Use the current token to get a refreshed session
+    const { data, error } = await supabase.auth.refreshSession();
+
+    if (error || !data.session) {
+      logger.error('Token refresh failed', { error, userId: req.user?.id });
+      sendSingleError(res, 'Failed to refresh token', 401);
+      return;
+    }
+
+    sendSuccess(
+      res,
+      {
+        accessToken: data.session.access_token,
+        refreshToken: data.session.refresh_token,
+      },
+      200
+    );
+    return;
+  } catch (error) {
+    logger.error('Token refresh error', error);
+    sendSingleError(res, 'Internal server error', 500);
+    return;
+  }
+};
