@@ -1,9 +1,12 @@
 import { Router } from 'express';
-import passport from 'passport';
-import { register, googleCallback } from '../controllers/auth.controller';
 import { validateRequest } from '../middleware/validate.middleware';
-import { authenticateGoogle } from '../middleware/auth.middleware';
-import { RegisterSchema } from '../schemas/auth.schema';
+import { GoogleSignInSchema, RegisterSchema } from '../schemas/auth.schema';
+import {
+  registerWithEmailAndPassword,
+  signInWithGoogle,
+} from '../controllers/auth.controller';
+import { CreateUserFromGoogleSchema } from '../schemas/user.schema';
+import { createUser } from '../controllers/user.controller';
 
 const router = Router();
 
@@ -12,7 +15,11 @@ const router = Router();
  * @desc    Register a new user with email and password
  * @access  Public
  */
-router.post('/register', validateRequest(RegisterSchema), register);
+router.post(
+  '/register',
+  validateRequest(RegisterSchema),
+  registerWithEmailAndPassword
+);
 
 /**
  * @route   POST /auth/login
@@ -20,19 +27,17 @@ router.post('/register', validateRequest(RegisterSchema), register);
  * @access  Public
  */
 
-router.get(
-  '/google',
-  passport.authenticate('google', {
-    scope: ['profile', 'email'],
-    session: false,
-  })
-);
+router.get('/google', validateRequest(GoogleSignInSchema), signInWithGoogle);
 
 /**
  * @route   GET /auth/google/callback
  * @desc    Handle Google OAuth callback
  * @access  Public
  */
-router.get('/google/callback', authenticateGoogle, googleCallback);
+router.get(
+  '/google/link',
+  validateRequest(CreateUserFromGoogleSchema),
+  createUser
+);
 
 export default router;
