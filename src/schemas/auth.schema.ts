@@ -63,3 +63,33 @@ export const GoogleSignInSchema = z.object({
 });
 
 export type GoogleSignInInput = z.infer<typeof GoogleSignInSchema>['body'];
+
+export const SendRecoveryEmailSchema = z.object({
+  body: z.object({
+    email: z.email(),
+  }),
+});
+
+export type SendRecoveryEmailInput = z.infer<
+  typeof SendRecoveryEmailSchema
+>['body'];
+
+export const ResetPasswordSchema = z.object({
+  body: z.object({
+    accessToken: z.string().min(1, 'Reset token is required'),
+    newPassword: z
+      .string()
+      .min(8, 'Password must be at least 8 characters')
+      .max(100, 'Password must be less than 100 characters')
+      .refine(
+        (password) => /[A-Z]/.test(password),
+        'Password must contain at least 1 capital letter'
+      )
+      .refine(
+        (password) => passwordRegex.test(password),
+        'Password must contain at least 1 special character'
+      ),
+  }),
+});
+
+export type ResetPasswordInput = z.infer<typeof ResetPasswordSchema>['body'];
