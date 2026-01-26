@@ -2,12 +2,16 @@ import { Request, Response } from 'express';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
 import { sendSuccess, sendSingleError } from '../utils/response';
-import { hashPassword } from '../utils/password';
-import { generateToken } from '../utils/jwt';
-import { RegisterInput } from '../schemas/auth.schema';
+import { GoogleSignInInput, RegisterInput } from '../schemas/auth.schema';
+import supabase from '../config/supabase';
+import { createUser } from './user.controller';
+import googleClient from '../config/google';
 
 // User registration handler
-export const register = async (req: Request, res: Response): Promise<void> => {
+export const registerWithEmailAndPassword = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   try {
     const { email, password, name, nickname }: RegisterInput = req.body;
 
@@ -24,66 +28,117 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Hash password
-    const hashedPassword = await hashPassword(password);
-
-    // Create user
-    const user = await prisma.user.create({
-      data: {
-        email: email.toLowerCase(),
-        password: hashedPassword,
-        name,
-        nickname,
-      },
+    // Create user in supabase
+    const { data, error: supabaseError } = await supabase.auth.signUp({
+      email: email.toLowerCase(),
+      password,
     });
 
-    logger.info('User registered successfully', { userId: user.id });
+    if (supabaseError || !data.user) {
+      logger.error('Supabase user creation failed', {
+        email,
+        error: supabaseError,
+      });
+      sendSingleError(res, 'Failed to create user', 500);
+      return;
+    }
 
-    const token = generateToken({ userId: user.id, email: user.email });
+    // Generate JWT token
+    const accessToken = data.session?.access_token;
+    const refreshToken = data.session?.refresh_token;
+    const supabaseId = data.user.id;
+
+    if (!accessToken || !refreshToken) {
+      logger.error('Token generation failed during registration', { email });
+      sendSingleError(res, 'Failed to generate token', 500);
+      return;
+    }
+
+    const user = await createUser({ email, name, nickname, supabaseId });
 
     sendSuccess(
       res,
       {
-        token,
+        accessToken,
+        refreshToken,
         user: {
           id: user.id,
           email: user.email,
           name: user.name,
           nickname: user.nickname,
+          supabaseId: user.supabaseId,
         },
       },
       201
     );
+    return;
   } catch (error) {
     logger.error('Registration error', error);
     sendSingleError(res, 'Internal server error', 500);
+    return;
   }
 };
 
-//Google OAuth callback handler
-export const googleCallback = async (
+export const signInWithGoogle = async (
   req: Request,
   res: Response
 ): Promise<void> => {
   try {
-    const user = req.user!;
+    const { idToken }: GoogleSignInInput = req.body;
 
-    logger.info('Google OAuth login successful', { userId: user.id });
+    if (!idToken) {
+      sendSingleError(res, 'ID token is required', 400);
+      return;
+    }
 
-    // Generate JWT token
-    const token = generateToken({ userId: user.id, email: user.email });
-
-    sendSuccess(res, {
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        nickname: user.nickname,
-      },
+    // Verify ID with Google Client
+    const ticket = await googleClient.verifyIdToken({
+      idToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
     });
+
+    const payload = ticket.getPayload();
+
+    if (!payload || !payload.email) {
+      sendSingleError(res, 'Invalid ID token', 400);
+      return;
+    }
+
+    const { data: supabaseData, error: supabaseError } =
+      await supabase.auth.signInWithIdToken({
+        provider: 'google',
+        token: idToken,
+      });
+
+    if (supabaseError || !supabaseData.user) {
+      logger.error('Supabase Google sign-in failed', {
+        email: payload.email,
+        error: supabaseError,
+      });
+      sendSingleError(res, 'Failed to sign in with Google', 500);
+      return;
+    }
+
+    const accessToken = supabaseData.session?.access_token;
+    const refreshToken = supabaseData.session?.refresh_token;
+    const supabaseId = supabaseData.user.id;
+
+    sendSuccess(
+      res,
+      {
+        accessToken,
+        refreshToken,
+        user: {
+          email: payload.email,
+          supabaseId,
+        },
+      },
+      200
+    );
+    return;
   } catch (error) {
-    logger.error('Google callback error', error);
+    logger.error('Google sign-in error', error);
     sendSingleError(res, 'Internal server error', 500);
+    return;
   }
 };

@@ -55,3 +55,11 @@ export const RefreshTokenSchema = z.object({
 });
 
 export type RefreshTokenInput = z.infer<typeof RefreshTokenSchema>['body'];
+
+export const GoogleSignInSchema = z.object({
+  body: z.object({
+    idToken: z.string().min(1, 'ID token is required'),
+  }),
+});
+
+export type GoogleSignInInput = z.infer<typeof GoogleSignInSchema>['body'];
