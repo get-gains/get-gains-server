@@ -7,11 +7,15 @@ const passwordRegex = /[!@#$%^&*()_+=[\]{};':"\\|,.<>/?`~]/;
  */
 export const RegisterSchema = z.object({
   body: z.object({
-    email: z.email('Invalid email address'),
+    email: z.email(),
     password: z
       .string()
       .min(8, 'Password must be at least 8 characters')
       .max(100, 'Password must be less than 100 characters')
+      .refine(
+        (password) => /[A-Z]/.test(password),
+        'Password must contain at least 1 capital letter'
+      )
       .refine(
         (password) => passwordRegex.test(password),
         'Password must contain at least 1 special character'
@@ -34,7 +38,7 @@ export type RegisterInput = z.infer<typeof RegisterSchema>['body'];
  */
 export const LoginSchema = z.object({
   body: z.object({
-    email: z.email('Invalid email address'),
+    email: z.email(),
     password: z.string().min(1, 'Password is required'),
   }),
 });
