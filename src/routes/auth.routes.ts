@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { validateRequest } from '../middleware/validate.middleware';
+import { authenticateSupabaseUser } from '../middleware/auth.middleware';
 import { GoogleSignInSchema, RegisterSchema } from '../schemas/auth.schema';
 import {
+  refreshToken,
   registerWithEmailAndPassword,
   signInWithGoogle,
 } from '../controllers/auth.controller';
@@ -27,17 +29,24 @@ router.post(
  * @access  Public
  */
 
-router.get('/google', validateRequest(GoogleSignInSchema), signInWithGoogle);
+router.post('/google', validateRequest(GoogleSignInSchema), signInWithGoogle);
 
 /**
- * @route   GET /auth/google/callback
+ * @route   POST /auth/google/callback
  * @desc    Handle Google OAuth callback
  * @access  Public
  */
-router.get(
+router.post(
   '/google/link',
   validateRequest(CreateUserFromGoogleSchema),
   createUser
 );
+
+/**
+ * @route   GET /auth/refresh
+ * @desc    Refresh access token using authenticated user's session
+ * @access  Protected
+ */
+router.get('/refresh', authenticateSupabaseUser, refreshToken);
 
 export default router;
