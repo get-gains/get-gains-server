@@ -1,34 +1,40 @@
 import { z } from 'zod';
 
-// Schema for GET /users/:id
-export const GetUserSchema = z.object({
-  params: z.object({
-    id: z.string(),
-  }),
-});
-
-// Schema for POST /users
+/**
+ * Schema for user creation
+ */
 export const CreateUserSchema = z.object({
   body: z.object({
-    email: z.email('Invalid email address'),
-    password: z.string().min(8, 'Password must be at least 8 characters'),
-    name: z.string().min(1, 'Name is required'),
+    email: z.email(),
+    name: z
+      .string()
+      .min(1, 'Name is required')
+      .max(100, 'Name must be less than 100 characters'),
+    nickname: z
+      .string()
+      .min(1, 'Nickname is required')
+      .max(50, 'Nickname must be less than 50 characters'),
+    supabaseId: z.string().min(1, 'Supabase ID is required'),
   }),
 });
 
-// Schema for PUT /users/:id
-export const UpdateUserSchema = z.object({
-  params: z.object({
-    id: z.string(),
-  }),
+export type CreateUserData = z.infer<typeof CreateUserSchema>['body'];
+
+export const CreateUserFromGoogleSchema = z.object({
   body: z.object({
-    email: z.email('Invalid email address').optional(),
-    name: z.string().min(1, 'Name cannot be empty').optional(),
+    email: z.email(),
+    name: z
+      .string()
+      .min(1, 'Name is required')
+      .max(100, 'Name must be less than 100 characters'),
+    nickname: z
+      .string()
+      .min(1, 'Nickname is required')
+      .max(50, 'Nickname must be less than 50 characters'),
+    supabaseId: z.string().min(1, 'Supabase ID is required'),
   }),
 });
 
-// Inferred types for use in controllers
-export type GetUserParams = z.infer<typeof GetUserSchema>['params'];
-export type CreateUserBody = z.infer<typeof CreateUserSchema>['body'];
-export type UpdateUserParams = z.infer<typeof UpdateUserSchema>['params'];
-export type UpdateUserBody = z.infer<typeof UpdateUserSchema>['body'];
+export type CreateUserFromGoogleData = z.infer<
+  typeof CreateUserFromGoogleSchema
+>['body'];
