@@ -15,3 +15,9 @@ export const createUser = async (data: CreateUserData) => {
 
   return user;
 };
+
+export const getUserBySupabaseId = async (supabaseId: string) => {
+  return await prisma.user.findUnique({
+    where: { supabaseId },
+  });
+};
