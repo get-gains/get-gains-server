@@ -1,11 +1,8 @@
 import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import passport from 'passport';
 import { logPath } from './utils/console-message';
 import { logger } from './utils/logger';
-import { initializePassport } from './config/passport';
-import userRoutes from './routes/user.routes';
 import dotenv from 'dotenv';
 import authRoutes from './routes/auth.routes';
 
@@ -19,10 +16,6 @@ const startServer = () => {
   app.use(cors());
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
-
-  // Initialize Passport
-  initializePassport();
-  app.use(passport.initialize());
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     logPath(req.method, req.path, res.statusCode);
@@ -40,7 +33,6 @@ const startServer = () => {
 
   // API Routes
   app.use('/api/auth', authRoutes);
-  app.use('/api/users', userRoutes);
 
   // Error Handlers
   app.use((err: Error, req: Request, res: Response) => {
