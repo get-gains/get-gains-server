@@ -87,6 +87,7 @@ model Coach {
   user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId          String            @unique
   clientRelations SubscribedCoach[]
+  programs        Program[]
 }
 
 model SubscribedCoach {
@@ -101,4 +102,47 @@ model SubscribedCoach {
   coach Coach @relation(fields: [coachId], references: [id], onDelete: Cascade)
 
   @@unique([userId, coachId])
+}
+
+model Program {
+  id            String @id @default(cuid())
+  name          String
+  description   String @db.Text
+  daysToPerform Int    @default(0)
+
+  coachId String
+  coach   Coach  @relation(fields: [coachId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+}
+
+enum MuscleGroup {
+  TRAPS
+  SHOULDERS
+  CHEST
+  ABS
+  OBLIQUES
+  UPPER_BACK
+  LATS
+  LOWER_BACK
+  BICEPS
+  TRICEPS
+  FOREARMS
+  GLUTES
+  QUADS
+  HAMSTRINGS
+  CALVES
+}
+
+model Routine {
+  id String @id @default(cuid())
+
+  name                     String
+  description              String        @db.Text
+  estimatedDurationMinutes Int
+  muscleGroupsTargeted     MuscleGroup[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
 }
