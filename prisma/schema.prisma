@@ -14,17 +14,18 @@ datasource db {
 }
 
 model User {
-  id                 String              @id @default(cuid())
-  supabaseId         String              @unique
-  email              String              @unique
-  name               String
-  nickname           String
-  createdAt          DateTime            @default(now()) @db.Timestamptz
-  updatedAt          DateTime            @updatedAt @db.Timestamptz
-  profile            UserProfile?
-  coach              Coach?
-  subscribedCoaches  SubscribedCoach[]
-  performedExercises PerformedExercise[]
+  id                String            @id @default(cuid())
+  supabaseId        String            @unique
+  email             String            @unique
+  name              String
+  nickname          String
+  createdAt         DateTime          @default(now()) @db.Timestamptz
+  updatedAt         DateTime          @updatedAt @db.Timestamptz
+  profile           UserProfile?
+  coach             Coach?
+  subscribedCoaches SubscribedCoach[]
+  workoutSessions   WorkoutSession[]
+  assignedPrograms  AssignedProgram[]
 }
 
 enum Sex {
@@ -106,16 +107,34 @@ model SubscribedCoach {
 }
 
 model Program {
-  id            String @id @default(cuid())
-  name          String
-  description   String @db.Text
-  daysToPerform Int    @default(0)
+  id          String @id @default(cuid())
+  name        String
+  description String @db.Text
 
   coachId String
   coach   Coach  @relation(fields: [coachId], references: [id], onDelete: Cascade)
 
+  createdAt        DateTime          @default(now()) @db.Timestamptz
+  updatedAt        DateTime          @updatedAt @db.Timestamptz
+  programRoutines  ProgramRoutine[]
+  assignedPrograms AssignedProgram[]
+}
+
+// Junction: Which routines belong to which program and on what day/order
+model ProgramRoutine {
+  id String @id @default(cuid())
+
+  programId String
+  routineId String
+  dayNumber Int // Day 1, Day 2, etc. in the program cycle
+
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+  routine Routine @relation(fields: [routineId], references: [id], onDelete: Cascade)
+
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@unique([programId, routineId])
 }
 
 enum MuscleGroup {
@@ -144,9 +163,34 @@ model Routine {
   estimatedDurationMinutes Int
   muscleGroupsTargeted     MuscleGroup[]
 
-  createdAt         DateTime           @default(now()) @db.Timestamptz
-  updatedAt         DateTime           @updatedAt @db.Timestamptz
-  assignedExercises AssignedExercise[]
+  createdAt        DateTime          @default(now()) @db.Timestamptz
+  updatedAt        DateTime          @updatedAt @db.Timestamptz
+  routineExercises RoutineExercise[]
+  programRoutines  ProgramRoutine[]
+}
+
+// Junction: Exercises in a routine with coach-prescribed sets/reps (the template)
+model RoutineExercise {
+  id String @id @default(cuid())
+
+  routineId  String
+  exerciseId String
+
+  sets           Int
+  repsMin        Int // Minimum reps (e.g., 8 in "8-12 reps")
+  repsMax        Int // Maximum reps (e.g., 12 in "8-12 reps")
+  restSeconds    Int
+  orderInRoutine Int
+  notes          String? @db.Text // Coach notes like "slow eccentric"
+
+  routine  Routine  @relation(fields: [routineId], references: [id], onDelete: Cascade)
+  exercise Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime       @default(now()) @db.Timestamptz
+  updatedAt     DateTime       @updatedAt @db.Timestamptz
+  performedSets PerformedSet[]
+
+  @@unique([routineId, exerciseId])
 }
 
 enum TargetMuscle {
@@ -233,45 +277,66 @@ model Exercise {
   equipmentNeeded    String[]
   primaryMuscleGroup MuscleGroup
 
-  createdAt          DateTime            @default(now()) @db.Timestamptz
-  updatedAt          DateTime            @updatedAt @db.Timestamptz
-  assignedExercises  AssignedExercise[]
-  performedExercises PerformedExercise[]
+  createdAt        DateTime          @default(now()) @db.Timestamptz
+  updatedAt        DateTime          @updatedAt @db.Timestamptz
+  routineExercises RoutineExercise[]
 }
 
-model AssignedExercise {
+// A single workout session the user performed
+model WorkoutSession {
   id String @id @default(cuid())
 
-  routineId  String
-  exerciseId String
+  userId            String
+  assignedProgramId String?
+  startedAt         DateTime  @db.Timestamptz
+  completedAt       DateTime? @db.Timestamptz
+  notes             String?   @db.Text
 
-  sets           Int
-  repsPerSet     Int
-  restSeconds    Int
-  orderInRoutine Int
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedProgram AssignedProgram? @relation(fields: [assignedProgramId], references: [id], onDelete: SetNull)
 
-  routine  Routine  @relation(fields: [routineId], references: [id], onDelete: Cascade)
-  exercise Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  createdAt     DateTime       @default(now()) @db.Timestamptz
+  updatedAt     DateTime       @updatedAt @db.Timestamptz
+  performedSets PerformedSet[]
+}
+
+// Individual set performed by user (the actual work done)
+model PerformedSet {
+  id String @id @default(cuid())
+
+  workoutSessionId  String
+  routineExerciseId String
+  setNumber         Int // Which set (1, 2, 3...)
+
+  repsCompleted Int
+  weightKg      Float?
+  rpe           Int? // Rate of Perceived Exertion (1-10)
+  notes         String? @db.Text
+
+  workoutSession  WorkoutSession  @relation(fields: [workoutSessionId], references: [id], onDelete: Cascade)
+  routineExercise RoutineExercise @relation(fields: [routineExerciseId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 }
 
-model PerformedExercise {
+model AssignedProgram {
   id String @id @default(cuid())
 
-  userId      String
-  exerciseId  String
-  performedAt DateTime @db.Timestamptz
+  userId    String
+  programId String
+  startDate DateTime  @db.Timestamptz
+  endDate   DateTime? @db.Timestamptz
+  isActive  Boolean   @default(true)
 
-  setsCompleted   Int
-  repsPerSet      Int
-  weightKg        Float?
-  durationSeconds Int?
+  notes String? @db.Text
 
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  exercise Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
 
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
+  createdAt       DateTime         @default(now()) @db.Timestamptz
+  updatedAt       DateTime         @updatedAt @db.Timestamptz
+  workoutSessions WorkoutSession[]
+
+  @@unique([userId, programId])
 }
