@@ -14,14 +14,16 @@ datasource db {
 }
 
 model User {
-  id         String       @id @default(cuid())
-  supabaseId String       @unique
-  email      String       @unique
-  name       String
-  nickname   String
-  createdAt  DateTime     @default(now()) @db.Timestamptz
-  updatedAt  DateTime     @updatedAt @db.Timestamptz
-  profile    UserProfile?
+  id                String            @id @default(cuid())
+  supabaseId        String            @unique
+  email             String            @unique
+  name              String
+  nickname          String
+  createdAt         DateTime          @default(now()) @db.Timestamptz
+  updatedAt         DateTime          @updatedAt @db.Timestamptz
+  profile           UserProfile?
+  coach             Coach?
+  subscribedCoaches SubscribedCoach[]
 }
 
 enum Sex {
@@ -59,4 +61,44 @@ model UserProfile {
   updatedAt DateTime @updatedAt @db.Timestamptz
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Coach {
+  id String @id @default(cuid())
+
+  // Identity
+  name      String
+  email     String
+  avatarUrl String?
+  bio       String? @db.Text
+
+  // Credibility Fields
+  yearsExperience        Int      @default(0)
+  certifications         String[]
+  certificationImageUrls String[]
+  awards                 String[]
+  specialties            String[]
+  isVerified             Boolean  @default(false)
+  socialLinks            String[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          String            @unique
+  clientRelations SubscribedCoach[]
+}
+
+model SubscribedCoach {
+  id        String    @id @default(cuid())
+  userId    String
+  coachId   String
+  startedAt DateTime  @default(now()) @db.Timestamptz
+  endedAt   DateTime? @db.Timestamptz
+  createdAt DateTime  @default(now()) @db.Timestamptz
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  coach Coach @relation(fields: [coachId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, coachId])
 }
