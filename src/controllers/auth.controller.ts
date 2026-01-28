@@ -49,24 +49,13 @@ export const registerWithEmailAndPassword = async (
       return;
     }
 
-    // Generate JWT token
-    const accessToken = data.session?.access_token;
-    const refreshToken = data.session?.refresh_token;
     const supabaseId = data.user.id;
-
-    if (!accessToken || !refreshToken) {
-      logger.error('Token generation failed during registration', { email });
-      sendSingleError(res, 'Failed to generate token', 500);
-      return;
-    }
 
     const user = await createUser({ email, name, nickname, supabaseId });
 
     sendSuccess(
       res,
       {
-        accessToken,
-        refreshToken,
         user: {
           id: user.id,
           email: user.email,
