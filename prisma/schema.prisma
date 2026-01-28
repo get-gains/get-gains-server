@@ -14,11 +14,49 @@ datasource db {
 }
 
 model User {
-  id         String   @id @default(cuid())
-  supabaseId String   @unique
-  email      String   @unique
+  id         String       @id @default(cuid())
+  supabaseId String       @unique
+  email      String       @unique
   name       String
   nickname   String
-  createdAt  DateTime @default(now()) @db.Timestamptz
-  updatedAt  DateTime @updatedAt @db.Timestamptz
+  createdAt  DateTime     @default(now()) @db.Timestamptz
+  updatedAt  DateTime     @updatedAt @db.Timestamptz
+  profile    UserProfile?
+}
+
+enum Sex {
+  MALE
+  FEMALE
+}
+
+enum ExperienceLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+model UserProfile {
+  id        String  @id @default(cuid())
+  userId    String  @unique
+  bio       String?
+  avatarUrl String?
+
+  // Personal Data
+  heightCm        Float?
+  weightKg        Float?
+  unitPreference  String?
+  sex             Sex?
+  dateOfBirth     DateTime?        @db.Timestamptz
+  equipment       String[]
+  injuryHistory   String?          @db.Text
+  experienceLevel ExperienceLevel?
+
+  // Availability
+  daysAvailable          Int
+  sessionDurationMinutes Int
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
