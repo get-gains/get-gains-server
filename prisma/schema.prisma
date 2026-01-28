@@ -14,16 +14,17 @@ datasource db {
 }
 
 model User {
-  id                String            @id @default(cuid())
-  supabaseId        String            @unique
-  email             String            @unique
-  name              String
-  nickname          String
-  createdAt         DateTime          @default(now()) @db.Timestamptz
-  updatedAt         DateTime          @updatedAt @db.Timestamptz
-  profile           UserProfile?
-  coach             Coach?
-  subscribedCoaches SubscribedCoach[]
+  id                 String              @id @default(cuid())
+  supabaseId         String              @unique
+  email              String              @unique
+  name               String
+  nickname           String
+  createdAt          DateTime            @default(now()) @db.Timestamptz
+  updatedAt          DateTime            @updatedAt @db.Timestamptz
+  profile            UserProfile?
+  coach              Coach?
+  subscribedCoaches  SubscribedCoach[]
+  performedExercises PerformedExercise[]
 }
 
 enum Sex {
@@ -142,6 +143,134 @@ model Routine {
   description              String        @db.Text
   estimatedDurationMinutes Int
   muscleGroupsTargeted     MuscleGroup[]
+
+  createdAt         DateTime           @default(now()) @db.Timestamptz
+  updatedAt         DateTime           @updatedAt @db.Timestamptz
+  assignedExercises AssignedExercise[]
+}
+
+enum TargetMuscle {
+  // --- TRAPS ---
+  UPPER_TRAPS // Shrugs
+  MIDDLE_TRAPS // Kelso Shrugs Rows
+  LOWER_TRAPS // Y-Raises
+
+  // --- SHOULDERS ---
+  FRONT_DELTS // Overhead Press
+  SIDE_DELTS // Lateral Raises
+  REAR_DELTS // Face Pulls (often overlaps with Upper Back)
+  ROTATOR_CUFF // External/Internal rotations (Prehab)
+
+  // --- CHEST ---
+  UPPER_PEC // Incline movements (Clavicular head)
+  MIDDLE_PEC // Flat movements (Sternal head)
+  LOWER_PEC // Decline/Dips (Costal head)
+  OUTER_PEC // Flys (Functional focus)
+
+  // --- ABS ---
+  UPPER_ABS // Crunches
+  LOWER_ABS // Leg Raises
+
+  // --- OBLIQUES ---
+  OBLIQUES // Twists/Side Bends
+  SERRATUS // Push up plus / Pullovers (The "gill" muscles)
+
+  // --- UPPER_BACK ---
+  RHOMBOIDS // Scapular retraction
+  TERES_MAJOR // The "mini lat" - width
+  TERES_MINOR // Part of rotator cuff but contributes to back look
+
+  // --- LATS ---
+  LATS // Vertical pulling / Rows (General)
+  // Note: Lats are anatomically one muscle but bodybuilders often split by:
+  // UPPER_LATS (Thoracic) vs LOWER_LATS (Iliac/Lumbar)
+
+  // --- LOWER_BACK ---
+  ERECTOR_SPINAE // Deadlifts / Extensions
+
+  // --- BICEPS ---
+  BICEP_LONG_HEAD // Outer bicep (peak)
+  BICEP_SHORT_HEAD // Inner bicep (thickness)
+  BRACHIALIS // Muscle under bicep (hammer curls)
+
+  // --- TRICEPS ---
+  TRICEP_LONG_HEAD // Overhead work (biggest head)
+  TRICEP_LATERAL_HEAD // Pushdowns (horseshoe look)
+  TRICEP_MEDIAL_HEAD // Stability / Lockout
+
+  // --- FOREARMS ---
+  BRACHIORADIALIS // Top of forearm (Hammer curls/Reverse curls)
+  WRIST_FLEXORS // Under forearm
+  WRIST_EXTENSORS // Top forearm
+
+  // --- GLUTES ---
+  GLUTE_MAX // Main butt muscle (Thrusts/Squats)
+  GLUTE_MED_MIN // Upper/Side glute (Abductions)
+
+  // --- QUADS ---
+  RECTUS_FEMORIS // Middle thigh / Hip Flexion
+  VASTUS_LATERALIS // Outer sweep
+  VASTUS_MEDIALIS // Inner teardrop
+  VASTUS_INTERMEDIUS // Deep middle
+
+  // --- HAMSTRINGS ---
+  BICEPS_FEMORIS // Outer hamstring
+  SEMITENDINOSUS // Inner hamstring
+  SEMIMEMBRANOSUS // Inner hamstring
+
+  // --- CALVES ---
+  GASTROCNEMIUS // Upper calf (diamond shape) - Straight leg
+  SOLEUS // Lower calf (width) - Bent knee
+  TIBIALIS // Front of shin (often neglected)
+}
+
+model Exercise {
+  id String @id @default(cuid())
+
+  name               String
+  description        String         @db.Text
+  targetMuscles      TargetMuscle[]
+  equipmentNeeded    String[]
+  primaryMuscleGroup MuscleGroup
+
+  createdAt          DateTime            @default(now()) @db.Timestamptz
+  updatedAt          DateTime            @updatedAt @db.Timestamptz
+  assignedExercises  AssignedExercise[]
+  performedExercises PerformedExercise[]
+}
+
+model AssignedExercise {
+  id String @id @default(cuid())
+
+  routineId  String
+  exerciseId String
+
+  sets           Int
+  repsPerSet     Int
+  restSeconds    Int
+  orderInRoutine Int
+
+  routine  Routine  @relation(fields: [routineId], references: [id], onDelete: Cascade)
+  exercise Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+}
+
+model PerformedExercise {
+  id String @id @default(cuid())
+
+  userId      String
+  exerciseId  String
+  performedAt DateTime @db.Timestamptz
+
+  setsCompleted   Int
+  repsPerSet      Int
+  weightKg        Float?
+  durationSeconds Int?
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exercise Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
