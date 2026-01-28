@@ -18,7 +18,7 @@ import {
   signInWithGoogleWithUserData,
 } from '../controllers/auth.controller';
 import { CreateUserFromGoogleSchema } from '../schemas/user.schema';
-import { createUser } from '../controllers/user.controller';
+import { createUserFromGoogle } from '../controllers/user.controller';
 
 const router = Router();
 
@@ -50,7 +50,7 @@ router.post(
   '/google/link',
   authenticateSupabaseUser,
   validateRequest(CreateUserFromGoogleSchema),
-  createUser
+  createUserFromGoogle
 );
 
 /**
