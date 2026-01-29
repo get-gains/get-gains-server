@@ -34,15 +34,16 @@ const startServer = () => {
   // API Routes
   app.use('/api/auth', authRoutes);
 
-  // Error Handlers
-  app.use((err: Error, req: Request, res: Response) => {
-    logger.error('Unhandled error:', err);
-    res.status(500).json({ error: 'Something went wrong!' });
-  });
-
+  // 404 Handler
   app.use((req: Request, res: Response) => {
     logger.warn(`Route not found: ${req.method} ${req.path}`);
     res.status(404).json({ error: 'Route not found' });
+  });
+
+  // Error Handler - Must have 4 parameters including 'next'
+  app.use((err: Error, req: Request, res: Response) => {
+    logger.error('Unhandled error:', err);
+    res.status(500).json({ error: 'Something went wrong!' });
   });
 
   app.listen(PORT, () => {
