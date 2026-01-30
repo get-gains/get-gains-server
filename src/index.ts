@@ -5,6 +5,7 @@ import { logPath } from './utils/console-message';
 import { logger } from './utils/logger';
 import dotenv from 'dotenv';
 import authRoutes from './routes/auth.routes';
+import workoutRoutes from './routes/workout.routes';
 
 dotenv.config();
 
@@ -33,6 +34,7 @@ const startServer = () => {
 
   // API Routes
   app.use('/api/auth', authRoutes);
+  app.use('/api/workout', workoutRoutes);
 
   // 404 Handler
   app.use((req: Request, res: Response) => {
