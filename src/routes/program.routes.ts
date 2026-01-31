@@ -9,8 +9,8 @@ import {
 } from '../controllers/program.controller';
 
 import {
-  createProgramSchema,
-  assignRoutineSchema,
+  CreateProgramSchema,
+  AssignRoutineSchema,
   addRoutineExerciseSchema,
 } from '../schemas/program.schema';
 
@@ -24,7 +24,7 @@ const router = Router();
 router.post(
   '/',
   authenticateSupabaseUser,
-  validateRequest(createProgramSchema),
+  validateRequest(CreateProgramSchema),
   createProgram
 );
 
@@ -36,7 +36,7 @@ router.post(
 router.post(
   '/:programId/routines',
   authenticateSupabaseUser,
-  validateRequest(assignRoutineSchema),
+  validateRequest(AssignRoutineSchema),
   assignRoutineToProgram
 );
 
