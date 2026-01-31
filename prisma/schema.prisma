@@ -13,6 +13,167 @@ datasource db {
   provider = "postgresql"
 }
 
+enum Sex {
+  MALE
+  FEMALE
+}
+
+enum ExperienceLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum MuscleGroup {
+  TRAPS
+  SHOULDERS
+  CHEST
+  ABS
+  OBLIQUES
+  UPPER_BACK
+  LATS
+  LOWER_BACK
+  BICEPS
+  TRICEPS
+  FOREARMS
+  GLUTES
+  QUADS
+  HAMSTRINGS
+  CALVES
+}
+
+enum TargetMuscle {
+  // --- TRAPS ---
+  UPPER_TRAPS // Shrugs
+  MIDDLE_TRAPS // Kelso Shrugs Rows
+  LOWER_TRAPS // Y-Raises
+
+  // --- SHOULDERS ---
+  FRONT_DELTS // Overhead Press
+  SIDE_DELTS // Lateral Raises
+  REAR_DELTS // Face Pulls (often overlaps with Upper Back)
+  ROTATOR_CUFF // External/Internal rotations (Prehab)
+
+  // --- CHEST ---
+  UPPER_PEC // Incline movements (Clavicular head)
+  MIDDLE_PEC // Flat movements (Sternal head)
+  LOWER_PEC // Decline/Dips (Costal head)
+  OUTER_PEC // Flys (Functional focus)
+
+  // --- ABS ---
+  UPPER_ABS // Crunches
+  LOWER_ABS // Leg Raises
+
+  // --- OBLIQUES ---
+  OBLIQUES // Twists/Side Bends
+  SERRATUS // Push up plus / Pullovers (The "gill" muscles)
+
+  // --- UPPER_BACK ---
+  RHOMBOIDS // Scapular retraction
+  TERES_MAJOR // The "mini lat" - width
+  TERES_MINOR // Part of rotator cuff but contributes to back look
+
+  // --- LATS ---
+  LATS // Vertical pulling / Rows (General)
+  // Note: Lats are anatomically one muscle but bodybuilders often split by:
+  // UPPER_LATS (Thoracic) vs LOWER_LATS (Iliac/Lumbar)
+
+  // --- LOWER_BACK ---
+  ERECTOR_SPINAE // Deadlifts / Extensions
+
+  // --- BICEPS ---
+  BICEP_LONG_HEAD // Outer bicep (peak)
+  BICEP_SHORT_HEAD // Inner bicep (thickness)
+  BRACHIALIS // Muscle under bicep (hammer curls)
+
+  // --- TRICEPS ---
+  TRICEP_LONG_HEAD // Overhead work (biggest head)
+  TRICEP_LATERAL_HEAD // Pushdowns (horseshoe look)
+  TRICEP_MEDIAL_HEAD // Stability / Lockout
+
+  // --- FOREARMS ---
+  BRACHIORADIALIS // Top of forearm (Hammer curls/Reverse curls)
+  WRIST_FLEXORS // Under forearm
+  WRIST_EXTENSORS // Top forearm
+
+  // --- GLUTES ---
+  GLUTE_MAX // Main butt muscle (Thrusts/Squats)
+  GLUTE_MED_MIN // Upper/Side glute (Abductions)
+
+  // --- QUADS ---
+  RECTUS_FEMORIS // Middle thigh / Hip Flexion
+  VASTUS_LATERALIS // Outer sweep
+  VASTUS_MEDIALIS // Inner teardrop
+  VASTUS_INTERMEDIUS // Deep middle
+
+  // --- HAMSTRINGS ---
+  BICEPS_FEMORIS // Outer hamstring
+  SEMITENDINOSUS // Inner hamstring
+  SEMIMEMBRANOSUS // Inner hamstring
+
+  // --- CALVES ---
+  GASTROCNEMIUS // Upper calf (diamond shape) - Straight leg
+  SOLEUS // Lower calf (width) - Bent knee
+  TIBIALIS // Front of shin (often neglected)
+}
+
+enum PaymentProvider {
+  // Add as we go
+  GOOGLE_PAY
+}
+
+enum BillingCycle {
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  SEMIANNUALLY
+  YEARLY
+}
+
+// Will have an internal status mapping from different providers to database values
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+  // Could be refunded or chargeback
+  REVOKED
+}
+
+enum PaymentStatus {
+  COMPLETED
+  FAILED
+  PENDING
+}
+
+enum WebhookStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum SubscriptionEventType {
+  CREATED
+  RENEWED
+  CANCELED
+  EXPIRED
+  PAUSED
+  RESUMED
+  UPGRADED
+  DOWNGRADED
+  REFUNDED
+  PAYMENT_FAILED
+  PAYMENT_RECOVERED
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
 model User {
   id                String            @id @default(cuid())
   supabaseId        String            @unique
@@ -26,17 +187,9 @@ model User {
   subscribedCoaches SubscribedCoach[]
   workoutSessions   WorkoutSession[]
   assignedPrograms  AssignedProgram[]
-}
-
-enum Sex {
-  MALE
-  FEMALE
-}
-
-enum ExperienceLevel {
-  BEGINNER
-  INTERMEDIATE
-  ADVANCED
+  subscriptions     Subscription[]
+  paymentHistories  PaymentHistory[]
+  promoRedemptions  PromoRedemption[]
 }
 
 model UserProfile {
@@ -137,24 +290,6 @@ model ProgramRoutine {
   @@unique([programId, routineId])
 }
 
-enum MuscleGroup {
-  TRAPS
-  SHOULDERS
-  CHEST
-  ABS
-  OBLIQUES
-  UPPER_BACK
-  LATS
-  LOWER_BACK
-  BICEPS
-  TRICEPS
-  FOREARMS
-  GLUTES
-  QUADS
-  HAMSTRINGS
-  CALVES
-}
-
 model Routine {
   id String @id @default(cuid())
 
@@ -191,81 +326,6 @@ model RoutineExercise {
   performedSets PerformedSet[]
 
   @@unique([routineId, exerciseId])
-}
-
-enum TargetMuscle {
-  // --- TRAPS ---
-  UPPER_TRAPS // Shrugs
-  MIDDLE_TRAPS // Kelso Shrugs Rows
-  LOWER_TRAPS // Y-Raises
-
-  // --- SHOULDERS ---
-  FRONT_DELTS // Overhead Press
-  SIDE_DELTS // Lateral Raises
-  REAR_DELTS // Face Pulls (often overlaps with Upper Back)
-  ROTATOR_CUFF // External/Internal rotations (Prehab)
-
-  // --- CHEST ---
-  UPPER_PEC // Incline movements (Clavicular head)
-  MIDDLE_PEC // Flat movements (Sternal head)
-  LOWER_PEC // Decline/Dips (Costal head)
-  OUTER_PEC // Flys (Functional focus)
-
-  // --- ABS ---
-  UPPER_ABS // Crunches
-  LOWER_ABS // Leg Raises
-
-  // --- OBLIQUES ---
-  OBLIQUES // Twists/Side Bends
-  SERRATUS // Push up plus / Pullovers (The "gill" muscles)
-
-  // --- UPPER_BACK ---
-  RHOMBOIDS // Scapular retraction
-  TERES_MAJOR // The "mini lat" - width
-  TERES_MINOR // Part of rotator cuff but contributes to back look
-
-  // --- LATS ---
-  LATS // Vertical pulling / Rows (General)
-  // Note: Lats are anatomically one muscle but bodybuilders often split by:
-  // UPPER_LATS (Thoracic) vs LOWER_LATS (Iliac/Lumbar)
-
-  // --- LOWER_BACK ---
-  ERECTOR_SPINAE // Deadlifts / Extensions
-
-  // --- BICEPS ---
-  BICEP_LONG_HEAD // Outer bicep (peak)
-  BICEP_SHORT_HEAD // Inner bicep (thickness)
-  BRACHIALIS // Muscle under bicep (hammer curls)
-
-  // --- TRICEPS ---
-  TRICEP_LONG_HEAD // Overhead work (biggest head)
-  TRICEP_LATERAL_HEAD // Pushdowns (horseshoe look)
-  TRICEP_MEDIAL_HEAD // Stability / Lockout
-
-  // --- FOREARMS ---
-  BRACHIORADIALIS // Top of forearm (Hammer curls/Reverse curls)
-  WRIST_FLEXORS // Under forearm
-  WRIST_EXTENSORS // Top forearm
-
-  // --- GLUTES ---
-  GLUTE_MAX // Main butt muscle (Thrusts/Squats)
-  GLUTE_MED_MIN // Upper/Side glute (Abductions)
-
-  // --- QUADS ---
-  RECTUS_FEMORIS // Middle thigh / Hip Flexion
-  VASTUS_LATERALIS // Outer sweep
-  VASTUS_MEDIALIS // Inner teardrop
-  VASTUS_INTERMEDIUS // Deep middle
-
-  // --- HAMSTRINGS ---
-  BICEPS_FEMORIS // Outer hamstring
-  SEMITENDINOSUS // Inner hamstring
-  SEMIMEMBRANOSUS // Inner hamstring
-
-  // --- CALVES ---
-  GASTROCNEMIUS // Upper calf (diamond shape) - Straight leg
-  SOLEUS // Lower calf (width) - Bent knee
-  TIBIALIS // Front of shin (often neglected)
 }
 
 model Exercise {
@@ -339,4 +399,178 @@ model AssignedProgram {
   workoutSessions WorkoutSession[]
 
   @@unique([userId, programId])
+}
+
+model Plan {
+  id           String       @id @default(cuid())
+  name         String       @unique
+  description  String       @db.Text
+  priceCents   Int
+  currency     String       @default("PHP") // ISO 4217 currency code
+  billingCycle BillingCycle
+  features     String[]
+
+  // Provider details
+  provider  PaymentProvider
+  productId String          @unique
+
+  // Trial
+  trialPeriodDays Int?
+  isActive        Boolean @default(true)
+  sortOrder       Int     @default(0)
+
+  createdAt        DateTime         @default(now()) @db.Timestamptz
+  updatedAt        DateTime         @updatedAt @db.Timestamptz
+  subscriptions    Subscription[]
+  paymentHistories PaymentHistory[]
+}
+
+model Subscription {
+  id             String             @id @default(cuid())
+  userId         String
+  planId         String
+  subscriptionId String             @unique // External ID
+  status         SubscriptionStatus
+
+  // Billing Cycle Tracking
+  startDate          DateTime @db.Timestamptz
+  currentPeriodStart DateTime @db.Timestamptz
+  currentPeriodEnd   DateTime @db.Timestamptz
+  nextBillingDate    DateTime @db.Timestamptz
+
+  // Cancellation
+  cancelAtPeriodEnd Boolean   @default(false)
+  canceledAt        DateTime? @db.Timestamptz
+  endedAt           DateTime? @db.Timestamptz
+
+  // Trial tracking
+  trialStartDate DateTime? @db.Timestamptz
+  orderId        String?   @unique // Latest order ID associated with subscription
+  trialEndDate   DateTime? @db.Timestamptz
+
+  // Provider-specific data
+  purchaseToken String? // For Google Play subscriptions
+  autoRenew     Boolean @default(true)
+
+  metadata Json?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan               Plan                @relation(fields: [planId], references: [id], onDelete: Cascade)
+  paymentHistories   PaymentHistory[]
+  subscriptionEvents SubscriptionEvent[]
+  promoRedemptions   PromoRedemption[]
+}
+
+model PaymentHistory {
+  id             String @id @default(cuid())
+  userId         String
+  planId         String
+  subscriptionId String
+
+  amountCents   Int
+  currency      String
+  paymentDate   DateTime      @db.Timestamptz
+  orderId       String        @unique
+  status        PaymentStatus @default(COMPLETED)
+  paymentMethod String?
+  receiptData   String?       @db.Text
+
+  // Refund tracking
+  refundedAt   DateTime? @db.Timestamptz
+  refundAmount Int?
+  refundReason String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan         Plan         @relation(fields: [planId], references: [id], onDelete: Cascade)
+}
+
+// Track all webhook events for debugging and compliance
+model WebhookEvent {
+  id             String          @id @default(cuid())
+  provider       PaymentProvider
+  eventType      String // "SUBSCRIPTION_RENEWED", "SUBSCRIPTION_CANCELED", etc.
+  subscriptionId String? // Link to subscription if applicable
+
+  // Raw payload data
+  rawPayload  Json
+  processedAt DateTime @default(now()) @db.Timestamptz
+
+  // Processing status
+  status       WebhookStatus @default(PENDING)
+  errorMessage String?       @db.Text
+  retryCount   Int           @default(0)
+
+  // Request metadata
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+}
+
+// Track all subscription state changes for compliance and debugging
+model SubscriptionEvent {
+  id             String                @id @default(cuid())
+  subscriptionId String
+  eventType      SubscriptionEventType
+  fromStatus     SubscriptionStatus?
+  toStatus       SubscriptionStatus?
+
+  // Context
+  triggeredBy String? // "user", "system", "webhook", "admin"
+  reason      String? @db.Text
+  metadata    Json?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+}
+
+// Promo codes / coupons system
+model PromoCode {
+  id          String  @id @default(cuid())
+  code        String  @unique
+  description String?
+
+  // Discount details
+  discountType  DiscountType
+  discountValue Int // Percentage (0-100) or cents amount
+
+  // Validity period
+  validFrom  DateTime  @db.Timestamptz
+  validUntil DateTime? @db.Timestamptz
+
+  // Usage limits
+  maxUses     Int? // Null = unlimited
+  currentUses Int  @default(0)
+
+  // Restrictions
+  applicablePlans String[] // Plan IDs this applies to (empty = all plans)
+  firstTimeOnly   Boolean  @default(false) // Only for users with no previous subscriptions
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  redemptions PromoRedemption[]
+}
+
+model PromoRedemption {
+  id             String   @id @default(cuid())
+  promoCodeId    String
+  userId         String
+  subscriptionId String?
+  redeemedAt     DateTime @default(now()) @db.Timestamptz
+
+  promoCode    PromoCode     @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
 }
