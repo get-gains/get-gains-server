@@ -24,10 +24,17 @@ src/
 │   └── *.middleware.ts
 ├── schemas/              # Zod validation schemas
 │   └── *.schema.ts
+├── services/             # Business logic services
+│   └── *.service.ts
+├── providers/            # External service integrations
+│   └── payment/          # Payment provider implementations
 └── utils/                # Utility functions
     ├── logger.ts         # Logging utility (USE THIS)
     ├── response.ts       # API response builder (USE THIS)
     └── console-message.ts
+
+scripts/
+├── sync-plans.ts         # Sync subscription plans from providers
 ```
 
 ---
@@ -293,16 +300,18 @@ try {
 
 ## Environment Variables
 
-| Variable               | Description                               | Default                     |
-| ---------------------- | ----------------------------------------- | --------------------------- |
-| `PORT`                 | Server port                               | `3000`                      |
-| `LOG_LEVEL`            | Logging verbosity (DEBUG/INFO/WARN/ERROR) | `DEBUG`                     |
-| `DATABASE_URL`         | PostgreSQL connection string              | Required                    |
-| `JWT_SECRET`           | Secret key for signing JWTs               | Required                    |
-| `JWT_EXPIRATION`       | JWT token expiration (e.g., "7d", "24h")  | `7d`                        |
-| `GOOGLE_CLIENT_ID`     | Google OAuth client ID                    | Optional                    |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret                | Optional                    |
-| `GOOGLE_CALLBACK_URL`  | Google OAuth callback URL                 | `/api/auth/google/callback` |
+| Variable                         | Description                               | Default                     |
+| -------------------------------- | ----------------------------------------- | --------------------------- |
+| `PORT`                           | Server port                               | `3000`                      |
+| `LOG_LEVEL`                      | Logging verbosity (DEBUG/INFO/WARN/ERROR) | `DEBUG`                     |
+| `DATABASE_URL`                   | PostgreSQL connection string              | Required                    |
+| `JWT_SECRET`                     | Secret key for signing JWTs               | Required                    |
+| `JWT_EXPIRATION`                 | JWT token expiration (e.g., "7d", "24h")  | `7d`                        |
+| `GOOGLE_CLIENT_ID`               | Google OAuth client ID                    | Optional                    |
+| `GOOGLE_CLIENT_SECRET`           | Google OAuth client secret                | Optional                    |
+| `GOOGLE_CALLBACK_URL`            | Google OAuth callback URL                 | `/api/auth/google/callback` |
+| `GOOGLE_PLAY_PACKAGE_NAME`       | Android app package name                  | Required for subscriptions  |
+| `GOOGLE_SERVICE_ACCOUNT_KEY_PATH`| Path to Google service account JSON       | `google-services.json`      |
 
 ---
 

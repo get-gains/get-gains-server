@@ -37,8 +37,10 @@
 | [CONTEXT.md](CONTEXT.md) | Core infrastructure, patterns, conventions, utilities |
 | [FEATURE_INDEX.md](FEATURE_INDEX.md) | This file - navigation hub |
 | [FEATURE_PROMPT.md](FEATURE_PROMPT.md) | Reusable prompt for generating feature docs |
-| [features/AUTH.md](features/AUTH.md) | Authentication & security feature || [features/WORKOUT.md](features/WORKOUT.md) | Workout, exercises, routines, sessions, and set logging |
+| [features/AUTH.md](features/AUTH.md) | Authentication & security feature |
+| [features/WORKOUT.md](features/WORKOUT.md) | Workout, exercises, routines, sessions, and set logging |
 | [features/PROGRAM.md](features/PROGRAM.md) | Program creation and routine assignment (coach features) |
+| [features/SUBSCRIPTION.md](features/SUBSCRIPTION.md) | Subscriptions, payments, webhooks, and promo codes |
 ---
 
 ## Feature Categories
@@ -114,6 +116,32 @@ Coach-facing program creation features:
 - `/src/schemas/program.schema.ts`
 - `/prisma/schema.prisma` (Program, ProgramRoutine, RoutineExercise models)
 
+### Subscription & Payments *(Documented in [features/SUBSCRIPTION.md](features/SUBSCRIPTION.md))*
+
+In-app purchases, subscriptions, and promo codes:
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Plans | Subscription plans synced from providers | ✅ Documented |
+| Purchase Verification | Verify and process client purchases | ✅ Documented |
+| Subscription Status | User subscription lifecycle management | ✅ Documented |
+| Webhooks | Real-time notifications from payment providers | ✅ Documented |
+| Promo Codes | Discount codes with validation and redemption | ✅ Documented |
+| Provider Pattern | Extensible payment provider architecture | ✅ Documented |
+
+**Primary Files:**
+- `/src/providers/payment/` (Payment provider implementations)
+- `/src/services/subscription.service.ts`
+- `/src/services/promo.service.ts`
+- `/src/controllers/subscription.controller.ts`
+- `/src/controllers/webhook.controller.ts`
+- `/src/controllers/promo.controller.ts`
+- `/src/routes/subscription.routes.ts`
+- `/src/routes/webhook.routes.ts`
+- `/src/routes/promo.routes.ts`
+- `/scripts/sync-plans.ts`
+- `/prisma/schema.prisma` (Plan, Subscription, PaymentHistory, WebhookEvent, PromoCode models)
+
 ### Future Domain Features *(Needs Implementation)*
 
 | Feature | Description | Status | Location |
@@ -171,6 +199,36 @@ Coach-facing program creation features:
 | `POST` | `/api/programs/:programId/routines` | Assign routine to program day | Yes |
 | `POST` | `/api/programs/routines/:routineId/exercises` | Add exercise to routine | Yes |
 
+### Subscription Endpoints
+
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| `GET` | `/api/subscriptions/plans` | Get available subscription plans | No |
+| `GET` | `/api/subscriptions/status` | Get user's subscription status | Yes |
+| `GET` | `/api/subscriptions/history` | Get subscription history | Yes |
+| `POST` | `/api/subscriptions/verify` | Verify and process a purchase | Yes |
+
+### Webhook Endpoints
+
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| `GET` | `/api/webhooks/health` | Webhook health check | No |
+| `POST` | `/api/webhooks/google-play` | Google Play Pub/Sub webhook | No* |
+
+*Uses provider-specific verification.
+
+### Promo Code Endpoints
+
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| `POST` | `/api/promo/validate` | Validate a promo code | Yes |
+| `POST` | `/api/promo/redeem` | Redeem a promo code | Yes |
+| `GET` | `/api/promo/my-redemptions` | Get user's redemption history | Yes |
+| `POST` | `/api/promo/admin` | Create a promo code (admin) | Yes |
+| `GET` | `/api/promo/admin` | List all promo codes (admin) | Yes |
+| `GET` | `/api/promo/admin/:id` | Get promo code details (admin) | Yes |
+| `DELETE` | `/api/promo/admin/:id` | Deactivate a promo code (admin) | Yes |
+
 ---
 
 ## Quick Start Guide
@@ -222,6 +280,10 @@ Request → CORS → JSON Parser → Route Matcher → Validation Middleware →
 | Offline sync (batch sets) | [features/WORKOUT.md](features/WORKOUT.md) → Offline Sync |
 | Program creation | [features/PROGRAM.md](features/PROGRAM.md) |
 | Adding exercises to routines | [features/PROGRAM.md](features/PROGRAM.md) |
+| Subscriptions & purchases | [features/SUBSCRIPTION.md](features/SUBSCRIPTION.md) |
+| Payment providers | [features/SUBSCRIPTION.md](features/SUBSCRIPTION.md) → Provider Pattern |
+| Promo codes | [features/SUBSCRIPTION.md](features/SUBSCRIPTION.md) → Promo Codes |
+| Webhooks | [features/SUBSCRIPTION.md](features/SUBSCRIPTION.md) → Webhooks |
 | Environment variables | [CONTEXT.md](CONTEXT.md) → Environment Variables |
 | File naming conventions | [CONTEXT.md](CONTEXT.md) → Conventions |
 | Generating new feature docs | [FEATURE_PROMPT.md](FEATURE_PROMPT.md) |
