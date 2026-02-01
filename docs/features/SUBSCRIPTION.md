@@ -47,6 +47,8 @@ src/
 │   ├── subscription.controller.ts     # Subscription endpoints
 │   ├── webhook.controller.ts          # Webhook handlers
 │   └── promo.controller.ts            # Promo code endpoints
+├── middleware/
+│   └── subscription.middleware.ts     # Subscription verification middleware
 ├── routes/
 │   ├── subscription.routes.ts
 │   ├── webhook.routes.ts
@@ -75,6 +77,7 @@ model Plan {
   currency        String          @default("PHP")
   billingCycle    BillingCycle    # DAILY, WEEKLY, MONTHLY, QUARTERLY, SEMIANNUALLY, YEARLY
   features        String[]
+  tierLevel       Int             @default(0)  # Access control tier (0=Free, 1=Basic, 2=Premium, etc.)
   provider        PaymentProvider # GOOGLE_PAY
   productId       String          @unique
   trialPeriodDays Int?
@@ -82,6 +85,17 @@ model Plan {
   sortOrder       Int             @default(0)
 }
 ```
+
+#### Tier Levels
+
+The `tierLevel` field enables feature gating based on subscription plans:
+
+| Tier | Name | Description |
+|------|------|-------------|
+| 0 | Free | No subscription (default) |
+| 1 | Basic | Entry-level subscription |
+| 2 | Premium | Standard subscription with more features |
+| 3 | Pro | Full-featured subscription |
 
 ### Subscription
 Tracks user subscriptions and their lifecycle.
@@ -470,6 +484,136 @@ await InAppPurchase.instance.completePurchase(purchase);
 | `Promo code not valid for this plan` | Plan restriction |
 | `You have already used this promo code` | Already redeemed |
 
+### Subscription Middleware Errors
+
+| Error | Description |
+|-------|-------------|
+| `Authentication required` | No authenticated user |
+| `Active subscription required` | User has no active subscription |
+| `This feature requires a higher subscription tier` | User's tier is below required |
+
+---
+
+## Subscription Middleware
+
+The subscription middleware provides route protection based on subscription status and tier levels.
+
+### Available Middleware
+
+#### `requireSubscription(options?)`
+
+Protects routes by requiring an active subscription. Optionally enforce minimum tier level.
+
+```typescript
+import { requireSubscription } from '../middleware/subscription.middleware';
+import { authenticateSupabaseUser } from '../middleware/auth.middleware';
+
+// Require any active subscription (tier 1+)
+router.get('/premium-content', authenticateSupabaseUser, requireSubscription(), controller);
+
+// Require tier 2 or higher
+router.get('/pro-feature', authenticateSupabaseUser, requireSubscription({ minTier: 2 }), controller);
+```
+
+**Options:**
+- `minTier`: Minimum tier level required (default: 1)
+
+**Response on failure:**
+```json
+{
+  "data": null,
+  "errors": [{ "message": "Active subscription required" }]
+}
+```
+
+#### `attachSubscription`
+
+Attaches subscription info to the request without blocking. Useful for routes that behave differently based on subscription status.
+
+```typescript
+import { attachSubscription } from '../middleware/subscription.middleware';
+
+router.get('/content', authenticateSupabaseUser, attachSubscription, (req, res) => {
+  if (req.subscription?.isSubscribed) {
+    // Return full content
+  } else {
+    // Return limited content
+  }
+});
+```
+
+**Request object:**
+```typescript
+req.subscription = {
+  isSubscribed: boolean;
+  subscription: {
+    id: string;
+    status: SubscriptionStatus;
+    planId: string;
+    tierLevel: number;
+    currentPeriodEnd: Date;
+  } | null;
+}
+```
+
+#### `checkTier(requiredTier, featureName?)`
+
+Checks subscription tier after `attachSubscription` or `requireSubscription`. Provides descriptive error messages.
+
+```typescript
+import { attachSubscription, checkTier } from '../middleware/subscription.middleware';
+
+router.get(
+  '/advanced-analytics',
+  authenticateSupabaseUser,
+  attachSubscription,
+  checkTier(2, 'Advanced analytics'),
+  controller
+);
+```
+
+**Response on failure:**
+```json
+{
+  "data": null,
+  "errors": [{ "message": "\"Advanced analytics\" requires a tier 2+ subscription" }]
+}
+```
+
+### Usage Patterns
+
+#### Pattern 1: Simple subscription check
+
+```typescript
+// Any active subscription grants access
+router.get('/premium', authenticate, requireSubscription(), premiumController);
+```
+
+#### Pattern 2: Tiered access
+
+```typescript
+// Different endpoints for different tiers
+router.get('/basic-stats', authenticate, requireSubscription({ minTier: 1 }), basicStatsController);
+router.get('/advanced-stats', authenticate, requireSubscription({ minTier: 2 }), advancedStatsController);
+router.get('/pro-analytics', authenticate, requireSubscription({ minTier: 3 }), proAnalyticsController);
+```
+
+#### Pattern 3: Conditional content
+
+```typescript
+router.get('/workout', authenticate, attachSubscription, (req, res) => {
+  const workout = await getWorkout(req.params.id);
+  
+  if (req.subscription?.subscription?.tierLevel >= 2) {
+    // Include advanced analytics and video
+    return sendSuccess(res, { workout, analytics: true, video: workout.videoUrl });
+  }
+  
+  // Basic workout data only
+  return sendSuccess(res, { workout, analytics: false, video: null });
+});
+```
+
 ---
 
 ## Related Documentation
@@ -480,4 +624,4 @@ await InAppPurchase.instance.completePurchase(purchase);
 
 ---
 
-*Last updated: January 31, 2026*
+*Last updated: February 1, 2026*
