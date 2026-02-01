@@ -498,11 +498,35 @@ await InAppPurchase.instance.completePurchase(purchase);
 
 The subscription middleware provides route protection based on subscription status and tier levels.
 
+### Automatic Subscription Data
+
+**Important:** The `authenticateSupabaseUser` middleware automatically attaches subscription data to `req.user.subscription`. This means you can check subscription status and tier level directly in your controllers without additional middleware for simple checks.
+
+```typescript
+import { authenticateSupabaseUser } from '../middleware/auth.middleware';
+import type { AuthenticatedUser } from '../middleware/auth.middleware';
+
+router.get('/content', authenticateSupabaseUser, (req, res) => {
+  const user = req.user as AuthenticatedUser;
+  
+  // Subscription data is already available
+  if (user.subscription.tierLevel >= 2) {
+    // Return premium content
+  } else {
+    // Return basic content
+  }
+});
+```
+
 ### Available Middleware
+
+Use these middleware when you need to **block access** based on subscription requirements:
 
 #### `requireSubscription(options?)`
 
 Protects routes by requiring an active subscription. Optionally enforce minimum tier level.
+
+**Note:** This middleware uses the subscription data already attached by `authenticateSupabaseUser`, so it's very efficient (no additional database queries).
 
 ```typescript
 import { requireSubscription } from '../middleware/subscription.middleware';
@@ -582,26 +606,46 @@ router.get(
 
 ### Usage Patterns
 
-#### Pattern 1: Simple subscription check
+#### Pattern 1: Direct tier check (recommended for simple logic)
 
 ```typescript
-// Any active subscription grants access
-router.get('/premium', authenticate, requireSubscription(), premiumController);
+import { authenticateSupabaseUser } from '../middleware/auth.middleware';
+import type { AuthenticatedUser } from '../middleware/auth.middleware';
+
+router.get('/content', authenticateSupabaseUser, (req, res) => {
+  const user = req.user as AuthenticatedUser;
+  
+  // Check tier directly - no extra middleware needed!
+  if (user.subscription.tierLevel >= 2) {
+    return sendSuccess(res, { content: getPremiumContent() });
+  }
+  
+  return sendSuccess(res, { content: getBasicContent() });
+});
 ```
 
-#### Pattern 2: Tiered access
+#### Pattern 2: Blocking access with middleware
+
+```typescript
+// Use requireSubscription when you want to block access entirely
+router.get('/premium', authenticateSupabaseUser, requireSubscription(), premiumController);
+router.get('/pro-only', authenticateSupabaseUser, requireSubscription({ minTier: 3 }), proController);
+```
+
+#### Pattern 3: Tiered access
 
 ```typescript
 // Different endpoints for different tiers
-router.get('/basic-stats', authenticate, requireSubscription({ minTier: 1 }), basicStatsController);
-router.get('/advanced-stats', authenticate, requireSubscription({ minTier: 2 }), advancedStatsController);
-router.get('/pro-analytics', authenticate, requireSubscription({ minTier: 3 }), proAnalyticsController);
+router.get('/basic-stats', authenticateSupabaseUser, requireSubscription({ minTier: 1 }), basicStatsController);
+router.get('/advanced-stats', authenticateSupabaseUser, requireSubscription({ minTier: 2 }), advancedStatsController);
+router.get('/pro-analytics', authenticateSupabaseUser, requireSubscription({ minTier: 3 }), proAnalyticsController);
 ```
 
-#### Pattern 3: Conditional content
+#### Pattern 4: Conditional content (legacy - use Pattern 1 instead)
 
 ```typescript
-router.get('/workout', authenticate, attachSubscription, (req, res) => {
+// This pattern works but Pattern 1 is more efficient
+router.get('/workout', authenticateSupabaseUser, attachSubscription, (req, res) => {
   const workout = await getWorkout(req.params.id);
   
   if (req.subscription?.subscription?.tierLevel >= 2) {
@@ -613,6 +657,8 @@ router.get('/workout', authenticate, attachSubscription, (req, res) => {
   return sendSuccess(res, { workout, analytics: false, video: null });
 });
 ```
+
+**Note:** `attachSubscription` is now optional since subscription data is automatically available in `req.user.subscription`. Use it only if you need the legacy `req.subscription` format.
 
 ---
 
