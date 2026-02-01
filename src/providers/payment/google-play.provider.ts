@@ -252,13 +252,27 @@ export class GooglePlayProvider implements IPaymentProvider {
         });
 
       const subscriptions = response.data.subscriptions || [];
+
+      logger.debug(
+        `Fetched ${subscriptions.length} subscriptions from Google Play`
+      );
+
       const plans: NormalizedPlan[] = [];
 
       for (const sub of subscriptions) {
         if (!sub.productId || !sub.basePlans) continue;
 
+        logger.debug('listings', { listings: sub.listings });
+
+        // Get benefits from listings (prefer English, fallback to first available)
+        const listing =
+          sub.listings?.find((l) => l.languageCode === 'en-US') ||
+          sub.listings?.[0];
+        const features = listing?.benefits || [];
+
         // Each subscription can have multiple base plans
         for (const basePlan of sub.basePlans) {
+          logger.debug('Processing base plan', { basePlan });
           if (!basePlan.basePlanId) continue;
 
           // Get pricing from regional config (default to first available)
@@ -267,8 +281,8 @@ export class GooglePlayProvider implements IPaymentProvider {
 
           const plan: NormalizedPlan = {
             productId: `${sub.productId}:${basePlan.basePlanId}`,
-            name: sub.productId,
-            description: sub.productId, // Localized listing not available in API
+            name: listing?.title || sub.productId,
+            description: listing?.description || sub.productId,
             priceCents: priceInfo?.units
               ? parseInt(priceInfo.units, 10) * 100 +
                 (priceInfo.nanos || 0) / 10000000
@@ -283,7 +297,7 @@ export class GooglePlayProvider implements IPaymentProvider {
                   basePlan.autoRenewingBasePlanType.gracePeriodDuration
                 )
               : null,
-            features: [], // Features are managed in our database
+            features,
           };
 
           plans.push(plan);
@@ -294,7 +308,7 @@ export class GooglePlayProvider implements IPaymentProvider {
       return plans;
     } catch (error) {
       logger.error('Failed to fetch Google Play plans', error);
-      return [];
+      throw error; // Re-throw so caller can handle it
     }
   }
 
