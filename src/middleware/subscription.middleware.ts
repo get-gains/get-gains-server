@@ -3,6 +3,7 @@ import { logger } from '../utils/logger';
 import { sendSingleError } from '../utils/response';
 import prisma from '../config/database';
 import { SubscriptionStatus } from '../generated/prisma/client';
+import type { AuthenticatedUser } from './auth.middleware';
 
 /**
  * Subscription verification result attached to request
@@ -34,7 +35,7 @@ declare global {
  * Get user's active subscription with tier level
  * Returns null if no active subscription found
  */
-const getUserSubscriptionWithTier = async (
+export const getUserSubscriptionWithTier = async (
   supabaseId: string
 ): Promise<SubscriptionInfo['subscription']> => {
   const dbUser = await prisma.user.findFirst({
@@ -101,40 +102,52 @@ export const requireSubscription = (options?: { minTier?: number }) => {
     next: NextFunction
   ): Promise<void> => {
     try {
-      const user = req.user;
+      const user = req.user as AuthenticatedUser | undefined;
 
       if (!user) {
         sendSingleError(res, 'Authentication required', 401);
         return;
       }
 
-      const supabaseId = 'id' in user ? user.id : undefined;
+      logger.debug('Checking subscription', { userId: user.id, minTier });
 
-      if (!supabaseId) {
+      // Use subscription data from auth middleware if available
+      const subscriptionData = user.subscription;
+
+      if (!subscriptionData) {
         sendSingleError(res, 'Invalid user session', 401);
         return;
       }
 
-      logger.debug('Checking subscription', { userId: supabaseId, minTier });
+      // Attach detailed subscription info to request if subscribed
+      if (subscriptionData.isSubscribed && subscriptionData.subscriptionId) {
+        req.subscription = {
+          isSubscribed: true,
+          subscription: {
+            id: subscriptionData.subscriptionId,
+            status: subscriptionData.status!,
+            planId: subscriptionData.planId!,
+            tierLevel: subscriptionData.tierLevel,
+            currentPeriodEnd: subscriptionData.currentPeriodEnd!,
+          },
+        };
+      } else {
+        req.subscription = {
+          isSubscribed: false,
+          subscription: null,
+        };
+      }
 
-      const subscription = await getUserSubscriptionWithTier(supabaseId);
-
-      // Attach subscription info to request
-      req.subscription = {
-        isSubscribed: !!subscription,
-        subscription,
-      };
-
-      if (!subscription) {
-        logger.debug('No active subscription found', { userId: supabaseId });
+      if (!subscriptionData.isSubscribed) {
+        logger.debug('No active subscription found', { userId: user.id });
         sendSingleError(res, 'Active subscription required', 403);
         return;
       }
 
-      if (subscription.tierLevel < minTier) {
+      if (subscriptionData.tierLevel < minTier) {
         logger.debug('Subscription tier too low', {
-          userId: supabaseId,
-          currentTier: subscription.tierLevel,
+          userId: user.id,
+          currentTier: subscriptionData.tierLevel,
           requiredTier: minTier,
         });
         sendSingleError(
@@ -146,8 +159,8 @@ export const requireSubscription = (options?: { minTier?: number }) => {
       }
 
       logger.debug('Subscription verified', {
-        userId: supabaseId,
-        tier: subscription.tierLevel,
+        userId: user.id,
+        tier: subscriptionData.tierLevel,
       });
 
       next();
@@ -180,28 +193,34 @@ export const attachSubscription = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const user = req.user;
+    const user = req.user as AuthenticatedUser | undefined;
 
-    if (!user) {
+    if (!user || !user.subscription) {
       req.subscription = { isSubscribed: false, subscription: null };
       next();
       return;
     }
 
-    const supabaseId = 'id' in user ? user.id : undefined;
+    // Use subscription data from auth middleware
+    const subscriptionData = user.subscription;
 
-    if (!supabaseId) {
-      req.subscription = { isSubscribed: false, subscription: null };
-      next();
-      return;
+    if (subscriptionData.isSubscribed && subscriptionData.subscriptionId) {
+      req.subscription = {
+        isSubscribed: true,
+        subscription: {
+          id: subscriptionData.subscriptionId,
+          status: subscriptionData.status!,
+          planId: subscriptionData.planId!,
+          tierLevel: subscriptionData.tierLevel,
+          currentPeriodEnd: subscriptionData.currentPeriodEnd!,
+        },
+      };
+    } else {
+      req.subscription = {
+        isSubscribed: false,
+        subscription: null,
+      };
     }
-
-    const subscription = await getUserSubscriptionWithTier(supabaseId);
-
-    req.subscription = {
-      isSubscribed: !!subscription,
-      subscription,
-    };
 
     next();
   } catch (error) {
