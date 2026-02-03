@@ -53,6 +53,30 @@ export const registerWithEmailAndPassword = async (
 
     const user = await createUser({ email, name, nickname, supabaseId });
 
+    const session = data.session;
+    if (session?.access_token && session?.refresh_token) {
+      const coach = await prisma.coach.findUnique({
+        where: { userId: user.id },
+      });
+      sendSuccess(
+        res,
+        {
+          accessToken: session.access_token,
+          refreshToken: session.refresh_token,
+          user: {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            nickname: user.nickname,
+            supabaseId: user.supabaseId,
+            isCoach: !!coach,
+          },
+        },
+        201
+      );
+      return;
+    }
+
     sendSuccess(
       res,
       {
@@ -151,6 +175,22 @@ export const loginWithEmailAndPassword = async (
     });
 
     if (error || !data.user) {
+      const msg = (error?.message ?? '').toLowerCase();
+      const isEmailNotConfirmed =
+        msg.includes('email not confirmed') ||
+        msg.includes('not confirmed') ||
+        msg.includes('not authorized') ||
+        msg.includes('cannot be used');
+      if (isEmailNotConfirmed) {
+        logger.debug('Login failed: Email not confirmed', { email });
+        sendSingleError(
+          res,
+          'Email not confirmed. Please check your inbox and confirm your email before signing in.',
+          403,
+          'email'
+        );
+        return;
+      }
       logger.debug('Login failed: Invalid credentials', { email });
       sendSingleError(res, 'Invalid email or password', 401);
       return;
@@ -168,6 +208,11 @@ export const loginWithEmailAndPassword = async (
       sendSingleError(res, 'User not found', 404);
       return;
     }
+
+    const coach = await prisma.coach.findUnique({
+      where: { userId: user.id },
+    });
+    const isCoach = !!coach;
 
     const accessToken = data.session?.access_token;
     const refreshToken = data.session?.refresh_token;
@@ -189,6 +234,7 @@ export const loginWithEmailAndPassword = async (
           name: user.name,
           nickname: user.nickname,
           supabaseId: user.supabaseId,
+          isCoach,
         },
       },
       200
@@ -252,6 +298,11 @@ export const signInWithGoogleWithUserData = async (
       return;
     }
 
+    const coach = await prisma.coach.findUnique({
+      where: { userId: userData.id },
+    });
+    const isCoach = !!coach;
+
     const accessToken = supabaseData.session?.access_token;
     const refreshToken = supabaseData.session?.refresh_token;
     const supabaseId = supabaseData.user.id;
@@ -267,6 +318,7 @@ export const signInWithGoogleWithUserData = async (
           name: userData.name,
           nickname: userData.nickname,
           supabaseId,
+          isCoach,
         },
       },
       200
@@ -301,11 +353,32 @@ export const refreshToken = async (
       return;
     }
 
+    const supabaseId = data.session.user?.id;
+    const appUser = supabaseId ? await getUserBySupabaseId(supabaseId) : null;
+
+    if (!appUser) {
+      sendSingleError(res, 'User not found', 401);
+      return;
+    }
+
+    const coach = await prisma.coach.findUnique({
+      where: { userId: appUser.id },
+    });
+    const isCoach = !!coach;
+
     sendSuccess(
       res,
       {
         accessToken: data.session.access_token,
         refreshToken: data.session.refresh_token,
+        user: {
+          id: appUser.id,
+          email: appUser.email,
+          name: appUser.name,
+          nickname: appUser.nickname,
+          supabaseId: appUser.supabaseId,
+          isCoach,
+        },
       },
       200
     );
@@ -314,6 +387,48 @@ export const refreshToken = async (
     logger.error('Token refresh error', error);
     sendSingleError(res, 'Internal server error', 500);
     return;
+  }
+};
+
+/**
+ * Get current user and coach status. Protected by authenticateSupabaseUser only.
+ */
+export const getMe = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const supabaseUser = req.user;
+    if (!supabaseUser) {
+      sendSingleError(res, 'Authentication required', 401);
+      return;
+    }
+
+    const supabaseId =
+      'supabaseId' in supabaseUser ? supabaseUser.supabaseId : supabaseUser.id;
+    const appUser = await getUserBySupabaseId(supabaseId);
+
+    if (!appUser) {
+      sendSingleError(res, 'User not found', 401);
+      return;
+    }
+
+    const coach = await prisma.coach.findUnique({
+      where: { userId: appUser.id },
+    });
+    const isCoach = !!coach;
+
+    sendSuccess(res, {
+      user: {
+        id: appUser.id,
+        email: appUser.email,
+        name: appUser.name,
+        nickname: appUser.nickname,
+        supabaseId: appUser.supabaseId,
+      },
+      isCoach,
+    });
+  } catch (error) {
+    const err = error as Error;
+    logger.error('getMe error', { message: err.message, stack: err.stack });
+    sendSingleError(res, 'Internal server error', 500);
   }
 };
 

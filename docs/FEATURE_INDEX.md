@@ -10,16 +10,16 @@
 
 ### Technology Stack
 
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| **Node.js** | - | Runtime environment |
-| **Express.js** | ^5.2.1 | Web framework |
-| **TypeScript** | ^5.9.3 | Type-safe JavaScript |
-| **Prisma** | ^7.2.0 | ORM / Database client |
-| **PostgreSQL** | - | Primary database |
-| **Supabase** | ^2.91.1 | Authentication provider |
-| **Zod** | ^4.3.5 | Request validation |
-| **Google Auth Library** | ^10.5.0 | Google OAuth |
+| Technology              | Version | Purpose                 |
+| ----------------------- | ------- | ----------------------- |
+| **Node.js**             | -       | Runtime environment     |
+| **Express.js**          | ^5.2.1  | Web framework           |
+| **TypeScript**          | ^5.9.3  | Type-safe JavaScript    |
+| **Prisma**              | ^7.2.0  | ORM / Database client   |
+| **PostgreSQL**          | -       | Primary database        |
+| **Supabase**            | ^2.91.1 | Authentication provider |
+| **Zod**                 | ^4.3.5  | Request validation      |
+| **Google Auth Library** | ^10.5.0 | Google OAuth            |
 
 ### Architecture Approach
 
@@ -32,45 +32,47 @@
 
 ## Documentation Structure
 
-| Document | Purpose |
-|----------|---------|
-| [CONTEXT.md](CONTEXT.md) | Core infrastructure, patterns, conventions, utilities |
-| [FEATURE_INDEX.md](FEATURE_INDEX.md) | This file - navigation hub |
-| [FEATURE_PROMPT.md](FEATURE_PROMPT.md) | Reusable prompt for generating feature docs |
-| [features/AUTH.md](features/AUTH.md) | Authentication & security feature |
+| Document                               | Purpose                                               |
+| -------------------------------------- | ----------------------------------------------------- |
+| [CONTEXT.md](CONTEXT.md)               | Core infrastructure, patterns, conventions, utilities |
+| [FEATURE_INDEX.md](FEATURE_INDEX.md)   | This file - navigation hub                            |
+| [FEATURE_PROMPT.md](FEATURE_PROMPT.md) | Reusable prompt for generating feature docs           |
+| [features/AUTH.md](features/AUTH.md)   | Authentication & security feature                     |
+| [features/COACH.md](features/COACH.md) | Coach dashboard, class management                     |
 
 ---
 
 ## Feature Categories
 
-### Core Infrastructure *(Documented in [CONTEXT.md](CONTEXT.md))*
+### Core Infrastructure _(Documented in [CONTEXT.md](CONTEXT.md))_
 
 These patterns are documented in CONTEXT.md - no separate feature docs needed:
 
-| Topic | Description | CONTEXT.md Section |
-|-------|-------------|-------------------|
-| Server Setup | Express app initialization | Project Structure |
-| Routing | RESTful API route definitions | `/routes` section |
-| Controllers | Business logic handlers | `/controllers` section |
-| Validation | Zod-based request validation | `/schemas` + `/middleware` sections |
-| Logger | Console logging utility | `/utils` → `logger.ts` |
-| Response Builder | Standardized API responses | `/utils` → `response.ts` |
-| Conventions | File naming, imports, error handling | Conventions section |
-| Environment Variables | Configuration options | Environment Variables section |
+| Topic                 | Description                          | CONTEXT.md Section                  |
+| --------------------- | ------------------------------------ | ----------------------------------- |
+| Server Setup          | Express app initialization           | Project Structure                   |
+| Routing               | RESTful API route definitions        | `/routes` section                   |
+| Controllers           | Business logic handlers              | `/controllers` section              |
+| Validation            | Zod-based request validation         | `/schemas` + `/middleware` sections |
+| Logger                | Console logging utility              | `/utils` → `logger.ts`              |
+| Response Builder      | Standardized API responses           | `/utils` → `response.ts`            |
+| Conventions           | File naming, imports, error handling | Conventions section                 |
+| Environment Variables | Configuration options                | Environment Variables section       |
 
-### Authentication & Security *(Documented in [features/AUTH.md](features/AUTH.md))*
+### Authentication & Security _(Documented in [features/AUTH.md](features/AUTH.md))_
 
 All auth-related functionality is documented together:
 
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Authentication Endpoints | Register, login, OAuth, password reset | ✅ Documented |
-| Auth Middleware | JWT Bearer token validation (`authenticateSupabaseUser`) | ✅ Documented |
-| User Model | Prisma schema and CRUD operations | ✅ Documented |
-| Supabase Integration | Auth client configuration and methods | ✅ Documented |
-| Google OAuth | ID token verification | ✅ Documented |
+| Feature                  | Description                                              | Status        |
+| ------------------------ | -------------------------------------------------------- | ------------- |
+| Authentication Endpoints | Register, login, OAuth, password reset                   | ✅ Documented |
+| Auth Middleware          | JWT Bearer token validation (`authenticateSupabaseUser`) | ✅ Documented |
+| User Model               | Prisma schema and CRUD operations                        | ✅ Documented |
+| Supabase Integration     | Auth client configuration and methods                    | ✅ Documented |
+| Google OAuth             | ID token verification                                    | ✅ Documented |
 
 **Primary Files:**
+
 - `/src/routes/auth.routes.ts`
 - `/src/controllers/auth.controller.ts`
 - `/src/controllers/user.controller.ts`
@@ -80,32 +82,68 @@ All auth-related functionality is documented together:
 - `/src/config/google.ts`
 - `/prisma/schema.prisma`
 
-### Future Domain Features *(Needs Documentation)*
+### Coach Dashboard _(Documented in [features/COACH.md](features/COACH.md))_
+
+| Feature                    | Description                                    | Status        |
+| -------------------------- | ---------------------------------------------- | ------------- |
+| Coach indication (isCoach) | Login/refresh/me return isCoach                | ✅ Documented |
+| GET /auth/me               | Current user and isCoach                       | ✅ Documented |
+| Coach profile creation     | POST /coach/profile (become a coach)           | ✅ Documented |
+| Class Roster               | List, add, remove clients (coaches only)       | ✅ Documented |
+| Client List                | List clients with assigned/unassigned filters  | ✅ Documented |
+| Performance Report         | Good/falling behind dashboard                  | ✅ Documented |
+| Program Assignment         | Assign programs to clients                     | ✅ Documented |
+| Program Management         | Create program, assign routines, add exercises | ✅ Documented |
+| requireCoach Middleware    | Coach-only route protection                    | ✅ Documented |
+
+**Primary Files:**
+
+- `/src/routes/coach.routes.ts`
+- `/src/routes/class.routes.ts`
+- `/src/routes/program.routes.ts`
+- `/src/controllers/coach.controller.ts`
+- `/src/schemas/coach.schema.ts`
+- `/src/controllers/class.controller.ts`
+- `/src/schemas/class.schema.ts`
+- `/src/middleware/auth.middleware.ts` (requireCoach)
+
+### Future Domain Features _(Needs Documentation)_
 
 Features to document when implemented:
 
-| Feature | Description | Status | Location |
-|---------|-------------|--------|----------|
-| Workouts | Workout/exercise management | 🔮 Not Implemented | - |
-| Progress Tracking | User progress and stats | 🔮 Not Implemented | - |
-| User Settings | Preferences and profile | 🔮 Not Implemented | - |
+| Feature           | Description                 | Status             | Location |
+| ----------------- | --------------------------- | ------------------ | -------- |
+| Workouts          | Workout/exercise management | 🔮 Not Implemented | -        |
+| Progress Tracking | User progress and stats     | 🔮 Not Implemented | -        |
+| User Settings     | Preferences and profile     | 🔮 Not Implemented | -        |
 
 ---
 
 ## API Endpoints Summary
 
-| Method | Endpoint | Description | Auth Required |
-|--------|----------|-------------|---------------|
-| `GET` | `/` | Hello message | No |
-| `GET` | `/health` | Health check | No |
-| `POST` | `/api/auth/register` | Register with email/password | No |
-| `POST` | `/api/auth/login` | Login with email/password | No |
-| `POST` | `/api/auth/google` | Sign in with Google (new user flow) | No |
-| `POST` | `/api/auth/google/link` | Link Google account to existing user | Yes |
-| `POST` | `/api/auth/login/google` | Login with Google (existing user) | No |
-| `GET` | `/api/auth/refresh` | Refresh access token | Yes |
-| `POST` | `/api/auth/send-recovery-email` | Send password recovery email | No |
-| `POST` | `/api/auth/reset-password` | Reset password | Yes |
+| Method   | Endpoint                                            | Description                                   | Auth Required |
+| -------- | --------------------------------------------------- | --------------------------------------------- | ------------- |
+| `GET`    | `/`                                                 | Hello message                                 | No            |
+| `GET`    | `/health`                                           | Health check                                  | No            |
+| `POST`   | `/api/auth/register`                                | Register with email/password                  | No            |
+| `POST`   | `/api/auth/login`                                   | Login with email/password                     | No            |
+| `POST`   | `/api/auth/google`                                  | Sign in with Google (new user flow)           | No            |
+| `POST`   | `/api/auth/google/link`                             | Link Google account to existing user          | Yes           |
+| `POST`   | `/api/auth/login/google`                            | Login with Google (existing user)             | No            |
+| `GET`    | `/api/auth/refresh`                                 | Refresh access token (returns user + isCoach) | Yes           |
+| `GET`    | `/api/auth/me`                                      | Get current user and isCoach status           | Yes           |
+| `POST`   | `/api/auth/send-recovery-email`                     | Send password recovery email                  | No            |
+| `POST`   | `/api/auth/reset-password`                          | Reset password                                | Yes           |
+| `POST`   | `/api/coach/profile`                                | Create coach profile (become a coach)         | Yes           |
+| `GET`    | `/api/coach/class`                                  | List coach's clients                          | Yes (Coach)   |
+| `POST`   | `/api/coach/class`                                  | Add client to class                           | Yes (Coach)   |
+| `DELETE` | `/api/coach/class/:userId`                          | Remove client from class                      | Yes (Coach)   |
+| `GET`    | `/api/coach/clients`                                | List clients with filters                     | Yes (Coach)   |
+| `GET`    | `/api/coach/performance`                            | Performance report                            | Yes (Coach)   |
+| `POST`   | `/api/coach/assign-program`                         | Assign program to client                      | Yes (Coach)   |
+| `POST`   | `/api/coach/programs`                               | Create program                                | Yes (Coach)   |
+| `POST`   | `/api/coach/programs/:programId/routines`           | Assign routine to program                     | Yes (Coach)   |
+| `POST`   | `/api/coach/programs/routines/:routineId/exercises` | Add exercise to routine                       | Yes (Coach)   |
 
 ---
 
@@ -146,16 +184,16 @@ Request → CORS → JSON Parser → Route Matcher → Validation Middleware →
 
 ### Where to Find Information
 
-| Looking for... | Go to... |
-|----------------|----------|
-| API response format | [CONTEXT.md](CONTEXT.md) → Response utility section |
-| Validation patterns | [CONTEXT.md](CONTEXT.md) → Schemas section |
-| Auth endpoints & flows | [features/AUTH.md](features/AUTH.md) |
-| Protecting routes | [features/AUTH.md](features/AUTH.md) → Auth Middleware |
-| User model | [features/AUTH.md](features/AUTH.md) → User Model |
-| Environment variables | [CONTEXT.md](CONTEXT.md) → Environment Variables |
-| File naming conventions | [CONTEXT.md](CONTEXT.md) → Conventions |
-| Generating new feature docs | [FEATURE_PROMPT.md](FEATURE_PROMPT.md) |
+| Looking for...              | Go to...                                               |
+| --------------------------- | ------------------------------------------------------ |
+| API response format         | [CONTEXT.md](CONTEXT.md) → Response utility section    |
+| Validation patterns         | [CONTEXT.md](CONTEXT.md) → Schemas section             |
+| Auth endpoints & flows      | [features/AUTH.md](features/AUTH.md)                   |
+| Protecting routes           | [features/AUTH.md](features/AUTH.md) → Auth Middleware |
+| User model                  | [features/AUTH.md](features/AUTH.md) → User Model      |
+| Environment variables       | [CONTEXT.md](CONTEXT.md) → Environment Variables       |
+| File naming conventions     | [CONTEXT.md](CONTEXT.md) → Conventions                 |
+| Generating new feature docs | [FEATURE_PROMPT.md](FEATURE_PROMPT.md)                 |
 
 ---
 
@@ -173,11 +211,13 @@ features/*.md       → Domain-specific feature documentation
 ### When to Create Feature Docs
 
 **Create a new feature doc when:**
+
 - Adding a new domain feature (e.g., Workouts, Progress)
 - The feature has multiple related components (routes, controllers, models)
 - The feature needs detailed API reference
 
 **Don't create separate docs for:**
+
 - Utilities already in CONTEXT.md (logger, response builder, validation)
 - Tightly coupled sub-features (document together, e.g., Auth + Auth Middleware)
 - Simple patterns that fit in CONTEXT.md
@@ -197,13 +237,13 @@ features/*.md       → Domain-specific feature documentation
 
 ### Documentation Status Legend
 
-| Status | Meaning |
-|--------|---------|
-| ✅ Documented | Complete documentation available |
-| 🚧 Partial | Some documentation exists, needs expansion |
-| ⚠️ Needs Docs | Feature exists but not yet documented |
-| 🔮 Not Implemented | Future feature, not in codebase |
+| Status             | Meaning                                    |
+| ------------------ | ------------------------------------------ |
+| ✅ Documented      | Complete documentation available           |
+| 🚧 Partial         | Some documentation exists, needs expansion |
+| ⚠️ Needs Docs      | Feature exists but not yet documented      |
+| 🔮 Not Implemented | Future feature, not in codebase            |
 
 ---
 
-*Last updated: January 27, 2026*
+_Last updated: February 1, 2026_
