@@ -4,7 +4,7 @@ import {
   PaymentProvider,
   SubscriptionStatus,
   BillingCycle,
-} from '../../generated/prisma/client';
+} from '@prisma/client';
 import {
   IPaymentProvider,
   NormalizedSubscription,

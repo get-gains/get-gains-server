@@ -6,7 +6,7 @@ import {
   SubscriptionEventType,
   WebhookStatus,
   PaymentStatus,
-} from '../generated/prisma/client';
+} from '@prisma/client';
 import {
   getPaymentProvider,
   NormalizedSubscription,

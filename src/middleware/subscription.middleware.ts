@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger';
 import { sendSingleError } from '../utils/response';
 import prisma from '../config/database';
-import { SubscriptionStatus } from '../generated/prisma/client';
+import { SubscriptionStatus } from '@prisma/client';
 import type { AuthenticatedUser } from './auth.middleware';
 
 /**

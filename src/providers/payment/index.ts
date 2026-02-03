@@ -1,4 +1,4 @@
-import { PaymentProvider } from '../../generated/prisma/client';
+import { PaymentProvider } from '@prisma/client';
 import { IPaymentProvider } from './payment.provider.interface';
 import { getGooglePlayProvider } from './google-play.provider';
 import { logger } from '../../utils/logger';
