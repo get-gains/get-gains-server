@@ -60,11 +60,28 @@ export class GooglePlayProvider implements IPaymentProvider {
     }
 
     // Initialize Google API client
-    const auth = new google.auth.GoogleAuth({
-      keyFile:
-        process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH || 'google-services.json',
-      scopes: ['https://www.googleapis.com/auth/androidpublisher'],
-    });
+    let auth;
+
+    if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+      // Use credentials from environment variable (recommended for production)
+      const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+      auth = new google.auth.GoogleAuth({
+        credentials,
+        scopes: ['https://www.googleapis.com/auth/androidpublisher'],
+      });
+    } else if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH) {
+      // Fallback to file path
+      auth = new google.auth.GoogleAuth({
+        keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH,
+        scopes: ['https://www.googleapis.com/auth/androidpublisher'],
+      });
+    } else {
+      // Default to local file for development
+      auth = new google.auth.GoogleAuth({
+        keyFile: 'google-services.json',
+        scopes: ['https://www.googleapis.com/auth/androidpublisher'],
+      });
+    }
 
     this.androidPublisher = google.androidpublisher({
       version: 'v3',
