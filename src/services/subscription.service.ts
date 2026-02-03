@@ -47,6 +47,11 @@ export const getUserSubscriptionHistory = async (
   limit = 20,
   offset = 0
 ) => {
+  logger.debug('Fetching subscription history', {
+    userId,
+    limit,
+    offset,
+  });
   const [subscriptions, total] = await Promise.all([
     prisma.subscription.findMany({
       where: { userId },
@@ -59,6 +64,8 @@ export const getUserSubscriptionHistory = async (
     }),
     prisma.subscription.count({ where: { userId } }),
   ]);
+
+  logger.debug('Fetched subscription history', { subscriptions, total });
 
   return { subscriptions, total };
 };

@@ -101,6 +101,7 @@ export const getSubscriptionStatus = async (
               id: subscription.plan.id,
               name: subscription.plan.name,
               billingCycle: subscription.plan.billingCycle,
+              tierLevel: subscription.plan.tierLevel,
             },
             currentPeriodStart: subscription.currentPeriodStart,
             currentPeriodEnd: subscription.currentPeriodEnd,
@@ -182,9 +183,11 @@ export const getSubscriptionHistory = async (
         hasMore: offset! + subscriptions.length < total,
       },
     });
+    return;
   } catch (error) {
     logger.error('Failed to fetch subscription history', error);
     sendSingleError(res, 'Failed to fetch subscription history', 500);
+    return;
   }
 };
 
