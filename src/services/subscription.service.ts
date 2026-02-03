@@ -94,15 +94,29 @@ export const verifyAndProcessPurchase = async (
   }
 
   // Find the plan in our database
-  const plan = await prisma.plan.findFirst({
+  // First try exact match with full productId:basePlanId from Google Play
+  const normalizedProductId = result.subscription.productId;
+  let plan = await prisma.plan.findFirst({
     where: {
-      productId: {
-        startsWith: productId.split(':')[0], // Handle base plan IDs
-      },
+      productId: normalizedProductId,
       provider,
       isActive: true,
     },
   });
+
+  // Fallback: try matching by subscription ID only (for backwards compatibility)
+  if (!plan) {
+    const subscriptionIdOnly = normalizedProductId.split(':')[0];
+    plan = await prisma.plan.findFirst({
+      where: {
+        productId: {
+          startsWith: subscriptionIdOnly,
+        },
+        provider,
+        isActive: true,
+      },
+    });
+  }
 
   if (!plan) {
     logger.error('Plan not found for product', { productId, provider });
