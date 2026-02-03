@@ -2,8 +2,11 @@ import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger';
 import { sendSingleError, sendSuccess } from '../utils/response';
 import type { UserModel } from '../generated/prisma/models/User';
+import type { CoachModel } from '../generated/prisma/models/Coach';
 import supabase from '../config/supabase';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
+import { getUserBySupabaseId } from '../controllers/user.controller';
+import prisma from '../config/database';
 
 /**
  * Extend Express Request to include authenticated user
@@ -13,6 +16,8 @@ declare global {
   namespace Express {
     interface Request {
       user?: SupabaseUser | UserModel;
+      appUser?: UserModel;
+      coach?: CoachModel;
     }
   }
 }
@@ -55,8 +60,61 @@ export const authenticateSupabaseUser = async (
     req.user = user;
     next();
   } catch (error) {
-    logger.error('Authentication error', error);
+    const err = error as Error;
+    logger.error('Authentication error', {
+      message: err.message,
+      stack: err.stack,
+    });
     sendSingleError(res, 'Authentication failed', 500);
+    return;
+  }
+};
+
+/**
+ * Middleware to require coach profile. Must run after authenticateSupabaseUser.
+ * Looks up app User by supabaseId, loads Coach, and attaches both to req.
+ * Returns 403 if user has no Coach profile.
+ */
+export const requireCoach = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const supabaseUser = req.user;
+    if (!supabaseUser) {
+      sendSingleError(res, 'Authentication required', 401);
+      return;
+    }
+
+    const supabaseId =
+      'supabaseId' in supabaseUser ? supabaseUser.supabaseId : supabaseUser.id;
+    const appUser = await getUserBySupabaseId(supabaseId);
+
+    if (!appUser) {
+      sendSingleError(res, 'User not found', 404);
+      return;
+    }
+
+    const coach = await prisma.coach.findUnique({
+      where: { userId: appUser.id },
+    });
+
+    if (!coach) {
+      sendSingleError(res, 'Coach profile required', 403);
+      return;
+    }
+
+    req.appUser = appUser;
+    req.coach = coach;
+    next();
+  } catch (error) {
+    const err = error as Error;
+    logger.error('requireCoach error', {
+      message: err.message,
+      stack: err.stack,
+    });
+    sendSingleError(res, 'Authorization failed', 500);
     return;
   }
 };

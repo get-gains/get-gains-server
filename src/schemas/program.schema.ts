@@ -7,7 +7,6 @@ export const CreateProgramSchema = z.object({
   body: z.object({
     name: z.string().min(1),
     description: z.string().min(1),
-    coachId: z.string().cuid(),
   }),
 });
 
