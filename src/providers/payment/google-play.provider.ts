@@ -424,7 +424,12 @@ export class GooglePlayProvider implements IPaymentProvider {
       : SUBSCRIPTION_STATE.SUBSCRIPTION_STATE_UNSPECIFIED;
 
     // Get product ID from line items
-    const productId = firstItem?.productId || '';
+    // Format: "productId:basePlanId" to match database Plan.productId format
+    const subscriptionId = firstItem?.productId || '';
+    const basePlanId = firstItem?.offerDetails?.basePlanId;
+    const productId = basePlanId
+      ? `${subscriptionId}:${basePlanId}`
+      : subscriptionId;
 
     // Get latest order ID
     const orderId = subscription.latestOrderId || null;
