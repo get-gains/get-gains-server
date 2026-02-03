@@ -1,45 +1,84 @@
 import { Request, Response } from 'express';
 import prisma from '../config/database';
+import { sendSuccess, sendSingleError } from '../utils/response';
 
 export const createProgram = async (req: Request, res: Response) => {
+  const coach = req.coach;
+  if (!coach) {
+    sendSingleError(res, 'Coach required', 403);
+    return;
+  }
+
   const { name, description } = req.body;
 
   const program = await prisma.program.create({
     data: {
       name,
       description,
-      coachId: req.user!.id, // assumed from auth middleware
+      coachId: coach.id,
     },
   });
 
-  res.status(201).json(program);
+  sendSuccess(res, { program }, 201);
 };
 
 export const assignRoutineToProgram = async (req: Request, res: Response) => {
+  const coach = req.coach;
+  if (!coach) {
+    sendSingleError(res, 'Coach required', 403);
+    return;
+  }
+
   const { programId } = req.params;
   const { routineId, dayNumber } = req.body;
+  const pid = Array.isArray(programId) ? programId[0] : programId;
+
+  const program = await prisma.program.findUnique({
+    where: { id: pid },
+  });
+
+  if (!program || program.coachId !== coach.id) {
+    sendSingleError(res, 'Program not found or access denied', 403);
+    return;
+  }
 
   const assignment = await prisma.programRoutine.create({
     data: {
-      programId: Array.isArray(programId) ? programId[0] : programId,
+      programId: pid,
       routineId,
       dayNumber,
     },
   });
 
-  res.status(201).json(assignment);
+  sendSuccess(res, { assignment }, 201);
 };
 
 export const addExerciseToRoutine = async (req: Request, res: Response) => {
+  const coach = req.coach;
+  if (!coach) {
+    sendSingleError(res, 'Coach required', 403);
+    return;
+  }
+
   const { routineId } = req.params;
+  const rid = Array.isArray(routineId) ? routineId[0] : routineId;
   const data = req.body;
+
+  const routine = await prisma.routine.findUnique({
+    where: { id: rid },
+  });
+
+  if (!routine) {
+    sendSingleError(res, 'Routine not found', 404);
+    return;
+  }
 
   const routineExercise = await prisma.routineExercise.create({
     data: {
-      routineId,
+      routineId: rid,
       ...data,
     },
   });
 
-  res.status(201).json(routineExercise);
+  sendSuccess(res, { routineExercise }, 201);
 };

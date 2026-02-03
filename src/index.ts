@@ -9,6 +9,7 @@ import workoutRoutes from './routes/workout.routes';
 import subscriptionRoutes from './routes/subscription.routes';
 import webhookRoutes from './routes/webhook.routes';
 import promoRoutes from './routes/promo.routes';
+import coachRoutes from './routes/coach.routes';
 
 dotenv.config();
 
@@ -41,6 +42,7 @@ const startServer = () => {
   app.use('/api/subscriptions', subscriptionRoutes);
   app.use('/api/webhooks', webhookRoutes);
   app.use('/api/promo', promoRoutes);
+  app.use('/api/coach', coachRoutes);
 
   // 404 Handler
   app.use((req: Request, res: Response) => {
