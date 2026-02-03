@@ -6,6 +6,9 @@ import { logger } from './utils/logger';
 import dotenv from 'dotenv';
 import authRoutes from './routes/auth.routes';
 import workoutRoutes from './routes/workout.routes';
+import subscriptionRoutes from './routes/subscription.routes';
+import webhookRoutes from './routes/webhook.routes';
+import promoRoutes from './routes/promo.routes';
 
 dotenv.config();
 
@@ -35,6 +38,9 @@ const startServer = () => {
   // API Routes
   app.use('/api/auth', authRoutes);
   app.use('/api/workout', workoutRoutes);
+  app.use('/api/subscriptions', subscriptionRoutes);
+  app.use('/api/webhooks', webhookRoutes);
+  app.use('/api/promo', promoRoutes);
 
   // 404 Handler
   app.use((req: Request, res: Response) => {

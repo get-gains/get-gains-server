@@ -11,3 +11,5 @@ npm-debug.log
 .env.development
 .env.production
 /src/generated/prisma
+
+google-services.json
