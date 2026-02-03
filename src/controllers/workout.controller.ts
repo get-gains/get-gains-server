@@ -17,7 +17,7 @@ import {
   DeleteSetParams,
   BatchSyncSetsInput,
 } from '../schemas/workout.schema';
-import { MuscleGroup } from '../generated/prisma/client';
+import { MuscleGroup } from '@prisma/client';
 
 // ============== Exercise Controllers ==============
 

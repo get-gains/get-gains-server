@@ -14,7 +14,7 @@ import {
   verifyAndProcessPurchase,
   hasActiveSubscription,
 } from '../services/subscription.service';
-import { PaymentProvider } from '../generated/prisma/client';
+import { PaymentProvider } from '@prisma/client';
 import prisma from '../config/database';
 
 // ============== Plan Controllers ==============
