@@ -94,8 +94,16 @@ export const verifyAndProcessPurchase = async (
   }
 
   // Find the plan in our database
-  // First try exact match with full productId:basePlanId from Google Play
+  // The productId from Google Play API is in format "subscriptionId:basePlanId"
+  // But clients only send the subscriptionId part
   const normalizedProductId = result.subscription.productId;
+
+  // Extract subscriptionId and basePlanId from the composite productId
+  const [googleSubId, googleBasePlan] = normalizedProductId.includes(':')
+    ? normalizedProductId.split(':')
+    : [normalizedProductId, null];
+
+  // First try exact match with full productId:basePlanId
   let plan = await prisma.plan.findFirst({
     where: {
       productId: normalizedProductId,
@@ -104,16 +112,15 @@ export const verifyAndProcessPurchase = async (
     },
   });
 
-  // Fallback: try matching by subscription ID only (for backwards compatibility)
-  if (!plan) {
-    const subscriptionIdOnly = normalizedProductId.split(':')[0];
+  // Fallback: try matching by googleSubscriptionId field (reliable exact match)
+  if (!plan && googleSubId) {
     plan = await prisma.plan.findFirst({
       where: {
-        productId: {
-          startsWith: subscriptionIdOnly,
-        },
+        googleSubscriptionId: googleSubId,
         provider,
         isActive: true,
+        // If we have basePlanId, also match on that for precision
+        ...(googleBasePlan ? { googleBasePlanId: googleBasePlan } : {}),
       },
     });
   }
@@ -463,6 +470,13 @@ export const syncPlansFromProviders = async () => {
           continue;
         }
 
+        // Parse composite productId into separate fields
+        // Format: "subscriptionId:basePlanId"
+        const [googleSubscriptionId, googleBasePlanId] =
+          plan.productId.includes(':')
+            ? plan.productId.split(':')
+            : [plan.productId, null];
+
         // Create new plan
         await prisma.plan.create({
           data: {
@@ -474,6 +488,8 @@ export const syncPlansFromProviders = async () => {
             features: plan.features,
             provider: provider.provider,
             productId: plan.productId,
+            googleSubscriptionId,
+            googleBasePlanId,
             trialPeriodDays: plan.trialPeriodDays,
             isActive: true,
           },
@@ -491,4 +507,9 @@ export const syncPlansFromProviders = async () => {
   }
 
   return results;
+};
+
+export const fetchPlansFromProvider = async (providerType: PaymentProvider) => {
+  const provider = getPaymentProvider(providerType);
+  return provider.fetchPlans();
 };

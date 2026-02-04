@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { google, androidpublisher_v3 } from 'googleapis';
 import { logger } from '../../utils/logger';
 import {
@@ -67,18 +68,6 @@ export class GooglePlayProvider implements IPaymentProvider {
       const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
       auth = new google.auth.GoogleAuth({
         credentials,
-        scopes: ['https://www.googleapis.com/auth/androidpublisher'],
-      });
-    } else if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH) {
-      // Fallback to file path
-      auth = new google.auth.GoogleAuth({
-        keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH,
-        scopes: ['https://www.googleapis.com/auth/androidpublisher'],
-      });
-    } else {
-      // Default to local file for development
-      auth = new google.auth.GoogleAuth({
-        keyFile: 'google-services.json',
         scopes: ['https://www.googleapis.com/auth/androidpublisher'],
       });
     }
@@ -191,15 +180,22 @@ export class GooglePlayProvider implements IPaymentProvider {
     purchaseToken: string
   ): Promise<boolean> {
     try {
-      logger.debug('Acknowledging Google Play purchase', { productId });
+      // Extract just the subscription ID (before the colon)
+      // productId may be "get_gains.premium" or "get_gains.premium:premium-subscription"
+      const subscriptionId = productId.split(':')[0];
+
+      logger.debug('Acknowledging Google Play purchase', {
+        subscriptionId,
+        originalProductId: productId,
+      });
 
       await this.androidPublisher.purchases.subscriptions.acknowledge({
         packageName: this.packageName,
-        subscriptionId: productId,
+        subscriptionId,
         token: purchaseToken,
       });
 
-      logger.info('Google Play purchase acknowledged', { productId });
+      logger.info('Google Play purchase acknowledged', { subscriptionId });
       return true;
     } catch (error) {
       logger.error('Failed to acknowledge Google Play purchase', error);
@@ -240,15 +236,22 @@ export class GooglePlayProvider implements IPaymentProvider {
     purchaseToken: string
   ): Promise<boolean> {
     try {
-      logger.debug('Canceling Google Play subscription', { productId });
+      // Extract just the subscription ID (before the colon)
+      // productId may be "get_gains.premium" or "get_gains.premium:premium-subscription"
+      const subscriptionId = productId.split(':')[0];
+
+      logger.debug('Canceling Google Play subscription', {
+        subscriptionId,
+        originalProductId: productId,
+      });
 
       await this.androidPublisher.purchases.subscriptions.cancel({
         packageName: this.packageName,
-        subscriptionId: productId,
+        subscriptionId,
         token: purchaseToken,
       });
 
-      logger.info('Google Play subscription canceled', { productId });
+      logger.info('Google Play subscription canceled', { subscriptionId });
       return true;
     } catch (error) {
       logger.error('Failed to cancel Google Play subscription', error);
