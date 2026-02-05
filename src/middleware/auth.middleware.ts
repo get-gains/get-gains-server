@@ -1,12 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger';
 import { sendSingleError, sendSuccess } from '../utils/response';
-import type { UserModel } from '../generated/prisma/models/User';
-import type { CoachModel } from '../generated/prisma/models/Coach';
+import type { User as UserModel } from '@prisma/client';
+import type { Coach as CoachModel } from '@prisma/client';
 import supabase from '../config/supabase';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import prisma from '../config/database';
-import { SubscriptionStatus } from '../generated/prisma/client';
+import { SubscriptionStatus } from '@prisma/client';
 import { getUserBySupabaseId } from '../controllers/user.controller';
 
 /**

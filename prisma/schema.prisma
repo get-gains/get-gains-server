@@ -5,8 +5,7 @@
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -416,7 +415,14 @@ model Plan {
 
   // Provider details
   provider  PaymentProvider
-  productId String          @unique
+  productId String          @unique // Full composite: "subscriptionId:basePlanId"
+
+  // Separated IDs for reliable matching (client sends only subscriptionId)
+  // e.g., productId = "get_gains.premium:premium-subscription"
+  //       subscriptionId = "get_gains.premium"
+  //       basePlanId = "premium-subscription"
+  googleSubscriptionId String? // Just the subscription ID for matching
+  googleBasePlanId     String? // Just the base plan ID
 
   // Trial
   trialPeriodDays Int?
@@ -427,6 +433,8 @@ model Plan {
   updatedAt        DateTime         @updatedAt @db.Timestamptz
   subscriptions    Subscription[]
   paymentHistories PaymentHistory[]
+
+  @@index([googleSubscriptionId])
 }
 
 model Subscription {

@@ -1,6 +1,6 @@
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
-import { DiscountType } from '../generated/prisma/client';
+import { DiscountType } from '@prisma/client';
 
 /**
  * Promo code service handles all promo code business logic
