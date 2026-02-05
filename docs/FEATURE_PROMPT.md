@@ -7,6 +7,7 @@
 ## Usage
 
 Copy the prompt below and replace the placeholders:
+
 - `[FEATURE_NAME]` - The feature to document (e.g., "Authentication", "User Management")
 - `[FEATURE_CATEGORY]` - The category (e.g., "Auth & Security", "Data Layer")
 - `[PRIMARY_FILES]` - List the main files to analyze
@@ -106,22 +107,38 @@ I need you to document the [FEATURE_NAME] feature for my Express server.
 When documenting features, group related functionality together:
 
 ### Auth & Security (→ AUTH.md)
+
 Documents together:
+
 - Authentication endpoints (register, login, OAuth)
 - Auth middleware (JWT verification)
 - Auth schemas (validation)
 - Session management
 - Password utilities
 
-### Data Layer (→ [MODEL_NAME].md)
+### Coach Dashboard (→ COACH.md)
+
 Documents together:
+
+- Class roster (list, add, remove clients)
+- Client list with filters
+- Performance reports
+- Program assignment
+- requireCoach middleware
+
+### Data Layer (→ [MODEL_NAME].md)
+
+Documents together:
+
 - Prisma model definition
 - CRUD controller functions
 - Related schemas
 - Database relationships
 
 ### Core Infrastructure
+
 **Already in CONTEXT.md:**
+
 - Server setup (`/src/index.ts`)
 - Routing patterns (`/src/routes/`)
 - Controller patterns (`/src/controllers/`)
@@ -134,6 +151,7 @@ Documents together:
 - Environment variables
 
 **Separate docs only for:**
+
 - Complex integrations (e.g., Supabase, Google OAuth specifics)
 - Domain-specific features (e.g., Workouts, Progress Tracking)
 
@@ -160,20 +178,21 @@ I need you to document the Workout Management feature for my Express server.
 
 ## Quick Reference: What Goes Where
 
-| Topic | Location |
-|-------|----------|
-| How to add a new endpoint | CONTEXT.md |
-| How to use the logger | CONTEXT.md |
-| How to format API responses | CONTEXT.md |
-| How to validate requests | CONTEXT.md |
-| File naming conventions | CONTEXT.md |
-| Auth endpoints & flows | features/AUTH.md |
-| Protecting routes with auth | features/AUTH.md |
-| User model & operations | features/AUTH.md (or USER.md if complex) |
-| Supabase configuration | features/AUTH.md |
-| Google OAuth setup | features/AUTH.md |
-| [New domain feature] | features/[FEATURE].md |
+| Topic                          | Location                                 |
+| ------------------------------ | ---------------------------------------- |
+| How to add a new endpoint      | CONTEXT.md                               |
+| How to use the logger          | CONTEXT.md                               |
+| How to format API responses    | CONTEXT.md                               |
+| How to validate requests       | CONTEXT.md                               |
+| File naming conventions        | CONTEXT.md                               |
+| Auth endpoints & flows         | features/AUTH.md                         |
+| Protecting routes with auth    | features/AUTH.md                         |
+| User model & operations        | features/AUTH.md (or USER.md if complex) |
+| Supabase configuration         | features/AUTH.md                         |
+| Google OAuth setup             | features/AUTH.md                         |
+| Coach dashboard & class routes | features/COACH.md                        |
+| [New domain feature]           | features/[FEATURE].md                    |
 
 ---
 
-*Template version: 1.0 | January 27, 2026*
+_Template version: 1.0 | February 1, 2026_

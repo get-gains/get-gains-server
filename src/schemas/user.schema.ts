@@ -38,3 +38,58 @@ export const CreateUserFromGoogleSchema = z.object({
 export type CreateUserFromGoogleData = z.infer<
   typeof CreateUserFromGoogleSchema
 >['body'];
+
+/**
+ * Schema for discovering/searching coaches
+ */
+export const DiscoverCoachesSchema = z.object({
+  query: z.object({
+    search: z.string().optional(), // Search by name, bio, specialties
+    limit: z.coerce.number().int().min(1).max(100).optional().default(50),
+    offset: z.coerce.number().int().min(0).optional().default(0),
+  }),
+});
+
+export type DiscoverCoachesQuery = z.infer<
+  typeof DiscoverCoachesSchema
+>['query'];
+
+/**
+ * Schema for getting user's subscribed coaches
+ */
+export const GetSubscribedCoachesSchema = z.object({
+  query: z.object({
+    limit: z.coerce.number().int().min(1).max(100).optional().default(50),
+    offset: z.coerce.number().int().min(0).optional().default(0),
+  }),
+});
+
+export type GetSubscribedCoachesQuery = z.infer<
+  typeof GetSubscribedCoachesSchema
+>['query'];
+
+/**
+ * Schema for subscribing to a coach
+ */
+export const SubscribeCoachSchema = z.object({
+  params: z.object({
+    coachId: z.string().cuid('Invalid coach ID'),
+  }),
+});
+
+export type SubscribeCoachParams = z.infer<
+  typeof SubscribeCoachSchema
+>['params'];
+
+/**
+ * Schema for unsubscribing from a coach
+ */
+export const UnsubscribeCoachSchema = z.object({
+  params: z.object({
+    coachId: z.string().cuid('Invalid coach ID'),
+  }),
+});
+
+export type UnsubscribeCoachParams = z.infer<
+  typeof UnsubscribeCoachSchema
+>['params'];
