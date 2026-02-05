@@ -1,10 +1,11 @@
+import 'dotenv/config';
 import { google, androidpublisher_v3 } from 'googleapis';
 import { logger } from '../../utils/logger';
 import {
   PaymentProvider,
   SubscriptionStatus,
   BillingCycle,
-} from '../../generated/prisma/client';
+} from '@prisma/client';
 import {
   IPaymentProvider,
   NormalizedSubscription,
@@ -53,6 +54,11 @@ export class GooglePlayProvider implements IPaymentProvider {
   private packageName: string;
 
   constructor() {
+    logger.debug('Initializing GooglePlayProvider', {
+      hasPackageName: !!process.env.GOOGLE_PLAY_PACKAGE_NAME,
+      hasServiceAccountJson: !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON,
+    });
+
     this.packageName = process.env.GOOGLE_PLAY_PACKAGE_NAME || '';
 
     if (!this.packageName) {
@@ -60,11 +66,36 @@ export class GooglePlayProvider implements IPaymentProvider {
     }
 
     // Initialize Google API client
-    const auth = new google.auth.GoogleAuth({
-      keyFile:
-        process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH || 'google-services.json',
-      scopes: ['https://www.googleapis.com/auth/androidpublisher'],
-    });
+    let auth;
+
+    if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+      // Use credentials from environment variable (recommended for production)
+      logger.debug('Attempting to parse GOOGLE_SERVICE_ACCOUNT_JSON', {
+        envVarLength: process.env.GOOGLE_SERVICE_ACCOUNT_JSON.length,
+        firstChars: process.env.GOOGLE_SERVICE_ACCOUNT_JSON.substring(0, 50),
+        lastChars: process.env.GOOGLE_SERVICE_ACCOUNT_JSON.substring(
+          process.env.GOOGLE_SERVICE_ACCOUNT_JSON.length - 50
+        ),
+      });
+
+      try {
+        const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+        logger.debug('Successfully parsed Google service account credentials', {
+          hasPrivateKey: !!credentials.private_key,
+          clientEmail: credentials.client_email,
+        });
+        auth = new google.auth.GoogleAuth({
+          credentials,
+          scopes: ['https://www.googleapis.com/auth/androidpublisher'],
+        });
+      } catch (error) {
+        logger.error('Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON', error);
+        throw new Error(
+          'Invalid GOOGLE_SERVICE_ACCOUNT_JSON format: ' +
+            (error instanceof Error ? error.message : 'Unknown error')
+        );
+      }
+    }
 
     this.androidPublisher = google.androidpublisher({
       version: 'v3',
@@ -174,15 +205,22 @@ export class GooglePlayProvider implements IPaymentProvider {
     purchaseToken: string
   ): Promise<boolean> {
     try {
-      logger.debug('Acknowledging Google Play purchase', { productId });
+      // Extract just the subscription ID (before the colon)
+      // productId may be "get_gains.premium" or "get_gains.premium:premium-subscription"
+      const subscriptionId = productId.split(':')[0];
+
+      logger.debug('Acknowledging Google Play purchase', {
+        subscriptionId,
+        originalProductId: productId,
+      });
 
       await this.androidPublisher.purchases.subscriptions.acknowledge({
         packageName: this.packageName,
-        subscriptionId: productId,
+        subscriptionId,
         token: purchaseToken,
       });
 
-      logger.info('Google Play purchase acknowledged', { productId });
+      logger.info('Google Play purchase acknowledged', { subscriptionId });
       return true;
     } catch (error) {
       logger.error('Failed to acknowledge Google Play purchase', error);
@@ -223,15 +261,22 @@ export class GooglePlayProvider implements IPaymentProvider {
     purchaseToken: string
   ): Promise<boolean> {
     try {
-      logger.debug('Canceling Google Play subscription', { productId });
+      // Extract just the subscription ID (before the colon)
+      // productId may be "get_gains.premium" or "get_gains.premium:premium-subscription"
+      const subscriptionId = productId.split(':')[0];
+
+      logger.debug('Canceling Google Play subscription', {
+        subscriptionId,
+        originalProductId: productId,
+      });
 
       await this.androidPublisher.purchases.subscriptions.cancel({
         packageName: this.packageName,
-        subscriptionId: productId,
+        subscriptionId,
         token: purchaseToken,
       });
 
-      logger.info('Google Play subscription canceled', { productId });
+      logger.info('Google Play subscription canceled', { subscriptionId });
       return true;
     } catch (error) {
       logger.error('Failed to cancel Google Play subscription', error);
@@ -402,12 +447,53 @@ export class GooglePlayProvider implements IPaymentProvider {
     const canceledAt = canceledStateContext ? new Date() : null;
 
     // Get subscription state
-    const state = subscription.subscriptionState
-      ? parseInt(subscription.subscriptionState, 10)
-      : SUBSCRIPTION_STATE.SUBSCRIPTION_STATE_UNSPECIFIED;
+    // Google Play API v2 returns subscriptionState as a string like "SUBSCRIPTION_STATE_ACTIVE"
+    // We need to map it to our internal numeric constants
+    logger.debug('Parsing subscription state', {
+      rawState: subscription.subscriptionState,
+      stateType: typeof subscription.subscriptionState,
+    });
+
+    let state: number = SUBSCRIPTION_STATE.SUBSCRIPTION_STATE_UNSPECIFIED;
+    if (
+      subscription.subscriptionState !== null &&
+      subscription.subscriptionState !== undefined
+    ) {
+      const rawState = subscription.subscriptionState;
+
+      // Check if it's a string enum value (e.g., "SUBSCRIPTION_STATE_ACTIVE")
+      if (
+        typeof rawState === 'string' &&
+        rawState.startsWith('SUBSCRIPTION_STATE_')
+      ) {
+        // Map the string enum to our numeric constant
+        const stateKey = rawState as keyof typeof SUBSCRIPTION_STATE;
+        const mappedValue = SUBSCRIPTION_STATE[stateKey];
+        state =
+          mappedValue !== undefined
+            ? mappedValue
+            : SUBSCRIPTION_STATE.SUBSCRIPTION_STATE_UNSPECIFIED;
+        logger.debug('Mapped string subscription state', {
+          rawState,
+          mappedState: state,
+        });
+      } else {
+        // Fallback for numeric values (shouldn't happen with v2 API, but just in case)
+        const parsed = parseInt(String(rawState), 10);
+        state = isNaN(parsed)
+          ? SUBSCRIPTION_STATE.SUBSCRIPTION_STATE_UNSPECIFIED
+          : parsed;
+        logger.debug('Parsed numeric subscription state', { rawState, parsed });
+      }
+    }
 
     // Get product ID from line items
-    const productId = firstItem?.productId || '';
+    // Format: "productId:basePlanId" to match database Plan.productId format
+    const subscriptionId = firstItem?.productId || '';
+    const basePlanId = firstItem?.offerDetails?.basePlanId;
+    const productId = basePlanId
+      ? `${subscriptionId}:${basePlanId}`
+      : subscriptionId;
 
     // Get latest order ID
     const orderId = subscription.latestOrderId || null;

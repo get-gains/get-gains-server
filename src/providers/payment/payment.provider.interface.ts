@@ -2,7 +2,7 @@ import {
   PaymentProvider,
   SubscriptionStatus,
   BillingCycle,
-} from '../../generated/prisma/client';
+} from '@prisma/client';
 
 /**
  * Normalized subscription data from any payment provider

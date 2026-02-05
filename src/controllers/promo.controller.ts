@@ -19,7 +19,7 @@ import {
   getUserRedemptions,
   calculateDiscount,
 } from '../services/promo.service';
-import { DiscountType } from '../generated/prisma/client';
+import { DiscountType } from '@prisma/client';
 import prisma from '../config/database';
 
 // ============== Admin Controllers ==============
