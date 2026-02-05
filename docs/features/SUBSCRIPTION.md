@@ -396,6 +396,22 @@ const result = await provider.verifyPurchase(productId, token);
 2. **Package Name**: Set `GOOGLE_PLAY_PACKAGE_NAME` environment variable
 3. **Credentials**: Place service account JSON at project root or set `GOOGLE_SERVICE_ACCOUNT_KEY_PATH`
 
+### Subscription State Mapping
+
+Google Play API v2 returns subscription state as a **string enum** (e.g., `"SUBSCRIPTION_STATE_ACTIVE"`), not a numeric value. The provider correctly maps these to internal status:
+
+| Google Play State | Internal Status |
+|-------------------|-----------------|
+| `SUBSCRIPTION_STATE_PENDING` | `PENDING` |
+| `SUBSCRIPTION_STATE_ACTIVE` | `ACTIVE` |
+| `SUBSCRIPTION_STATE_IN_GRACE_PERIOD` | `ACTIVE` |
+| `SUBSCRIPTION_STATE_ON_HOLD` | `PAST_DUE` |
+| `SUBSCRIPTION_STATE_PAUSED` | `PAST_DUE` |
+| `SUBSCRIPTION_STATE_CANCELED` | `CANCELED` |
+| `SUBSCRIPTION_STATE_EXPIRED` | `EXPIRED` |
+
+**Implementation Note:** The `normalizeSubscription` method in `google-play.provider.ts` handles both string enum values (v2 API) and numeric values for backwards compatibility.
+
 ### Real-Time Developer Notifications (RTDN)
 
 Google Play uses Pub/Sub for real-time notifications:
@@ -436,30 +452,6 @@ The script:
 2. Checks for existing plans in database
 3. Creates new plans (skips existing ones)
 4. Reports results
-
----
-
-## Flutter Client Integration
-
-The mobile app uses `in_app_purchase` package:
-
-```dart
-// 1. Query available products
-final products = await InAppPurchase.instance.queryProductDetails({'premium_monthly'});
-
-// 2. Purchase
-await InAppPurchase.instance.buyNonConsumable(purchaseParam: PurchaseParam(productDetails: product));
-
-// 3. Verify with server
-final response = await api.post('/subscriptions/verify', {
-  'productId': purchase.productID,
-  'purchaseToken': purchase.purchaseID,
-  'provider': 'GOOGLE_PAY',
-});
-
-// 4. Complete purchase
-await InAppPurchase.instance.completePurchase(purchase);
-```
 
 ---
 
@@ -670,4 +662,4 @@ router.get('/workout', authenticateSupabaseUser, attachSubscription, (req, res) 
 
 ---
 
-*Last updated: February 1, 2026*
+*Last updated: February 6, 2026*

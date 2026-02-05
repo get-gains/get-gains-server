@@ -244,8 +244,14 @@ export const verifyPurchase = async (
             plan: {
               id: result.subscription.plan.id,
               name: result.subscription.plan.name,
+              billingCycle: result.subscription.plan.billingCycle,
+              tierLevel: result.subscription.plan.tierLevel,
             },
+            currentPeriodStart: result.subscription.currentPeriodStart,
             currentPeriodEnd: result.subscription.currentPeriodEnd,
+            nextBillingDate: result.subscription.nextBillingDate,
+            cancelAtPeriodEnd: result.subscription.cancelAtPeriodEnd,
+            autoRenew: result.subscription.autoRenew,
           }
         : null,
     });
