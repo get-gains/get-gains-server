@@ -9,6 +9,7 @@ import {
   SendRecoveryEmailSchema,
 } from '../schemas/auth.schema';
 import {
+  getMe,
   loginWithEmailAndPassword,
   refreshToken,
   registerWithEmailAndPassword,
@@ -59,6 +60,13 @@ router.post(
  * @access  Protected
  */
 router.get('/refresh', authenticateSupabaseUser, refreshToken);
+
+/**
+ * @route   GET /auth/me
+ * @desc    Get current user and isCoach status
+ * @access  Protected (authenticateSupabaseUser only)
+ */
+router.get('/me', authenticateSupabaseUser, getMe);
 
 /**
  * @route POST /auth/login
