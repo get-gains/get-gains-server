@@ -92,23 +92,29 @@ All auth-related functionality is documented together:
 | Coach indication (isCoach) | Login/refresh/me return isCoach                | ✅ Documented |
 | GET /auth/me               | Current user and isCoach                       | ✅ Documented |
 | Coach profile creation     | POST /coach/profile (become a coach)           | ✅ Documented |
-| Class Roster               | List, add, remove clients (coaches only)       | ✅ Documented |
+| Client Coach Discovery     | Discover/search coaches (public)               | ✅ Documented |
+| Client Coach Subscription  | Subscribe/unsubscribe to coaches (clients)     | ✅ Documented |
+| Class Roster               | List and remove clients (coaches)              | ✅ Documented |
 | Client List                | List clients with assigned/unassigned filters  | ✅ Documented |
 | Performance Report         | Good/falling behind dashboard                  | ✅ Documented |
 | Program Assignment         | Assign programs to clients                     | ✅ Documented |
 | Program Management         | Create program, assign routines, add exercises | ✅ Documented |
+| requireAppUser Middleware  | Authenticated user route protection            | ✅ Documented |
 | requireCoach Middleware    | Coach-only route protection                    | ✅ Documented |
 
 **Primary Files:**
 
+- `/src/routes/user.routes.ts` (client coach selection)
 - `/src/routes/coach.routes.ts`
 - `/src/routes/class.routes.ts`
 - `/src/routes/program.routes.ts`
+- `/src/controllers/user.controller.ts` (client coach selection)
 - `/src/controllers/coach.controller.ts`
+- `/src/schemas/user.schema.ts` (client coach selection)
 - `/src/schemas/coach.schema.ts`
 - `/src/controllers/class.controller.ts`
 - `/src/schemas/class.schema.ts`
-- `/src/middleware/auth.middleware.ts` (requireCoach)
+- `/src/middleware/auth.middleware.ts` (requireAppUser, requireCoach)
 
 ### Workout Feature _(Documented in [features/WORKOUT.md](features/WORKOUT.md))_
 
@@ -206,13 +212,21 @@ In-app purchases, subscriptions, and promo codes:
 | `POST` | `/api/auth/send-recovery-email` | Send password recovery email                  | No            |
 | `POST` | `/api/auth/reset-password`      | Reset password                                | Yes           |
 
+### Client Coach Selection Endpoints
+
+| Method   | Endpoint                       | Description                    | Auth Required |
+| -------- | ------------------------------ | ------------------------------ | ------------- |
+| `GET`    | `/api/user/coaches`            | Discover/search coaches        | No            |
+| `GET`    | `/api/user/coaches/subscribed` | List user's subscribed coaches | Yes           |
+| `POST`   | `/api/user/coaches/:coachId`   | Subscribe to a coach           | Yes           |
+| `DELETE` | `/api/user/coaches/:coachId`   | Unsubscribe from a coach       | Yes           |
+
 ### Coach Endpoints
 
 | Method   | Endpoint                                            | Description                           | Auth Required |
 | -------- | --------------------------------------------------- | ------------------------------------- | ------------- |
 | `POST`   | `/api/coach/profile`                                | Create coach profile (become a coach) | Yes           |
 | `GET`    | `/api/coach/class`                                  | List coach's clients                  | Yes (Coach)   |
-| `POST`   | `/api/coach/class`                                  | Add client to class                   | Yes (Coach)   |
 | `DELETE` | `/api/coach/class/:userId`                          | Remove client from class              | Yes (Coach)   |
 | `GET`    | `/api/coach/clients`                                | List clients with filters             | Yes (Coach)   |
 | `GET`    | `/api/coach/performance`                            | Performance report                    | Yes (Coach)   |
