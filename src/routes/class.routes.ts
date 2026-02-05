@@ -4,16 +4,8 @@ import {
   authenticateSupabaseUser,
   requireCoach,
 } from '../middleware/auth.middleware';
-import {
-  GetClassSchema,
-  AddClientSchema,
-  RemoveClientSchema,
-} from '../schemas/class.schema';
-import {
-  getClass,
-  addClient,
-  removeClient,
-} from '../controllers/class.controller';
+import { GetClassSchema, RemoveClientSchema } from '../schemas/class.schema';
+import { getClass, removeClient } from '../controllers/class.controller';
 
 const router = Router();
 
@@ -28,19 +20,6 @@ router.get(
   requireCoach,
   validateRequest(GetClassSchema),
   getClass
-);
-
-/**
- * @route   POST /coach/class
- * @desc    Add client to class
- * @access  Protected (authenticateSupabaseUser + requireCoach)
- */
-router.post(
-  '/',
-  authenticateSupabaseUser,
-  requireCoach,
-  validateRequest(AddClientSchema),
-  addClient
 );
 
 /**

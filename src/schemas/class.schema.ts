@@ -13,17 +13,6 @@ export const GetClassSchema = z.object({
 export type GetClassQuery = z.infer<typeof GetClassSchema>['query'];
 
 /**
- * Schema for adding a client to the coach's class
- */
-export const AddClientSchema = z.object({
-  body: z.object({
-    userId: z.string().cuid('Invalid user ID'),
-  }),
-});
-
-export type AddClientInput = z.infer<typeof AddClientSchema>['body'];
-
-/**
  * Schema for removing a client from the coach's class
  */
 export const RemoveClientSchema = z.object({

@@ -134,6 +134,45 @@ export const authenticateSupabaseUser = async (
 };
 
 /**
+ * Middleware to attach app User to request. Must run after authenticateSupabaseUser.
+ * Looks up app User by supabaseId and attaches to req.appUser.
+ * Returns 404 if user not found in database.
+ */
+export const requireAppUser = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const supabaseUser = req.user;
+    if (!supabaseUser) {
+      sendSingleError(res, 'Authentication required', 401);
+      return;
+    }
+
+    const supabaseId =
+      'supabaseId' in supabaseUser ? supabaseUser.supabaseId : supabaseUser.id;
+    const appUser = await getUserBySupabaseId(supabaseId);
+
+    if (!appUser) {
+      sendSingleError(res, 'User not found', 404);
+      return;
+    }
+
+    req.appUser = appUser;
+    next();
+  } catch (error) {
+    const err = error as Error;
+    logger.error('requireAppUser error', {
+      message: err.message,
+      stack: err.stack,
+    });
+    sendSingleError(res, 'Authorization failed', 500);
+    return;
+  }
+};
+
+/**
  * Middleware to require coach profile. Must run after authenticateSupabaseUser.
  * Looks up app User by supabaseId, loads Coach, and attaches both to req.
  * Returns 403 if user has no Coach profile.
