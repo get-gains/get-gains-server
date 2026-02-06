@@ -42,6 +42,7 @@
 | [features/PROGRAM.md](features/PROGRAM.md)           | Program creation and routine assignment (coach features) |
 | [features/COACH.md](features/COACH.md)               | Coach dashboard, class management                        |
 | [features/SUBSCRIPTION.md](features/SUBSCRIPTION.md) | Subscriptions, payments, webhooks, and promo codes       |
+| [features/POSE_DETECTION.md](features/POSE_DETECTION.md) | Pose detection storage, form analysis, limb isolation  |
 
 ---
 
@@ -179,6 +180,25 @@ In-app purchases, subscriptions, and promo codes:
 - `/scripts/sync-plans.ts`
 - `/prisma/schema.prisma` (Plan, Subscription, PaymentHistory, WebhookEvent, PromoCode models)
 
+### Pose Detection & Form Analysis _(Documented in [features/POSE_DETECTION.md](features/POSE_DETECTION.md))_
+
+Backend storage for on-device pose detection analysis:
+
+| Feature                  | Description                                              | Status             |
+| ------------------------ | -------------------------------------------------------- | ------------------ |
+| Coach Form Storage       | Store reference pose landmark data for exercises         | ✅ Implemented      |
+| Client Result Storage    | Persist comparison results and correction feedback       | ✅ Implemented      |
+| Limb Isolation Config    | Per-exercise body segment configuration                  | ✅ Implemented      |
+| Offline Form Download    | Bulk form data serving for client-side caching           | ✅ Implemented      |
+| Historical Records       | Client form attempt history and progress queries         | ✅ Implemented      |
+
+**Primary Files:**
+
+- `/src/routes/pose.routes.ts`
+- `/src/controllers/pose.controller.ts`
+- `/src/schemas/pose.schema.ts`
+- `/prisma/schema.prisma` (ExerciseForm, ExercisePoseConfig, FormComparisonResult models)
+
 ### Future Domain Features _(Needs Implementation)_
 
 | Feature           | Description             | Status             | Location |
@@ -290,6 +310,26 @@ In-app purchases, subscriptions, and promo codes:
 | `GET`    | `/api/promo/admin/:id`      | Get promo code details (admin)  | Yes           |
 | `DELETE` | `/api/promo/admin/:id`      | Deactivate a promo code (admin) | Yes           |
 
+### Pose Detection Endpoints
+
+| Method   | Endpoint                                      | Description                          | Auth Required |
+| -------- | --------------------------------------------- | ------------------------------------ | ------------- |
+| `POST`   | `/api/pose/forms`                             | Upload coach reference form          | Yes (Coach)   |
+| `GET`    | `/api/pose/forms/:formId`                     | Get a specific form by ID            | Yes (Coach)   |
+| `GET`    | `/api/pose/exercises/:exerciseId/forms`       | Get all forms for an exercise        | Yes (Coach)   |
+| `PUT`    | `/api/pose/forms/:formId`                     | Update/replace a form                | Yes (Coach)   |
+| `DELETE` | `/api/pose/forms/:formId`                     | Delete a form                        | Yes (Coach)   |
+| `PATCH`  | `/api/pose/forms/:formId/activate`            | Set form as active version           | Yes (Coach)   |
+| `PUT`    | `/api/pose/exercises/:exerciseId/config`      | Create/update pose config            | Yes (Coach)   |
+| `GET`    | `/api/pose/exercises/:exerciseId/config`      | Get pose config for exercise         | Yes           |
+| `POST`   | `/api/pose/results`                           | Submit comparison result             | Yes           |
+| `GET`    | `/api/pose/results`                           | Get user's comparison history        | Yes           |
+| `GET`    | `/api/pose/results/:resultId`                 | Get a specific result                | Yes           |
+| `GET`    | `/api/pose/results/exercise/:exerciseId`      | Get results for an exercise          | Yes           |
+| `GET`    | `/api/pose/results/session/:sessionId`        | Get results from a workout session   | Yes           |
+| `GET`    | `/api/pose/download/program/:programId`       | Bulk download forms for a program    | Yes           |
+| `GET`    | `/api/pose/download/exercise/:exerciseId`     | Download form for a single exercise  | Yes           |
+
 ---
 
 ## Quick Start Guide
@@ -346,6 +386,8 @@ Request → CORS → JSON Parser → Route Matcher → Validation Middleware →
 | Payment providers            | [features/SUBSCRIPTION.md](features/SUBSCRIPTION.md) → Provider Pattern |
 | Promo codes                  | [features/SUBSCRIPTION.md](features/SUBSCRIPTION.md) → Promo Codes      |
 | Webhooks                     | [features/SUBSCRIPTION.md](features/SUBSCRIPTION.md) → Webhooks         |
+| Pose detection & form data   | [features/POSE_DETECTION.md](features/POSE_DETECTION.md)                |
+| Limb isolation config        | [features/POSE_DETECTION.md](features/POSE_DETECTION.md) → Config       |
 | Environment variables        | [CONTEXT.md](CONTEXT.md) → Environment Variables                        |
 | File naming conventions      | [CONTEXT.md](CONTEXT.md) → Conventions                                  |
 | Generating new feature docs  | [FEATURE_PROMPT.md](FEATURE_PROMPT.md)                                  |
