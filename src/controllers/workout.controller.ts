@@ -93,16 +93,32 @@ export const getRoutines = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.user?.id;
+    const supabaseId = req.user?.id; // This is the Supabase ID from JWT
     const { programId, limit, offset } =
       req.query as unknown as GetRoutinesQuery;
 
-    if (!userId) {
+    if (!supabaseId) {
       sendSingleError(res, 'Unauthorized', 401);
       return;
     }
 
-    logger.debug('Fetching routines for user', { userId, programId });
+    // Find the User record by Supabase ID to get the database user ID
+    const user = await prisma.user.findUnique({
+      where: { supabaseId },
+    });
+
+    if (!user) {
+      sendSingleError(res, 'User not found', 404);
+      return;
+    }
+
+    const userId = user.id; // This is the cuid used in AssignedProgram
+
+    logger.debug('Fetching routines for user', {
+      userId,
+      supabaseId,
+      programId,
+    });
 
     // Get routines from user's assigned programs
     const assignedPrograms = await prisma.assignedProgram.findMany({
@@ -148,6 +164,7 @@ export const getRoutines = async (
         programName: ap.program.name,
         exercises: pr.routine.routineExercises.map((re) => ({
           id: re.id,
+          routineId: re.routineId,
           exerciseId: re.exerciseId,
           sets: re.sets,
           repsMin: re.repsMin,
