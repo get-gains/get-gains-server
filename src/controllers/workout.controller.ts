@@ -29,8 +29,10 @@ export const getExercises = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { muscleGroup, search, limit, offset } =
-      req.query as unknown as GetExercisesQuery;
+    const query = req.query as unknown as GetExercisesQuery;
+    const limit = query.limit ? Number(query.limit) : 50;
+    const offset = query.offset ? Number(query.offset) : 0;
+    const { muscleGroup, search } = query;
 
     logger.debug('Fetching exercises', { muscleGroup, search, limit, offset });
 
@@ -83,6 +85,73 @@ export const getExercises = async (
   }
 };
 
+/**
+ * Create a new exercise (coach only)
+ */
+export const createExercise = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const {
+      name,
+      description,
+      primaryMuscleGroup,
+      targetMuscles,
+      equipmentNeeded,
+    } = req.body as import('../schemas/workout.schema').CreateExerciseInput;
+
+    logger.debug('Creating exercise', { name, primaryMuscleGroup });
+
+    // Check for duplicate name
+    const existing = await prisma.exercise.findFirst({
+      where: { name: { equals: name, mode: 'insensitive' } },
+    });
+
+    if (existing) {
+      sendSingleError(
+        res,
+        'An exercise with this name already exists',
+        409,
+        'name'
+      );
+      return;
+    }
+
+    const exercise = await prisma.exercise.create({
+      data: {
+        name,
+        description,
+        primaryMuscleGroup: primaryMuscleGroup as MuscleGroup,
+        targetMuscles: targetMuscles as import('@prisma/client').TargetMuscle[],
+        equipmentNeeded,
+      },
+    });
+
+    logger.info('Exercise created', { exerciseId: exercise.id, name });
+
+    sendSuccess(
+      res,
+      {
+        exercise: {
+          id: exercise.id,
+          name: exercise.name,
+          description: exercise.description,
+          primaryMuscleGroup: exercise.primaryMuscleGroup,
+          targetMuscles: exercise.targetMuscles,
+          equipmentNeeded: exercise.equipmentNeeded,
+          createdAt: exercise.createdAt,
+          updatedAt: exercise.updatedAt,
+        },
+      },
+      201
+    );
+  } catch (error) {
+    logger.error('Error creating exercise', error);
+    sendSingleError(res, 'Failed to create exercise', 500);
+  }
+};
+
 // ============== Routine Controllers ==============
 
 /**
@@ -94,8 +163,10 @@ export const getRoutines = async (
 ): Promise<void> => {
   try {
     const userId = req.user?.id;
-    const { programId, limit, offset } =
-      req.query as unknown as GetRoutinesQuery;
+    const query = req.query as unknown as GetRoutinesQuery;
+    const limit = query.limit ? Number(query.limit) : 50;
+    const offset = query.offset ? Number(query.offset) : 0;
+    const { programId } = query;
 
     if (!userId) {
       sendSingleError(res, 'Unauthorized', 401);
@@ -493,8 +564,10 @@ export const getWorkoutSessions = async (
 ): Promise<void> => {
   try {
     const userId = req.user?.id;
-    const { limit, offset, startDate, endDate } =
-      req.query as unknown as GetWorkoutSessionsQuery;
+    const query = req.query as unknown as GetWorkoutSessionsQuery;
+    const limit = query.limit ? Number(query.limit) : 50;
+    const offset = query.offset ? Number(query.offset) : 0;
+    const { startDate, endDate } = query;
 
     if (!userId) {
       sendSingleError(res, 'Unauthorized', 401);
