@@ -173,22 +173,44 @@ enum DiscountType {
   FIXED_AMOUNT
 }
 
+// Body segment groups for limb isolation in pose detection
+enum BodySegment {
+  HEAD_NECK
+  LEFT_ARM
+  RIGHT_ARM
+  TORSO
+  LEFT_LEG
+  RIGHT_LEG
+  FULL_BODY
+}
+
+// Camera angle the form was recorded from
+enum CameraAngle {
+  FRONT
+  SIDE_LEFT
+  SIDE_RIGHT
+  REAR
+  ANGLE_45_LEFT
+  ANGLE_45_RIGHT
+}
+
 model User {
-  id                String            @id @default(cuid())
-  supabaseId        String            @unique
-  email             String            @unique
-  name              String
-  nickname          String
-  createdAt         DateTime          @default(now()) @db.Timestamptz
-  updatedAt         DateTime          @updatedAt @db.Timestamptz
-  profile           UserProfile?
-  coach             Coach?
-  subscribedCoaches SubscribedCoach[]
-  workoutSessions   WorkoutSession[]
-  assignedPrograms  AssignedProgram[]
-  subscriptions     Subscription[]
-  paymentHistories  PaymentHistory[]
-  promoRedemptions  PromoRedemption[]
+  id                    String                 @id @default(cuid())
+  supabaseId            String                 @unique
+  email                 String                 @unique
+  name                  String
+  nickname              String
+  createdAt             DateTime               @default(now()) @db.Timestamptz
+  updatedAt             DateTime               @updatedAt @db.Timestamptz
+  profile               UserProfile?
+  coach                 Coach?
+  subscribedCoaches     SubscribedCoach[]
+  workoutSessions       WorkoutSession[]
+  assignedPrograms      AssignedProgram[]
+  subscriptions         Subscription[]
+  paymentHistories      PaymentHistory[]
+  promoRedemptions      PromoRedemption[]
+  formComparisonResults FormComparisonResult[]
 }
 
 model UserProfile {
@@ -242,6 +264,7 @@ model Coach {
   userId          String            @unique
   clientRelations SubscribedCoach[]
   programs        Program[]
+  exerciseForms   ExerciseForm[]
 }
 
 model SubscribedCoach {
@@ -320,9 +343,10 @@ model RoutineExercise {
   routine  Routine  @relation(fields: [routineId], references: [id], onDelete: Cascade)
   exercise Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
 
-  createdAt     DateTime       @default(now()) @db.Timestamptz
-  updatedAt     DateTime       @updatedAt @db.Timestamptz
-  performedSets PerformedSet[]
+  createdAt             DateTime               @default(now()) @db.Timestamptz
+  updatedAt             DateTime               @updatedAt @db.Timestamptz
+  performedSets         PerformedSet[]
+  formComparisonResults FormComparisonResult[]
 
   @@unique([routineId, exerciseId])
 }
@@ -336,9 +360,11 @@ model Exercise {
   equipmentNeeded    String[]
   primaryMuscleGroup MuscleGroup
 
-  createdAt        DateTime          @default(now()) @db.Timestamptz
-  updatedAt        DateTime          @updatedAt @db.Timestamptz
+  createdAt        DateTime            @default(now()) @db.Timestamptz
+  updatedAt        DateTime            @updatedAt @db.Timestamptz
   routineExercises RoutineExercise[]
+  poseConfig       ExercisePoseConfig?
+  exerciseForms    ExerciseForm[]
 }
 
 // A single workout session the user performed
@@ -354,9 +380,10 @@ model WorkoutSession {
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   assignedProgram AssignedProgram? @relation(fields: [assignedProgramId], references: [id], onDelete: SetNull)
 
-  createdAt     DateTime       @default(now()) @db.Timestamptz
-  updatedAt     DateTime       @updatedAt @db.Timestamptz
-  performedSets PerformedSet[]
+  createdAt             DateTime               @default(now()) @db.Timestamptz
+  updatedAt             DateTime               @updatedAt @db.Timestamptz
+  performedSets         PerformedSet[]
+  formComparisonResults FormComparisonResult[]
 }
 
 // Individual set performed by user (the actual work done)
@@ -585,4 +612,126 @@ model PromoRedemption {
   promoCode    PromoCode     @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+}
+
+// ============== Pose Detection Models ==============
+
+// Per-exercise configuration for pose analysis
+// Defines WHICH body segments matter and HOW to analyze them
+model ExercisePoseConfig {
+  id         String @id @default(cuid())
+  exerciseId String @unique
+
+  // Which body segments to analyze (limb isolation)
+  // e.g., Squat = [TORSO, LEFT_LEG, RIGHT_LEG]
+  // e.g., Bicep Curl = [LEFT_ARM, RIGHT_ARM]
+  activeSegments BodySegment[]
+
+  // Recommended camera angle(s) for this exercise
+  recommendedAngles CameraAngle[]
+
+  // Which specific angles (joint angles) to track and report corrections on
+  // Stored as JSON array: [{ "name": "kneeFlexion", "landmarks": ["LEFT_HIP", "LEFT_KNEE", "LEFT_ANKLE"], "idealMin": 80, "idealMax": 100 }]
+  trackedAngles Json
+
+  // Minimum landmark confidence threshold (0.0 - 1.0)
+  // Landmarks below this are ignored during comparison
+  minLandmarkConfidence Float @default(0.5)
+
+  // Additional notes for the client UI (e.g., "Keep full body in frame")
+  setupInstructions String? @db.Text
+
+  exercise Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+}
+
+// A single reference form recording uploaded by a coach for an exercise.
+// Contains the processed pose landmark data (NOT video — video stays on device or is discarded).
+model ExerciseForm {
+  id         String @id @default(cuid())
+  exerciseId String
+  coachId    String
+
+  // Recording metadata
+  cameraAngle CameraAngle
+  durationMs  Int // Duration of the recording in milliseconds
+  frameRate   Int // FPS the landmarks were captured at (e.g., 15 or 30)
+  totalFrames Int // Total number of valid pose frames
+
+  // The core data: processed pose landmarks per frame
+  // JSON array of frames, each frame is an object with timestamp + landmarks
+  // Structure: [{ "timestampMs": 0, "landmarks": { "LEFT_SHOULDER": { "x": 0.5, "y": 0.3, "z": 0.1, "confidence": 0.95 }, ... } }, ...]
+  landmarkFrames Json
+
+  // Pre-extracted feature vectors for faster client-side comparison
+  // Structure: [{ "timestampMs": 0, "angles": { "kneeFlexion": 92.5, "hipHinge": 78.3, ... }, "distances": { ... } }, ...]
+  featureFrames Json
+
+  // Optional: normalized/Procrustes-aligned version for direct DTW input
+  normalizedFrames Json?
+
+  // Which form version this is (coach can re-record to improve)
+  version  Int     @default(1)
+  isActive Boolean @default(true) // Only one active form per exercise per angle
+
+  // Quality metadata from the app's recording validation
+  avgLandmarkConfidence Float?
+  recordingQuality      String? // "good", "acceptable", "poor"
+
+  exercise Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  coach    Coach    @relation(fields: [coachId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime               @default(now()) @db.Timestamptz
+  updatedAt         DateTime               @updatedAt @db.Timestamptz
+  comparisonResults FormComparisonResult[]
+
+  @@index([exerciseId, isActive])
+  @@index([coachId])
+}
+
+// A single form comparison attempt by a client
+// The app performs DTW comparison on-device, then uploads the result here for records
+model FormComparisonResult {
+  id                String  @id @default(cuid())
+  userId            String
+  exerciseFormId    String // Which coach reference form was compared against
+  workoutSessionId  String? // Optional link to the workout session this was part of
+  routineExerciseId String? // Optional link to the specific routine exercise
+
+  // Overall similarity score (0.0 - 1.0, where 1.0 = perfect match)
+  overallScore Float
+
+  // Per-segment scores (limb isolation results)
+  // JSON: { "TORSO": 0.85, "LEFT_LEG": 0.72, "RIGHT_LEG": 0.78 }
+  segmentScores Json
+
+  // Angle corrections: specific joint angles that were off
+  // JSON array: [{ "angleName": "kneeFlexion", "segment": "LEFT_LEG", "avgDeviation": 12.5, "maxDeviation": 25.0, "direction": "too_shallow", "message": "..." }]
+  corrections Json
+
+  // Client's recording metadata
+  cameraAngle           CameraAngle
+  durationMs            Int
+  frameRate             Int
+  totalFrames           Int
+  avgLandmarkConfidence Float?
+
+  // Optional: client's landmark frames (for future replay / advanced analysis)
+  clientLandmarkFrames Json?
+
+  // Optional: client's feature frames
+  clientFeatureFrames Json?
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exerciseForm    ExerciseForm     @relation(fields: [exerciseFormId], references: [id], onDelete: Cascade)
+  workoutSession  WorkoutSession?  @relation(fields: [workoutSessionId], references: [id], onDelete: SetNull)
+  routineExercise RoutineExercise? @relation(fields: [routineExerciseId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([userId, exerciseFormId])
+  @@index([userId, createdAt])
+  @@index([workoutSessionId])
 }
