@@ -336,19 +336,19 @@ export const refreshToken = async (
   res: Response
 ): Promise<void> => {
   try {
-    const refreshToken = req.body?.refreshToken as string | undefined;
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(' ')[1];
 
-    if (!refreshToken) {
-      sendSingleError(res, 'Refresh token is required', 401);
+    if (!token) {
+      sendSingleError(res, 'No token provided', 401);
       return;
     }
 
-    const { data, error } = await supabase.auth.refreshSession({
-      refresh_token: refreshToken,
-    });
+    // Use the current token to get a refreshed session
+    const { data, error } = await supabase.auth.refreshSession();
 
     if (error || !data.session) {
-      logger.error('Token refresh failed', { error });
+      logger.error('Token refresh failed', { error, userId: req.user?.id });
       sendSingleError(res, 'Failed to refresh token', 401);
       return;
     }
