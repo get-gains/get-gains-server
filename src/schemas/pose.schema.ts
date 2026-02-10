@@ -23,9 +23,26 @@ const CameraAngleEnum = z.enum([
 
 // ============== Shared Landmark / Feature Structures ==============
 
+/// Raw landmark coordinates are normalised by dividing pixel position by image
+/// dimensions, so values are *usually* 0-1.  However, MLKit can report
+/// landmark positions outside the visible frame (e.g. a wrist extending past
+/// the edge of the camera), producing values like -0.1 or 1.2.  Additionally,
+/// on Android the camera sensor is landscape while the phone is held portrait;
+/// MLKit returns coordinates in the rotated space which, when divided by the
+/// un-rotated sensor dimension, can exceed 1.0 significantly (e.g. y up to
+/// ~1.78 for 1920/1080).  We therefore use a wide margin.
 const LandmarkSchema = z.object({
-  x: z.number().min(0).max(1),
-  y: z.number().min(0).max(1),
+  x: z.number().min(-1.0).max(3.0),
+  y: z.number().min(-1.0).max(3.0),
+  z: z.number(),
+  confidence: z.number().min(0).max(1),
+});
+
+/// Normalized landmarks use Procrustes alignment (centered at origin),
+/// so x/y values range from roughly -1 to +1.
+const NormalizedLandmarkSchema = z.object({
+  x: z.number().min(-1).max(1),
+  y: z.number().min(-1).max(1),
   z: z.number(),
   confidence: z.number().min(0).max(1),
 });
@@ -33,6 +50,11 @@ const LandmarkSchema = z.object({
 const LandmarkFrameSchema = z.object({
   timestampMs: z.number().int().min(0),
   landmarks: z.record(z.string(), LandmarkSchema),
+});
+
+const NormalizedLandmarkFrameSchema = z.object({
+  timestampMs: z.number().int().min(0),
+  landmarks: z.record(z.string(), NormalizedLandmarkSchema),
 });
 
 const FeatureFrameSchema = z.object({
@@ -59,7 +81,7 @@ export const UploadFormSchema = z.object({
     totalFrames: z.number().int().positive(),
     landmarkFrames: z.array(LandmarkFrameSchema).min(1),
     featureFrames: z.array(FeatureFrameSchema).min(1),
-    normalizedFrames: z.array(LandmarkFrameSchema).nullish(),
+    normalizedFrames: z.array(NormalizedLandmarkFrameSchema).nullish(),
     avgLandmarkConfidence: z.number().min(0).max(1).optional(),
     recordingQuality: z.enum(['good', 'acceptable', 'poor']).optional(),
   }),
@@ -77,7 +99,7 @@ export const UpdateFormSchema = z.object({
     totalFrames: z.number().int().positive().optional(),
     landmarkFrames: z.array(LandmarkFrameSchema).min(1).optional(),
     featureFrames: z.array(FeatureFrameSchema).min(1).optional(),
-    normalizedFrames: z.array(LandmarkFrameSchema).nullish(),
+    normalizedFrames: z.array(NormalizedLandmarkFrameSchema).nullish(),
     avgLandmarkConfidence: z.number().min(0).max(1).optional(),
     recordingQuality: z.enum(['good', 'acceptable', 'poor']).optional(),
   }),
