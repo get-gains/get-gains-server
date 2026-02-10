@@ -69,6 +69,7 @@ All auth-related functionality is documented together:
 | Feature                  | Description                                              | Status        |
 | ------------------------ | -------------------------------------------------------- | ------------- |
 | Authentication Endpoints | Register, login, OAuth, password reset                   | ✅ Documented |
+| Token Refresh            | POST /auth/refresh with refresh token in body            | ✅ Updated    |
 | Auth Middleware          | JWT Bearer token validation (`authenticateSupabaseUser`) | ✅ Documented |
 | User Model               | Prisma schema and CRUD operations                        | ✅ Documented |
 | Supabase Integration     | Auth client configuration and methods                    | ✅ Documented |
