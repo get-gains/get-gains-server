@@ -1,7 +1,7 @@
 # Pose Detection - Backend Implementation Plan
 
 > **Status**: ✅ Implemented (Coach Flow, Client Results, Download — pending migration)  
-> **Last Updated**: February 6, 2026  
+> **Last Updated**: February 11, 2026  
 > **Covers**: Exercise Form Storage, Pose Landmark Data, Comparison Results, Limb Isolation Config  
 > **Depends On**: [WORKOUT.md](WORKOUT.md), [COACH.md](COACH.md), [PROGRAM.md](PROGRAM.md)
 
@@ -625,9 +625,16 @@ const CameraAngleEnum = z.enum([
 ]);
 
 // --- Landmark Structure ---
+// Raw landmark coordinates are normalised by dividing pixel position by
+// image dimensions, so values are *usually* 0-1.  However, MLKit can report
+// positions outside the visible frame, and on Android the camera sensor is
+// landscape while the phone is portrait — MLKit returns coordinates in the
+// rotated space which, when divided by the un-rotated sensor dimension, can
+// exceed 1.0 significantly (e.g. y ≈ 1.78 for 1920/1080).  We use a wide
+// margin to accommodate all devices and edge cases.
 const LandmarkSchema = z.object({
-  x: z.number().min(0).max(1),
-  y: z.number().min(0).max(1),
+  x: z.number().min(-1.0).max(3.0),
+  y: z.number().min(-1.0).max(3.0),
   z: z.number(),
   confidence: z.number().min(0).max(1),
 });
