@@ -7,6 +7,7 @@ import {
   RegisterSchema,
   ResetPasswordSchema,
   SendRecoveryEmailSchema,
+  RefreshTokenSchema,
 } from '../schemas/auth.schema';
 import {
   getMe,
@@ -18,6 +19,7 @@ import {
   signInWithGoogle,
   signInWithGoogleWithUserData,
 } from '../controllers/auth.controller';
+
 import { CreateUserFromGoogleSchema } from '../schemas/user.schema';
 import { createUserFromGoogle } from '../controllers/user.controller';
 
@@ -55,11 +57,11 @@ router.post(
 );
 
 /**
- * @route   GET /auth/refresh
- * @desc    Refresh access token using authenticated user's session
- * @access  Protected
+ * @route   POST /auth/refresh
+ * @desc    Refresh access token using refresh token
+ * @access  Public (requires refresh token in body)
  */
-router.get('/refresh', authenticateSupabaseUser, refreshToken);
+router.post('/refresh', validateRequest(RefreshTokenSchema), refreshToken);
 
 /**
  * @route   GET /auth/me
