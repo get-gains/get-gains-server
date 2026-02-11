@@ -9,6 +9,7 @@ import {
   GetSubscribedCoachesQuery,
   SubscribeCoachParams,
   UnsubscribeCoachParams,
+  UpdateProfileInput,
 } from '../schemas/user.schema';
 
 export const createUser = async (data: CreateUserData) => {
@@ -429,5 +430,117 @@ export const unsubscribeFromCoach = async (
       stack: err.stack,
     });
     sendSingleError(res, 'Failed to unsubscribe from coach', 500);
+  }
+};
+
+/**
+ * Get current user profile (Flutter app contract: GET /users/profile).
+ * Returns { data: { user: { id, email, name, nickname, supabaseId, createdAt, updatedAt } }, errors: [] }
+ */
+export const getProfile = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const appUser = req.appUser;
+    if (!appUser) {
+      sendSingleError(res, 'Authentication required', 401);
+      return;
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: appUser.id },
+    });
+
+    if (!user) {
+      sendSingleError(res, 'User not found', 404);
+      return;
+    }
+
+    sendSuccess(res, {
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        nickname: user.nickname,
+        supabaseId: user.supabaseId,
+        createdAt: user.createdAt.toISOString(),
+        updatedAt: user.updatedAt.toISOString(),
+      },
+    });
+  } catch (error) {
+    const err = error as Error;
+    logger.error('Error fetching profile', {
+      message: err.message,
+      stack: err.stack,
+    });
+    sendSingleError(res, 'Failed to fetch profile', 500);
+  }
+};
+
+/**
+ * Update current user profile (Flutter app contract: PATCH /users/profile).
+ */
+export const updateProfile = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const appUser = req.appUser;
+    if (!appUser) {
+      sendSingleError(res, 'Authentication required', 401);
+      return;
+    }
+
+    const body = req.body as UpdateProfileInput;
+    const data: { name?: string; nickname?: string } = {};
+    if (body.name !== undefined) data.name = body.name;
+    if (body.nickname !== undefined) data.nickname = body.nickname;
+
+    if (Object.keys(data).length === 0) {
+      const user = await prisma.user.findUnique({
+        where: { id: appUser.id },
+      });
+      if (!user) {
+        sendSingleError(res, 'User not found', 404);
+        return;
+      }
+      sendSuccess(res, {
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          nickname: user.nickname,
+          supabaseId: user.supabaseId,
+          createdAt: user.createdAt.toISOString(),
+          updatedAt: user.updatedAt.toISOString(),
+        },
+      });
+      return;
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: appUser.id },
+      data,
+    });
+
+    sendSuccess(res, {
+      user: {
+        id: updated.id,
+        email: updated.email,
+        name: updated.name,
+        nickname: updated.nickname,
+        supabaseId: updated.supabaseId,
+        createdAt: updated.createdAt.toISOString(),
+        updatedAt: updated.updatedAt.toISOString(),
+      },
+    });
+  } catch (error) {
+    const err = error as Error;
+    logger.error('Error updating profile', {
+      message: err.message,
+      stack: err.stack,
+    });
+    sendSingleError(res, 'Failed to update profile', 500);
   }
 };

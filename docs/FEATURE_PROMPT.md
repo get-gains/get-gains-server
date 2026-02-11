@@ -40,8 +40,9 @@ I need you to document the [FEATURE_NAME] feature for my Express server.
 
 3. **Check existing documentation first:**
    - Review /docs/CONTEXT.md for patterns already documented
-   - Review /docs/FEATURE_INDEX.md for existing feature docs
+   - Review /docs/FEATURE_INDEX.md for existing feature docs and API contract
    - Don't duplicate what's already in CONTEXT.md - reference it instead
+   - Ensure API responses use the standard envelope: `{ data, errors }` (see FEATURE_INDEX.md → API Response Envelope)
 
 4. **Create/Update the feature documentation** with these sections:
 
@@ -68,8 +69,8 @@ I need you to document the [FEATURE_NAME] feature for my Express server.
 
    ## API Reference (for endpoint features)
    - All endpoints with method, path, description
-   - Request/response examples
-   - Error responses
+   - Request/response examples (use envelope: `{ data, errors }`)
+   - Error responses (always `{ data: null, errors: [{ message, field? }] }`)
 
    ## Configuration
    - Environment variables
@@ -116,11 +117,19 @@ Documents together:
 - Session management
 - Password utilities
 
+### User Profile (→ AUTH.md or FEATURE_INDEX)
+
+Documents together (or reference from index):
+
+- GET/PATCH/PUT /api/users/profile and /api/user/profile
+- Response shape: `data.user` with id, email, name, nickname, supabaseId, createdAt, updatedAt
+- Flutter app contract alignment (see FEATURE_INDEX.md)
+
 ### Coach Dashboard (→ COACH.md)
 
 Documents together:
 
-- Class roster (list, add, remove clients)
+- Class roster (list, remove clients; clients subscribe via /api/user/coaches)
 - Client list with filters
 - Performance reports
 - Program assignment
@@ -145,10 +154,15 @@ Documents together:
 - Middleware patterns (`/src/middleware/`)
 - Validation middleware (`validate.middleware.ts`)
 - Logger utility (`/src/utils/logger.ts`)
-- Response builder (`/src/utils/response.ts`)
+- Response builder (`/src/utils/response.ts`) — use `{ data, errors }` envelope
 - File naming conventions
 - Error handling patterns
 - Environment variables
+
+**API contract (FEATURE_INDEX.md):**
+
+- All responses: `{ data, errors }`; 404/500 use same envelope
+- Flutter-aligned paths: `/api/users/profile`, POST `/api/auth/refresh` (body), POST `/api/auth/logout`
 
 **Separate docs only for:**
 
@@ -188,6 +202,8 @@ I need you to document the Workout Management feature for my Express server.
 | Auth endpoints & flows         | features/AUTH.md                         |
 | Protecting routes with auth    | features/AUTH.md                         |
 | User model & operations        | features/AUTH.md (or USER.md if complex) |
+| User profile (GET/PATCH)       | FEATURE_INDEX.md → User Profile Endpoints |
+| API response envelope / contract | FEATURE_INDEX.md → API Response Envelope |
 | Supabase configuration         | features/AUTH.md                         |
 | Google OAuth setup             | features/AUTH.md                         |
 | Coach dashboard & class routes | features/COACH.md                        |
@@ -195,4 +211,4 @@ I need you to document the Workout Management feature for my Express server.
 
 ---
 
-_Template version: 1.0 | February 1, 2026_
+_Template version: 1.1 | February 2026_
