@@ -577,41 +577,24 @@ export const resetPassword = async (
     const { newPassword }: ResetPasswordInput = req.body;
 
     // The user is already authenticated via Bearer token (authenticateSupabaseUser middleware)
-    // Use the access token from the Authorization header to set the Supabase session
-    const authHeader = req.headers.authorization;
-    const accessToken = authHeader && authHeader.split(' ')[1];
-
-    if (!accessToken) {
-      sendSingleError(res, 'Access token is required', 400);
+    // req.user contains the validated Supabase user from getUser(token)
+    const supabaseUser = req.user;
+    if (!supabaseUser || !('id' in supabaseUser)) {
+      sendSingleError(res, 'Authentication required', 401);
       return;
     }
 
-    // Set the session so Supabase knows which user to update
-    const { error: sessionError } = await supabase.auth.setSession({
-      access_token: accessToken,
-      refresh_token: '', // Not needed for password update
-    });
+    const supabaseUserId = supabaseUser.id;
 
-    if (sessionError) {
-      logger.error('Failed to set Supabase session for password reset', {
-        error: sessionError,
-      });
-      const parsed = parseSupabaseAuthError(
-        sessionError,
-        'password reset session',
-        'Your reset link has expired. Please request a new one.',
-        401
-      );
-      sendSingleError(res, parsed.message, parsed.status);
-      return;
-    }
-
-    const { error } = await supabase.auth.updateUser({
+    // Use admin API to update the password directly
+    // This avoids needing to setSession on the shared Supabase client
+    // and doesn't require a refresh token
+    const { error } = await supabase.auth.admin.updateUserById(supabaseUserId, {
       password: newPassword,
     });
 
     if (error) {
-      logger.error('Password reset failed', { error });
+      logger.error('Password reset failed', { error, supabaseUserId });
       const parsed = parseSupabaseAuthError(
         error,
         'password reset',
