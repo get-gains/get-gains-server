@@ -16,9 +16,7 @@ import {
   exchangeCodeForSession,
   getMe,
   loginWithEmailAndPassword,
-  logout,
   refreshToken,
-  refreshTokenWithBody,
   registerWithEmailAndPassword,
   resetPassword,
   sendRecoveryEmail,
@@ -62,29 +60,11 @@ router.post(
 );
 
 /**
- * @route   GET /auth/refresh
- * @desc    Refresh access token using Bearer token
- * @access  Protected
- */
-router.get('/refresh', authenticateSupabaseUser, refreshToken);
-
-/**
  * @route   POST /auth/refresh
- * @desc    Refresh access token using refresh token in body (Flutter app contract)
- * @access  Public
+ * @desc    Refresh access token using refresh token
+ * @access  Public (requires refresh token in body)
  */
-router.post(
-  '/refresh',
-  validateRequest(RefreshTokenSchema),
-  refreshTokenWithBody
-);
-
-/**
- * @route   POST /auth/logout
- * @desc    Logout (optional; client clears tokens)
- * @access  Public
- */
-router.post('/logout', logout);
+router.post('/refresh', validateRequest(RefreshTokenSchema), refreshToken);
 
 /**
  * @route   GET /auth/me
