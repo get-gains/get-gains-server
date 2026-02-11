@@ -43,6 +43,7 @@
 | [features/PROGRAM.md](features/PROGRAM.md)           | Program creation and routine assignment (coach features) |
 | [features/COACH.md](features/COACH.md)               | Coach dashboard, class management                        |
 | [features/SUBSCRIPTION.md](features/SUBSCRIPTION.md) | Subscriptions, payments, webhooks, and promo codes       |
+| [features/VERIFY_RESET_FLOW.md](features/VERIFY_RESET_FLOW.md) | Email verification & password reset flows |
 
 ---
 
@@ -77,6 +78,8 @@ All auth-related functionality is documented together:
 | Logout                   | POST /auth/logout (client clears tokens)                 | ✅ Documented |
 | Supabase Integration     | Auth client configuration and methods                    | ✅ Documented |
 | Google OAuth             | ID token verification                                    | ✅ Documented |
+| Email Verification       | Verify email flow with PKCE code exchange                | ✅ Implemented |
+| Password Reset           | Reset password via web app redirect + token exchange     | ✅ Implemented |
 
 **Primary Files:**
 
@@ -229,6 +232,8 @@ The app unwraps `data` and treats non-empty `errors` as failure. 404 and 500 han
 | `GET`  | `/api/auth/me`                  | Get current user and isCoach status           | Yes           |
 | `POST` | `/api/auth/send-recovery-email` | Send password recovery email                  | No            |
 | `POST` | `/api/auth/reset-password`      | Reset password                                | Yes           |
+| `POST` | `/api/auth/exchange-code`       | Exchange Supabase PKCE code for session tokens | No            |
+| `POST` | `/api/auth/check-email-verified`| Check if user's email is verified             | No            |
 
 ### User Profile Endpoints (Flutter contract)
 
