@@ -1,9 +1,9 @@
 # Authentication & Security
 
 > **Status**: ✅ Documented  
-> **Last Updated**: February 10, 2026  
-> **Recent Changes**: Updated refresh token endpoint to POST with body validation  
-> **Covers**: Authentication, Auth Middleware, User Model, External Integrations (Supabase, Google OAuth)
+> **Last Updated**: February 11, 2026  
+> **Recent Changes**: Added email verification flow endpoints, updated registration to never return tokens (email verification required), updated password reset to use Bearer token only  
+> **Covers**: Authentication, Auth Middleware, User Model, External Integrations (Supabase, Google OAuth), Email Verification & Password Reset Flows
 
 ---
 
@@ -22,11 +22,13 @@ The Authentication & Security feature provides complete user identity management
 
 **This document covers:**
 - User registration with email/password
+- Email verification flow (PKCE code exchange)
 - User login with email/password
 - Google OAuth sign-in (new users and existing users)
 - Access token refresh
 - Password recovery via email
-- Password reset
+- Password reset with token exchange
+- Email verification status checking
 - **Auth Middleware** (JWT verification, route protection)
 - **User Model** (Prisma schema, user operations)
 - **Supabase Integration** (Auth client configuration)
@@ -140,12 +142,15 @@ Client Request
 │  registerWithEmailAndPassword()     │
 │  1. Check existing user in Prisma   │
 │  2. Create user in Supabase Auth    │
+│     (with emailRedirectTo)          │
 │  3. Create user record in Prisma    │
-│  4. Return tokens + user data       │
+│  4. Return user data + message      │
+│     (NO TOKENS - email verification │
+│      required before login)         │
 └─────────────────────────────────────┘
     │
     ▼
-Response: { accessToken, refreshToken, user }
+Response: { user, message: "Please check your email..." }
 ```
 
 ### Login Flow (`POST /api/auth/login`)
@@ -273,7 +278,7 @@ Response: { message: "Password recovery email sent successfully" }
 **Step 2: Reset Password (`POST /api/auth/reset-password`)**
 
 ```
-Client Request (Authorization: Bearer <token>)
+Client Request (Authorization: Bearer <recoveryToken>)
     │
     ▼
 ┌──────────────────────────┐
@@ -282,14 +287,16 @@ Client Request (Authorization: Bearer <token>)
     │
     ▼
 ┌─────────────────────┐
-│  validateRequest()  │  ← Validates: accessToken, newPassword
+│  validateRequest()  │  ← Validates: newPassword only
 └─────────────────────┘
     │
     ▼
 ┌─────────────────────────────────────┐
 │  resetPassword()                    │
-│  1. Update password via Supabase    │
-│  2. Return success message          │
+│  1. Extract token from Auth header  │
+│  2. Set Supabase session with token │
+│  3. Update password via Supabase    │
+│  4. Return success message          │
 └─────────────────────────────────────┘
     │
     ▼
@@ -304,7 +311,7 @@ Response: { message: "Password reset successfully" }
 
 #### `registerWithEmailAndPassword`
 
-Handles new user registration with email/password.
+Handles new user registration with email/password. **Now requires email verification before login.**
 
 ```typescript
 // Location: /src/controllers/auth.controller.ts
@@ -321,17 +328,23 @@ export const registerWithEmailAndPassword = async (
     where: { email: email.toLowerCase() },
   });
   
-  // 3. Create in Supabase Auth
+  // 3. Create in Supabase Auth with email verification redirect
   const { data, error } = await supabase.auth.signUp({
     email: email.toLowerCase(),
     password,
+    options: {
+      emailRedirectTo: process.env.EMAIL_VERIFICATION_REDIRECT_URL,
+    },
   });
   
   // 4. Create in Prisma DB
   const user = await createUser({ email, name, nickname, supabaseId });
   
-  // 5. Return response
-  sendSuccess(res, { accessToken, refreshToken, user }, 201);
+  // 5. Return response (NO TOKENS - email verification required)
+  sendSuccess(res, {
+    user,
+    message: 'Registration successful. Please check your email to verify your account.',
+  }, 201);
 };
 ```
 
@@ -726,7 +739,9 @@ All schemas are defined in `/src/schemas/auth.schema.ts`:
 | `LoginSchema` | email, password | Email format, password required |
 | `GoogleSignInSchema` | idToken | String, required |
 | `SendRecoveryEmailSchema` | email | Email format |
-| `ResetPasswordSchema` | accessToken, newPassword | Token required, password 8-100 chars with uppercase + special char |
+| `ResetPasswordSchema` | newPassword | Password 8-100 chars with uppercase + special char (token from header) |
+| `ExchangeCodeSchema` | code | Auth code required |
+| `CheckEmailVerifiedSchema` | email | Email format |
 
 **Password Validation Rules:**
 ```typescript
@@ -748,7 +763,9 @@ password: z.string()
 | `SUPABASE_URL` | Supabase project URL | Yes |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key | Yes |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID | Yes (for Google auth) |
-| `FLUTTER_RESET_PASSWORD_PAGE` | Redirect URL for password reset emails | Yes |
+| `WEB_APP_URL` | Web app base URL for email redirects | Yes |
+| `EMAIL_VERIFICATION_REDIRECT_URL` | Redirect URL for email verification | Yes |
+| `PASSWORD_RESET_REDIRECT_URL` | Redirect URL for password reset emails | Yes |
 
 ### Supabase Setup
 
@@ -775,7 +792,7 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 ### `POST /api/auth/register`
 
-Register a new user with email and password.
+Register a new user with email and password. **Does not return tokens** — email verification is required before login.
 
 **Request:**
 ```json
@@ -791,19 +808,20 @@ Register a new user with email and password.
 ```json
 {
   "data": {
-    "accessToken": "eyJhbGc...",
-    "refreshToken": "v1.refresh...",
     "user": {
       "id": "clx...",
       "email": "user@example.com",
       "name": "John Doe",
       "nickname": "johnd",
       "supabaseId": "uuid..."
-    }
+    },
+    "message": "Registration successful. Please check your email to verify your account."
   },
   "errors": []
 }
 ```
+
+**Note:** User must verify their email before they can log in. Attempting to log in with an unverified email will return a 403 error.
 
 **Error Response (409):**
 ```json
@@ -850,6 +868,17 @@ Login with email and password.
 {
   "data": null,
   "errors": [{ "message": "Invalid email or password" }]
+}
+```
+
+**Error Response (403 - Email Not Confirmed):**
+```json
+{
+  "data": null,
+  "errors": [{
+    "field": "email",
+    "message": "Email not confirmed. Please check your inbox and confirm your email before signing in."
+  }]
 }
 ```
 
@@ -997,7 +1026,7 @@ Send password recovery email.
 
 ### `POST /api/auth/reset-password`
 
-Reset password (requires auth with recovery token).
+Reset password using the recovery token from the password reset email. The token must be provided in the Authorization header only (not in the request body).
 
 **Headers:**
 ```
@@ -1007,7 +1036,6 @@ Authorization: Bearer <recoveryToken>
 **Request:**
 ```json
 {
-  "accessToken": "recovery-token...",
   "newPassword": "NewSecurePass1!"
 }
 ```
@@ -1021,6 +1049,88 @@ Authorization: Bearer <recoveryToken>
   "errors": []
 }
 ```
+
+**Error Response (400):**
+```json
+{
+  "data": null,
+  "errors": [{ "message": "Access token is required" }]
+}
+```
+
+**Error Response (401):**
+```json
+{
+  "data": null,
+  "errors": [{ "message": "Invalid or expired token" }]
+}
+```
+
+---
+
+### `POST /api/auth/exchange-code`
+
+Exchange a Supabase PKCE auth code for session tokens. This endpoint is called by the web app after email verification or password reset redirects.
+
+**Request:**
+```json
+{
+  "code": "pkce-auth-code-from-supabase-redirect"
+}
+```
+
+**Success Response (200):**
+```json
+{
+  "data": {
+    "accessToken": "eyJhbGc...",
+    "refreshToken": "v1.refresh...",
+    "user": {
+      "id": "clx...",
+      "email": "user@example.com",
+      "name": "John Doe",
+      "nickname": "johnd",
+      "supabaseId": "uuid..."
+    }
+  },
+  "errors": []
+}
+```
+
+**Note:** The `user` field may be `null` if the Supabase user exists but hasn't been created in the app's database yet (edge case).
+
+**Error Response (401):**
+```json
+{
+  "data": null,
+  "errors": [{ "message": "Invalid or expired code" }]
+}
+```
+
+---
+
+### `POST /api/auth/check-email-verified`
+
+Check if a user's email has been verified. Used by the Flutter app to poll verification status after registration.
+
+**Request:**
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+**Success Response (200):**
+```json
+{
+  "data": {
+    "verified": true
+  },
+  "errors": []
+}
+```
+
+**Note:** For security, this endpoint returns `verified: false` for non-existent emails (doesn't reveal if email is registered).
 
 ---
 
@@ -1096,6 +1206,7 @@ logger.error('Supabase user creation failed', { email, error: supabaseError });
 
 | Topic | Location | Description |
 |-------|----------|-------------|
+| Email Verification & Password Reset | [VERIFY_RESET_FLOW.md](VERIFY_RESET_FLOW.md) | Complete implementation guide for email verification and password reset flows |
 | Validation Middleware | [CONTEXT.md](../CONTEXT.md#middleware) | `validateRequest()` middleware pattern |
 | Response Builder | [CONTEXT.md](../CONTEXT.md#responsets---use-this-for-all-api-responses) | `sendSuccess`, `sendError` utilities |
 | Logger | [CONTEXT.md](../CONTEXT.md#loggerts---use-this-for-all-logging) | Logging utility usage |
