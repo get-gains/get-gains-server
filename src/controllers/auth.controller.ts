@@ -6,6 +6,7 @@ import {
   GoogleSignInInput,
   LoginInput,
   RegisterInput,
+  RefreshTokenInput,
   ResetPasswordInput,
   SendRecoveryEmailInput,
 } from '../schemas/auth.schema';
@@ -331,6 +332,71 @@ export const signInWithGoogleWithUserData = async (
   }
 };
 
+/**
+ * Refresh tokens using refresh token in body (Flutter app contract: POST /auth/refresh).
+ */
+export const refreshTokenWithBody = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { refreshToken: refreshTokenValue }: RefreshTokenInput = req.body;
+
+    if (!refreshTokenValue) {
+      sendSingleError(res, 'Refresh token is required', 401);
+      return;
+    }
+
+    const { data, error } = await supabase.auth.refreshSession({
+      refresh_token: refreshTokenValue,
+    });
+
+    if (error || !data.session) {
+      logger.error('Token refresh failed', { error });
+      sendSingleError(res, 'Failed to refresh token', 401);
+      return;
+    }
+
+    const supabaseId = data.session.user?.id;
+    const appUser = supabaseId ? await getUserBySupabaseId(supabaseId) : null;
+
+    if (!appUser) {
+      sendSingleError(res, 'User not found', 401);
+      return;
+    }
+
+    const coach = await prisma.coach.findUnique({
+      where: { userId: appUser.id },
+    });
+    const isCoach = !!coach;
+
+    sendSuccess(
+      res,
+      {
+        accessToken: data.session.access_token,
+        refreshToken: data.session.refresh_token,
+        user: {
+          id: appUser.id,
+          email: appUser.email,
+          name: appUser.name,
+          nickname: appUser.nickname,
+          supabaseId: appUser.supabaseId,
+          isCoach,
+        },
+      },
+      200
+    );
+    return;
+  } catch (error) {
+    logger.error('Token refresh error', error);
+    sendSingleError(res, 'Internal server error', 500);
+    return;
+  }
+};
+
+/**
+ * Refresh tokens using Bearer token (GET /auth/refresh).
+ */
 export const refreshToken = async (
   req: Request,
   res: Response
@@ -344,7 +410,6 @@ export const refreshToken = async (
       return;
     }
 
-    // Use the current token to get a refreshed session
     const { data, error } = await supabase.auth.refreshSession();
 
     if (error || !data.session) {
@@ -430,6 +495,13 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
     logger.error('getMe error', { message: err.message, stack: err.stack });
     sendSingleError(res, 'Internal server error', 500);
   }
+};
+
+/**
+ * Logout (optional, Flutter app contract). Client clears tokens locally.
+ */
+export const logout = async (req: Request, res: Response): Promise<void> => {
+  sendSuccess(res, {}, 200);
 };
 
 export const sendRecoveryEmail = async (

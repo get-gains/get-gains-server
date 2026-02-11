@@ -6,7 +6,7 @@
 
 ## Overview
 
-**Get Gains Server** is a RESTful Express.js API backend for the Get Gains fitness application. It provides authentication, user management, and supporting services for the mobile app.
+**Get Gains Server** is a RESTful Express.js API backend for the Get Gains fitness application (including the Flutter mobile app). It provides authentication, user management, profile, and supporting services. The API is designed to match the [Flutter app API contract](#api-response-envelope--flutter-contract): all responses use a `{ data, errors }` envelope, and key paths (e.g. `/api/users/profile`, `POST /api/auth/refresh`) align with what the app expects.
 
 ### Technology Stack
 
@@ -26,7 +26,8 @@
 - **REST API** with JSON responses
 - **Controller-Service pattern** for business logic separation
 - **Middleware-based** request validation and authentication
-- **Standardized API responses** with consistent `{ data, errors }` structure
+- **Standardized API responses** with consistent `{ data, errors }` structure (see [API response envelope](#api-response-envelope--flutter-contract))
+- **Flutter app compatibility**: `/api/users` mount for profile and contract-aligned auth (POST refresh with body, logout)
 
 ---
 
@@ -72,6 +73,8 @@ All auth-related functionality is documented together:
 | Token Refresh            | POST /auth/refresh with refresh token in body            | ✅ Updated    |
 | Auth Middleware          | JWT Bearer token validation (`authenticateSupabaseUser`) | ✅ Documented |
 | User Model               | Prisma schema and CRUD operations                        | ✅ Documented |
+| Token Refresh (POST)     | POST /auth/refresh with body `{ refreshToken }` (Flutter) | ✅ Documented |
+| Logout                   | POST /auth/logout (client clears tokens)                 | ✅ Documented |
 | Supabase Integration     | Auth client configuration and methods                    | ✅ Documented |
 | Google OAuth             | ID token verification                                    | ✅ Documented |
 
@@ -93,6 +96,7 @@ All auth-related functionality is documented together:
 | Coach indication (isCoach) | Login/refresh/me return isCoach                | ✅ Documented |
 | GET /auth/me               | Current user and isCoach                       | ✅ Documented |
 | Coach profile creation     | POST /coach/profile (become a coach)           | ✅ Documented |
+| User Profile (GET/PATCH)  | GET/PUT/PATCH /api/user/profile, /api/users/profile | ✅ Documented |
 | Client Coach Discovery     | Discover/search coaches (public)               | ✅ Documented |
 | Client Coach Subscription  | Subscribe/unsubscribe to coaches (clients)     | ✅ Documented |
 | Class Roster               | List and remove clients (coaches)              | ✅ Documented |
@@ -109,7 +113,7 @@ All auth-related functionality is documented together:
 - `/src/routes/coach.routes.ts`
 - `/src/routes/class.routes.ts`
 - `/src/routes/program.routes.ts`
-- `/src/controllers/user.controller.ts` (client coach selection)
+- `/src/controllers/user.controller.ts` (profile, client coach selection)
 - `/src/controllers/coach.controller.ts`
 - `/src/schemas/user.schema.ts` (client coach selection)
 - `/src/schemas/coach.schema.ts`
@@ -185,8 +189,19 @@ In-app purchases, subscriptions, and promo codes:
 | Feature           | Description             | Status             | Location |
 | ----------------- | ----------------------- | ------------------ | -------- |
 | Progress Tracking | User progress and stats | 🔮 Not Implemented | -        |
-| User Settings     | Preferences and profile | 🔮 Not Implemented | -        |
+| User Settings     | Preferences beyond profile | 🔮 Not Implemented | -        |
 | Personal Records  | PR tracking and history | 🔮 Not Implemented | -        |
+
+---
+
+## API Response Envelope (Flutter contract)
+
+Every API response uses this shape:
+
+- **Success:** `{ "data": <payload>, "errors": [] }`
+- **Error:** `{ "data": null, "errors": [{ "field": "optional", "message": "Required" }] }`
+
+The app unwraps `data` and treats non-empty `errors` as failure. 404 and 500 handlers also return this envelope.
 
 ---
 
@@ -208,10 +223,22 @@ In-app purchases, subscriptions, and promo codes:
 | `POST` | `/api/auth/google`              | Sign in with Google (new user flow)           | No            |
 | `POST` | `/api/auth/google/link`         | Link Google account to existing user          | Yes           |
 | `POST` | `/api/auth/login/google`        | Login with Google (existing user)             | No            |
-| `GET`  | `/api/auth/refresh`             | Refresh access token (returns user + isCoach) | Yes           |
+| `GET`  | `/api/auth/refresh`             | Refresh token (Bearer)                        | Yes           |
+| `POST` | `/api/auth/refresh`             | Refresh token (body `{ refreshToken }`, Flutter) | No         |
+| `POST` | `/api/auth/logout`              | Logout (client clears tokens)                 | No            |
 | `GET`  | `/api/auth/me`                  | Get current user and isCoach status           | Yes           |
 | `POST` | `/api/auth/send-recovery-email` | Send password recovery email                  | No            |
 | `POST` | `/api/auth/reset-password`      | Reset password                                | Yes           |
+
+### User Profile Endpoints (Flutter contract)
+
+| Method   | Endpoint                | Description                          | Auth Required |
+| -------- | ----------------------- | ------------------------------------ | ------------- |
+| `GET`    | `/api/users/profile`    | Current user profile (data.user)     | Yes           |
+| `GET`    | `/api/user/profile`     | Same as above                         | Yes           |
+| `PATCH`  | `/api/users/profile`    | Update name/nickname                 | Yes           |
+| `PUT`    | `/api/users/profile`    | Same as PATCH                         | Yes           |
+| `PATCH`  | `/api/user/profile`     | Same as above                         | Yes           |
 
 ### Client Coach Selection Endpoints
 
@@ -337,6 +364,8 @@ Request → CORS → JSON Parser → Route Matcher → Validation Middleware →
 | Auth endpoints & flows       | [features/AUTH.md](features/AUTH.md)                                    |
 | Protecting routes            | [features/AUTH.md](features/AUTH.md) → Auth Middleware                  |
 | User model                   | [features/AUTH.md](features/AUTH.md) → User Model                       |
+| User profile (GET/PATCH)     | This file → User Profile Endpoints; Flutter contract                   |
+| API response envelope       | This file → API Response Envelope                                     |
 | Exercises & routines         | [features/WORKOUT.md](features/WORKOUT.md)                              |
 | Workout sessions & sets      | [features/WORKOUT.md](features/WORKOUT.md) → API Endpoints              |
 | Offline sync (batch sets)    | [features/WORKOUT.md](features/WORKOUT.md) → Offline Sync               |
@@ -402,4 +431,4 @@ features/*.md       → Domain-specific feature documentation
 
 ---
 
-_Last updated: February 4, 2026_
+_Last updated: February 2026_

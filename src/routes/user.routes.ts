@@ -9,15 +9,46 @@ import {
   GetSubscribedCoachesSchema,
   SubscribeCoachSchema,
   UnsubscribeCoachSchema,
+  UpdateProfileSchema,
 } from '../schemas/user.schema';
 import {
   discoverCoaches,
   getSubscribedCoaches,
   subscribeToCoach,
   unsubscribeFromCoach,
+  getProfile,
+  updateProfile,
 } from '../controllers/user.controller';
 
 const router = Router();
+
+/**
+ * @route   GET /user/profile or /users/profile
+ * @desc    Current user profile (Flutter app contract)
+ * @access  Protected
+ */
+router.get('/profile', authenticateSupabaseUser, requireAppUser, getProfile);
+
+/**
+ * @route   PATCH /user/profile or /users/profile
+ * @desc    Update current user profile
+ * @access  Protected
+ */
+router.patch(
+  '/profile',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(UpdateProfileSchema),
+  updateProfile
+);
+
+router.put(
+  '/profile',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(UpdateProfileSchema),
+  updateProfile
+);
 
 /**
  * @route   GET /user/coaches
