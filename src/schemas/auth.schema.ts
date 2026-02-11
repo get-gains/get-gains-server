@@ -76,7 +76,6 @@ export type SendRecoveryEmailInput = z.infer<
 
 export const ResetPasswordSchema = z.object({
   body: z.object({
-    accessToken: z.string().min(1, 'Reset token is required'),
     newPassword: z
       .string()
       .min(8, 'Password must be at least 8 characters')
@@ -93,3 +92,27 @@ export const ResetPasswordSchema = z.object({
 });
 
 export type ResetPasswordInput = z.infer<typeof ResetPasswordSchema>['body'];
+
+/**
+ * Schema for exchanging Supabase auth code for session
+ */
+export const ExchangeCodeSchema = z.object({
+  body: z.object({
+    code: z.string().min(1, 'Auth code is required'),
+  }),
+});
+
+export type ExchangeCodeInput = z.infer<typeof ExchangeCodeSchema>['body'];
+
+/**
+ * Schema for checking if a user's email has been verified
+ */
+export const CheckEmailVerifiedSchema = z.object({
+  body: z.object({
+    email: z.email(),
+  }),
+});
+
+export type CheckEmailVerifiedInput = z.infer<
+  typeof CheckEmailVerifiedSchema
+>['body'];

@@ -3,6 +3,8 @@ import prisma from '../config/database';
 import { logger } from '../utils/logger';
 import { sendSuccess, sendSingleError } from '../utils/response';
 import {
+  CheckEmailVerifiedInput,
+  ExchangeCodeInput,
   GoogleSignInInput,
   LoginInput,
   RegisterInput,
@@ -34,10 +36,13 @@ export const registerWithEmailAndPassword = async (
       return;
     }
 
-    // Create user in supabase
+    // Create user in supabase with email verification redirect
     const { data, error: supabaseError } = await supabase.auth.signUp({
       email: email.toLowerCase(),
       password,
+      options: {
+        emailRedirectTo: process.env.EMAIL_VERIFICATION_REDIRECT_URL,
+      },
     });
 
     if (supabaseError || !data.user) {
@@ -53,30 +58,7 @@ export const registerWithEmailAndPassword = async (
 
     const user = await createUser({ email, name, nickname, supabaseId });
 
-    const session = data.session;
-    if (session?.access_token && session?.refresh_token) {
-      const coach = await prisma.coach.findUnique({
-        where: { userId: user.id },
-      });
-      sendSuccess(
-        res,
-        {
-          accessToken: session.access_token,
-          refreshToken: session.refresh_token,
-          user: {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            nickname: user.nickname,
-            supabaseId: user.supabaseId,
-            isCoach: !!coach,
-          },
-        },
-        201
-      );
-      return;
-    }
-
+    // Always return user data without tokens — email verification is required
     sendSuccess(
       res,
       {
@@ -87,6 +69,8 @@ export const registerWithEmailAndPassword = async (
           nickname: user.nickname,
           supabaseId: user.supabaseId,
         },
+        message:
+          'Registration successful. Please check your email to verify your account.',
       },
       201
     );
@@ -442,7 +426,7 @@ export const sendRecoveryEmail = async (
     const { error } = await supabase.auth.resetPasswordForEmail(
       email.toLowerCase(),
       {
-        redirectTo: process.env.FLUTTER_RESET_PASSWORD_PAGE,
+        redirectTo: process.env.PASSWORD_RESET_REDIRECT_URL,
       }
     );
 
@@ -470,10 +454,29 @@ export const resetPassword = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { accessToken, newPassword }: ResetPasswordInput = req.body;
+    const { newPassword }: ResetPasswordInput = req.body;
 
-    if (!accessToken || typeof accessToken !== 'string') {
+    // The user is already authenticated via Bearer token (authenticateSupabaseUser middleware)
+    // Use the access token from the Authorization header to set the Supabase session
+    const authHeader = req.headers.authorization;
+    const accessToken = authHeader && authHeader.split(' ')[1];
+
+    if (!accessToken) {
       sendSingleError(res, 'Access token is required', 400);
+      return;
+    }
+
+    // Set the session so Supabase knows which user to update
+    const { error: sessionError } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: '', // Not needed for password update
+    });
+
+    if (sessionError) {
+      logger.error('Failed to set Supabase session for password reset', {
+        error: sessionError,
+      });
+      sendSingleError(res, 'Invalid or expired token', 401);
       return;
     }
 
@@ -493,5 +496,106 @@ export const resetPassword = async (
     logger.error('Password reset error', error);
     sendSingleError(res, 'Internal server error', 500);
     return;
+  }
+};
+
+/**
+ * Exchange Supabase auth code for session tokens.
+ *
+ * This endpoint is called by the web app after Supabase redirects
+ * with a PKCE auth code (from email verification or password reset links).
+ *
+ * The Supabase code is exchanged server-side using the service role client
+ * to get a valid session with access and refresh tokens.
+ *
+ * POST /api/auth/exchange-code
+ */
+export const exchangeCodeForSession = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { code }: ExchangeCodeInput = req.body;
+
+    logger.debug('Exchanging auth code for session');
+
+    // Exchange the code for a session using Supabase
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+
+    if (error || !data.session) {
+      logger.error('Code exchange failed', { error });
+      sendSingleError(res, 'Invalid or expired code', 401);
+      return;
+    }
+
+    const { session, user } = data;
+
+    // Check if this user exists in our database
+    const appUser = await prisma.user.findUnique({
+      where: { supabaseId: user.id },
+    });
+
+    sendSuccess(res, {
+      accessToken: session.access_token,
+      refreshToken: session.refresh_token,
+      user: appUser
+        ? {
+            id: appUser.id,
+            email: appUser.email,
+            name: appUser.name,
+            nickname: appUser.nickname,
+            supabaseId: appUser.supabaseId,
+          }
+        : null,
+    });
+  } catch (error) {
+    logger.error('Code exchange error', error);
+    sendSingleError(res, 'Internal server error', 500);
+  }
+};
+
+/**
+ * Check if a user's email has been verified in Supabase.
+ * Used by the Flutter app's "Check Email" screen to poll verification status.
+ *
+ * POST /api/auth/check-email-verified
+ */
+export const checkEmailVerified = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { email }: CheckEmailVerifiedInput = req.body;
+
+    logger.debug('Checking email verification status', { email });
+
+    // Use the admin API to look up the user by email
+    const { data, error } = await supabase.auth.admin.listUsers();
+
+    if (error) {
+      logger.error('Failed to check email verification status', {
+        email,
+        error,
+      });
+      sendSingleError(res, 'Failed to check verification status', 500);
+      return;
+    }
+
+    const supabaseUser = data.users.find(
+      (u) => u.email?.toLowerCase() === email.toLowerCase()
+    );
+
+    if (!supabaseUser) {
+      // Don't reveal whether the email exists — return unverified
+      sendSuccess(res, { verified: false });
+      return;
+    }
+
+    const verified = !!supabaseUser.email_confirmed_at;
+
+    sendSuccess(res, { verified });
+  } catch (error) {
+    logger.error('Check email verified error', error);
+    sendSingleError(res, 'Internal server error', 500);
   }
 };
