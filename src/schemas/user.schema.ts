@@ -93,3 +93,17 @@ export const UnsubscribeCoachSchema = z.object({
 export type UnsubscribeCoachParams = z.infer<
   typeof UnsubscribeCoachSchema
 >['params'];
+
+/**
+ * Schema for updating user profile (Flutter app contract: PATCH /users/profile)
+ */
+export const UpdateProfileSchema = z.object({
+  body: z
+    .object({
+      name: z.string().min(1).max(100).optional(),
+      nickname: z.string().min(1).max(50).optional(),
+    })
+    .strict(),
+});
+
+export type UpdateProfileInput = z.infer<typeof UpdateProfileSchema>['body'];
