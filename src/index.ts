@@ -47,17 +47,24 @@ const startServer = () => {
   app.use('/api/coach', coachRoutes);
   app.use('/api/user', userRoutes);
   app.use('/api/pose', poseRoutes);
+  app.use('/api/users', userRoutes);
 
-  // 404 Handler
+  // 404 Handler (contract: data + errors envelope)
   app.use((req: Request, res: Response) => {
     logger.warn(`Route not found: ${req.method} ${req.path}`);
-    res.status(404).json({ error: 'Route not found' });
+    res.status(404).json({
+      data: null,
+      errors: [{ message: 'Route not found' }],
+    });
   });
 
-  // Error Handler - Must have 4 parameters including 'next'
+  // Error Handler (contract: data + errors envelope)
   app.use((err: Error, req: Request, res: Response) => {
     logger.error('Unhandled error:', err);
-    res.status(500).json({ error: 'Something went wrong!' });
+    res.status(500).json({
+      data: null,
+      errors: [{ message: 'Something went wrong!' }],
+    });
   });
 
   app.listen(PORT, () => {
