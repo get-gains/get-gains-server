@@ -1,7 +1,8 @@
 # Authentication & Security
 
 > **Status**: ✅ Documented  
-> **Last Updated**: January 27, 2026  
+> **Last Updated**: February 10, 2026  
+> **Recent Changes**: Updated refresh token endpoint to POST with body validation  
 > **Covers**: Authentication, Auth Middleware, User Model, External Integrations (Supabase, Google OAuth)
 
 ---
@@ -220,26 +221,29 @@ Client Request (idToken from Google)
 Response: { accessToken, refreshToken, user }
 ```
 
-### Token Refresh Flow (`GET /api/auth/refresh`)
+### Token Refresh Flow (`POST /api/auth/refresh`)
 
 ```
-Client Request (Authorization: Bearer <token>)
+Client Request (refreshToken in body)
     │
     ▼
-┌──────────────────────────┐
-│  authenticateSupabaseUser│  ← Verifies token, attaches user to req
-└──────────────────────────┘
+┌─────────────────────┐
+│  validateRequest()  │  ← Validates: refreshToken
+│ (RefreshTokenSchema)│
+└─────────────────────┘
     │
     ▼
 ┌─────────────────────────────────────┐
 │  refreshToken()                     │
-│  1. Extract token from header       │
-│  2. Refresh session with Supabase   │
-│  3. Return new tokens               │
+│  1. Extract refreshToken from body  │
+│  2. Call supabase.auth.refreshSess│
+│     ion({ refresh_token })          │
+│  3. Lookup user in Prisma DB        │
+│  4. Return new tokens + user data   │
 └─────────────────────────────────────┘
     │
     ▼
-Response: { accessToken, refreshToken }
+Response: { accessToken, refreshToken, user }
 ```
 
 ### Password Recovery Flow
@@ -923,13 +927,15 @@ Login with Google (for existing users).
 
 ---
 
-### `GET /api/auth/refresh`
+### `POST /api/auth/refresh`
 
-Refresh access token.
+Refresh access token using refresh token.
 
-**Headers:**
-```
-Authorization: Bearer <accessToken>
+**Request:**
+```json
+{
+  "refreshToken": "v1.refresh..."
+}
 ```
 
 **Success Response (200):**
@@ -937,9 +943,30 @@ Authorization: Bearer <accessToken>
 {
   "data": {
     "accessToken": "eyJhbGc...",
-    "refreshToken": "v1.refresh..."
+    "refreshToken": "v1.refresh...",
+    "user": {
+      "id": "uuid",
+      "email": "user@example.com",
+      "name": "John Doe",
+      "nickname": "john",
+      "supabaseId": "uuid",
+      "isCoach": false
+    }
   },
   "errors": []
+}
+```
+
+**Error Response (401):**
+```json
+{
+  "data": null,
+  "errors": [
+    {
+      "field": null,
+      "message": "Failed to refresh token"
+    }
+  ]
 }
 ```
 
