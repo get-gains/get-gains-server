@@ -16,6 +16,21 @@ export const GetExercisesSchema = z.object({
 
 export type GetExercisesQuery = z.infer<typeof GetExercisesSchema>['query'];
 
+/**
+ * Schema for creating an exercise (coach only)
+ */
+export const CreateExerciseSchema = z.object({
+  body: z.object({
+    name: z.string().min(1, 'Exercise name is required').max(100),
+    description: z.string().min(1, 'Description is required').max(2000),
+    primaryMuscleGroup: z.string().min(1, 'Primary muscle group is required'),
+    targetMuscles: z.array(z.string()).optional().default([]),
+    equipmentNeeded: z.array(z.string()).optional().default([]),
+  }),
+});
+
+export type CreateExerciseInput = z.infer<typeof CreateExerciseSchema>['body'];
+
 // ============== Routine Schemas ==============
 
 /**
