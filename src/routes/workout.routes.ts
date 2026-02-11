@@ -1,8 +1,12 @@
 import { Router } from 'express';
 import { validateRequest } from '../middleware/validate.middleware';
-import { authenticateSupabaseUser } from '../middleware/auth.middleware';
+import {
+  authenticateSupabaseUser,
+  requireCoach,
+} from '../middleware/auth.middleware';
 import {
   GetExercisesSchema,
+  CreateExerciseSchema,
   GetRoutinesSchema,
   GetRoutineByIdSchema,
   StartWorkoutSessionSchema,
@@ -16,6 +20,7 @@ import {
 } from '../schemas/workout.schema';
 import {
   getExercises,
+  createExercise,
   getRoutines,
   getRoutineById,
   startWorkoutSession,
@@ -43,6 +48,19 @@ router.get(
   authenticateSupabaseUser,
   validateRequest(GetExercisesSchema),
   getExercises
+);
+
+/**
+ * @route   POST /workout/exercises
+ * @desc    Create a new exercise (coach only)
+ * @access  Protected (Coach)
+ */
+router.post(
+  '/exercises',
+  authenticateSupabaseUser,
+  requireCoach,
+  validateRequest(CreateExerciseSchema),
+  createExercise
 );
 
 // ============== Routine Routes ==============
