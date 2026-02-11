@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { validateRequest } from '../middleware/validate.middleware';
 import { authenticateSupabaseUser } from '../middleware/auth.middleware';
 import {
+  ExchangeCodeSchema,
+  CheckEmailVerifiedSchema,
   GoogleSignInSchema,
   LoginSchema,
   RegisterSchema,
@@ -10,11 +12,11 @@ import {
   SendRecoveryEmailSchema,
 } from '../schemas/auth.schema';
 import {
+  checkEmailVerified,
+  exchangeCodeForSession,
   getMe,
   loginWithEmailAndPassword,
-  logout,
   refreshToken,
-  refreshTokenWithBody,
   registerWithEmailAndPassword,
   resetPassword,
   sendRecoveryEmail,
@@ -58,29 +60,11 @@ router.post(
 );
 
 /**
- * @route   GET /auth/refresh
- * @desc    Refresh access token using Bearer token
- * @access  Protected
- */
-router.get('/refresh', authenticateSupabaseUser, refreshToken);
-
-/**
  * @route   POST /auth/refresh
- * @desc    Refresh access token using refresh token in body (Flutter app contract)
- * @access  Public
+ * @desc    Refresh access token using refresh token
+ * @access  Public (requires refresh token in body)
  */
-router.post(
-  '/refresh',
-  validateRequest(RefreshTokenSchema),
-  refreshTokenWithBody
-);
-
-/**
- * @route   POST /auth/logout
- * @desc    Logout (optional; client clears tokens)
- * @access  Public
- */
-router.post('/logout', logout);
+router.post('/refresh', validateRequest(RefreshTokenSchema), refreshToken);
 
 /**
  * @route   GET /auth/me
@@ -127,6 +111,28 @@ router.post(
   authenticateSupabaseUser,
   validateRequest(ResetPasswordSchema),
   resetPassword
+);
+
+/**
+ * @route   POST /auth/exchange-code
+ * @desc    Exchange Supabase PKCE auth code for session tokens
+ * @access  Public (called by web app)
+ */
+router.post(
+  '/exchange-code',
+  validateRequest(ExchangeCodeSchema),
+  exchangeCodeForSession
+);
+
+/**
+ * @route   POST /auth/check-email-verified
+ * @desc    Check if user's email is verified
+ * @access  Public
+ */
+router.post(
+  '/check-email-verified',
+  validateRequest(CheckEmailVerifiedSchema),
+  checkEmailVerified
 );
 
 export default router;
