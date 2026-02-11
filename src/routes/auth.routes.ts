@@ -7,6 +7,7 @@ import {
   GoogleSignInSchema,
   LoginSchema,
   RegisterSchema,
+  RefreshTokenSchema,
   ResetPasswordSchema,
   SendRecoveryEmailSchema,
 } from '../schemas/auth.schema';
@@ -15,7 +16,9 @@ import {
   exchangeCodeForSession,
   getMe,
   loginWithEmailAndPassword,
+  logout,
   refreshToken,
+  refreshTokenWithBody,
   registerWithEmailAndPassword,
   resetPassword,
   sendRecoveryEmail,
@@ -60,10 +63,28 @@ router.post(
 
 /**
  * @route   GET /auth/refresh
- * @desc    Refresh access token using authenticated user's session
+ * @desc    Refresh access token using Bearer token
  * @access  Protected
  */
 router.get('/refresh', authenticateSupabaseUser, refreshToken);
+
+/**
+ * @route   POST /auth/refresh
+ * @desc    Refresh access token using refresh token in body (Flutter app contract)
+ * @access  Public
+ */
+router.post(
+  '/refresh',
+  validateRequest(RefreshTokenSchema),
+  refreshTokenWithBody
+);
+
+/**
+ * @route   POST /auth/logout
+ * @desc    Logout (optional; client clears tokens)
+ * @access  Public
+ */
+router.post('/logout', logout);
 
 /**
  * @route   GET /auth/me
