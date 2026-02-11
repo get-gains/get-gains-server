@@ -423,6 +423,11 @@ export const sendRecoveryEmail = async (
   try {
     const { email }: SendRecoveryEmailInput = req.body;
 
+    logger.debug('Password recovery email request', { email });
+    logger.debug('Using password reset redirect URL', {
+      url: process.env.PASSWORD_RESET_REDIRECT_URL,
+    });
+
     const { error } = await supabase.auth.resetPasswordForEmail(
       email.toLowerCase(),
       {
