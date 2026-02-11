@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { validateRequest } from '../middleware/validate.middleware';
 import { authenticateSupabaseUser } from '../middleware/auth.middleware';
 import {
+  ExchangeCodeSchema,
+  CheckEmailVerifiedSchema,
   GoogleSignInSchema,
   LoginSchema,
   RegisterSchema,
@@ -10,6 +12,8 @@ import {
   SendRecoveryEmailSchema,
 } from '../schemas/auth.schema';
 import {
+  checkEmailVerified,
+  exchangeCodeForSession,
   getMe,
   loginWithEmailAndPassword,
   logout,
@@ -127,6 +131,28 @@ router.post(
   authenticateSupabaseUser,
   validateRequest(ResetPasswordSchema),
   resetPassword
+);
+
+/**
+ * @route   POST /auth/exchange-code
+ * @desc    Exchange Supabase PKCE auth code for session tokens
+ * @access  Public (called by web app)
+ */
+router.post(
+  '/exchange-code',
+  validateRequest(ExchangeCodeSchema),
+  exchangeCodeForSession
+);
+
+/**
+ * @route   POST /auth/check-email-verified
+ * @desc    Check if user's email is verified
+ * @access  Public
+ */
+router.post(
+  '/check-email-verified',
+  validateRequest(CheckEmailVerifiedSchema),
+  checkEmailVerified
 );
 
 export default router;
