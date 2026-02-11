@@ -14,6 +14,7 @@ import {
 import supabase from '../config/supabase';
 import { createUser, getUserBySupabaseId } from './user.controller';
 import googleClient from '../config/google';
+import { parseSupabaseAuthError } from '../utils/supabase-error';
 
 // User registration handler
 export const registerWithEmailAndPassword = async (
@@ -50,7 +51,20 @@ export const registerWithEmailAndPassword = async (
         email,
         error: supabaseError,
       });
-      sendSingleError(res, 'Failed to create user', 500);
+      if (supabaseError) {
+        const parsed = parseSupabaseAuthError(
+          supabaseError,
+          'registration',
+          'Failed to create account. Please try again.'
+        );
+        sendSingleError(res, parsed.message, parsed.status);
+      } else {
+        sendSingleError(
+          res,
+          'Failed to create account. Please try again.',
+          500
+        );
+      }
       return;
     }
 
@@ -118,7 +132,20 @@ export const signInWithGoogle = async (
         email: payload.email,
         error: supabaseError,
       });
-      sendSingleError(res, 'Failed to sign in with Google', 500);
+      if (supabaseError) {
+        const parsed = parseSupabaseAuthError(
+          supabaseError,
+          'google sign-in',
+          'Failed to sign in with Google. Please try again.'
+        );
+        sendSingleError(res, parsed.message, parsed.status);
+      } else {
+        sendSingleError(
+          res,
+          'Failed to sign in with Google. Please try again.',
+          500
+        );
+      }
       return;
     }
 
@@ -159,24 +186,22 @@ export const loginWithEmailAndPassword = async (
     });
 
     if (error || !data.user) {
-      const msg = (error?.message ?? '').toLowerCase();
-      const isEmailNotConfirmed =
-        msg.includes('email not confirmed') ||
-        msg.includes('not confirmed') ||
-        msg.includes('not authorized') ||
-        msg.includes('cannot be used');
-      if (isEmailNotConfirmed) {
-        logger.debug('Login failed: Email not confirmed', { email });
-        sendSingleError(
-          res,
-          'Email not confirmed. Please check your inbox and confirm your email before signing in.',
-          403,
-          'email'
+      logger.debug('Login failed', {
+        email,
+        code: (error as any)?.code,
+        message: error?.message,
+      });
+      if (error) {
+        const parsed = parseSupabaseAuthError(
+          error,
+          'login',
+          'Invalid email or password.',
+          401
         );
-        return;
+        sendSingleError(res, parsed.message, parsed.status, 'email');
+      } else {
+        sendSingleError(res, 'Invalid email or password.', 401);
       }
-      logger.debug('Login failed: Invalid credentials', { email });
-      sendSingleError(res, 'Invalid email or password', 401);
       return;
     }
 
@@ -267,7 +292,20 @@ export const signInWithGoogleWithUserData = async (
         email: payload.email,
         error: supabaseError,
       });
-      sendSingleError(res, 'Failed to sign in with Google', 500);
+      if (supabaseError) {
+        const parsed = parseSupabaseAuthError(
+          supabaseError,
+          'google login',
+          'Failed to sign in with Google. Please try again.'
+        );
+        sendSingleError(res, parsed.message, parsed.status);
+      } else {
+        sendSingleError(
+          res,
+          'Failed to sign in with Google. Please try again.',
+          500
+        );
+      }
       return;
     }
 
@@ -437,7 +475,12 @@ export const sendRecoveryEmail = async (
 
     if (error) {
       logger.error('Password recovery email failed', { email, error });
-      sendSingleError(res, 'Failed to send recovery email', 500);
+      const parsed = parseSupabaseAuthError(
+        error,
+        'password recovery',
+        'Failed to send recovery email. Please try again.'
+      );
+      sendSingleError(res, parsed.message, parsed.status);
       return;
     }
 
@@ -481,7 +524,13 @@ export const resetPassword = async (
       logger.error('Failed to set Supabase session for password reset', {
         error: sessionError,
       });
-      sendSingleError(res, 'Invalid or expired token', 401);
+      const parsed = parseSupabaseAuthError(
+        sessionError,
+        'password reset session',
+        'Your reset link has expired. Please request a new one.',
+        401
+      );
+      sendSingleError(res, parsed.message, parsed.status);
       return;
     }
 
@@ -491,7 +540,12 @@ export const resetPassword = async (
 
     if (error) {
       logger.error('Password reset failed', { error });
-      sendSingleError(res, 'Failed to reset password', 500);
+      const parsed = parseSupabaseAuthError(
+        error,
+        'password reset',
+        'Failed to reset password. Please try again.'
+      );
+      sendSingleError(res, parsed.message, parsed.status);
       return;
     }
 
@@ -529,7 +583,21 @@ export const exchangeCodeForSession = async (
 
     if (error || !data.session) {
       logger.error('Code exchange failed', { error });
-      sendSingleError(res, 'Invalid or expired code', 401);
+      if (error) {
+        const parsed = parseSupabaseAuthError(
+          error,
+          'code exchange',
+          'This link is invalid or has expired. Please request a new one.',
+          401
+        );
+        sendSingleError(res, parsed.message, parsed.status);
+      } else {
+        sendSingleError(
+          res,
+          'This link is invalid or has expired. Please request a new one.',
+          401
+        );
+      }
       return;
     }
 
