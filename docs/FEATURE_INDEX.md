@@ -40,6 +40,7 @@
 | [FEATURE_PROMPT.md](FEATURE_PROMPT.md)               | Reusable prompt for generating feature docs              |
 | [features/AUTH.md](features/AUTH.md)                 | Authentication & security feature                        |
 | [features/USER.md](features/USER.md)                 | User profile management (GET/PATCH/PUT)                  |
+| [features/USER_PROFILE.md](features/USER_PROFILE.md) | Extended user profile CRUD (onboarding, fitness stats)   |
 | [features/WORKOUT.md](features/WORKOUT.md)           | Workout, exercises, routines, sessions, and set logging  |
 | [features/PROGRAM.md](features/PROGRAM.md)           | Program creation and routine assignment (coach features) |
 | [features/COACH.md](features/COACH.md)               | Coach dashboard, class management                        |
@@ -94,9 +95,28 @@ All auth-related functionality is documented together:
 - `/src/config/google.ts`
 - `/prisma/schema.prisma`
 
+### User Profile _(Documented in [features/USER_PROFILE.md](features/USER_PROFILE.md))_
+
+Extended fitness profile management (separate from basic User model):
+
+| Feature             | Description                                | Status        |
+| ------------------- | ------------------------------------------ | ------------- |
+| Profile Retrieval   | GET /api/profile (returns null if not set up) | ✅ Documented |
+| Profile Creation    | POST /api/profile (onboarding)             | ✅ Documented |
+| Profile Update      | PATCH/PUT /api/profile                     | ✅ Documented |
+| Coach Client Access | GET /api/profile/clients/:userId           | ✅ Documented |
+| Response Envelope   | data.profile with errors array             | ✅ Documented |
+
+**Primary Files:**
+
+- `/src/routes/profile.routes.ts`
+- `/src/controllers/profile.controller.ts`
+- `/src/schemas/profile.schema.ts`
+- `/prisma/schema.prisma` (UserProfile model)
+
 ### User Profile _(Documented in [features/USER.md](features/USER.md))_
 
-User profile management endpoints (Flutter contract):
+User account management endpoints (basic identity):
 
 | Feature             | Description                                | Status        |
 | ------------------- | ------------------------------------------ | ------------- |
