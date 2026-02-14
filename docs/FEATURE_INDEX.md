@@ -39,6 +39,7 @@
 | [FEATURE_INDEX.md](FEATURE_INDEX.md)                 | This file - navigation hub                               |
 | [FEATURE_PROMPT.md](FEATURE_PROMPT.md)               | Reusable prompt for generating feature docs              |
 | [features/AUTH.md](features/AUTH.md)                 | Authentication & security feature                        |
+| [features/USER.md](features/USER.md)                 | User profile management (GET/PATCH/PUT)                  |
 | [features/WORKOUT.md](features/WORKOUT.md)           | Workout, exercises, routines, sessions, and set logging  |
 | [features/PROGRAM.md](features/PROGRAM.md)           | Program creation and routine assignment (coach features) |
 | [features/COACH.md](features/COACH.md)               | Coach dashboard, class management                        |
@@ -92,6 +93,24 @@ All auth-related functionality is documented together:
 - `/src/config/supabase.ts`
 - `/src/config/google.ts`
 - `/prisma/schema.prisma`
+
+### User Profile _(Documented in [features/USER.md](features/USER.md))_
+
+User profile management endpoints (Flutter contract):
+
+| Feature             | Description                                | Status        |
+| ------------------- | ------------------------------------------ | ------------- |
+| Profile Retrieval   | GET /api/users/profile, /api/user/profile | ✅ Documented |
+| Profile Update      | PATCH/PUT /api/users/profile              | ✅ Documented |
+| Dual Endpoint       | Both /user and /users paths supported      | ✅ Documented |
+| Response Envelope   | data.user with errors array                | ✅ Documented |
+
+**Primary Files:**
+
+- `/src/routes/user.routes.ts`
+- `/src/controllers/user.controller.ts`
+- `/src/schemas/user.schema.ts`
+- `/src/middleware/auth.middleware.ts`
 
 ### Coach Dashboard _(Documented in [features/COACH.md](features/COACH.md))_
 
@@ -409,8 +428,8 @@ Request → CORS → JSON Parser → Route Matcher → Validation Middleware →
 | Auth endpoints & flows       | [features/AUTH.md](features/AUTH.md)                                    |
 | Protecting routes            | [features/AUTH.md](features/AUTH.md) → Auth Middleware                  |
 | User model                   | [features/AUTH.md](features/AUTH.md) → User Model                       |
-| User profile (GET/PATCH)     | This file → User Profile Endpoints; Flutter contract                   |
-| API response envelope       | This file → API Response Envelope                                     |
+| User profile (GET/PATCH)     | [features/USER.md](features/USER.md)                                    |
+| API response envelope        | This file → API Response Envelope                                       |
 | Exercises & routines         | [features/WORKOUT.md](features/WORKOUT.md)                              |
 | Workout sessions & sets      | [features/WORKOUT.md](features/WORKOUT.md) → API Endpoints              |
 | Offline sync (batch sets)    | [features/WORKOUT.md](features/WORKOUT.md) → Offline Sync               |
