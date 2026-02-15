@@ -13,6 +13,9 @@ import { sendError, sendSingleError } from '../utils/response';
 export const validateRequest = <T extends z.ZodTypeAny>(schema: T) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // Validate request data against schema
+      // Note: Express 5 made body/query/params read-only, so we can't replace them
+      // The validation ensures the data is valid; controllers use the original values
       await schema.parseAsync({
         body: req.body,
         query: req.query,
