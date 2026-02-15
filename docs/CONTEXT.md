@@ -312,6 +312,11 @@ try {
 | `GOOGLE_CALLBACK_URL`            | Google OAuth callback URL                 | `/api/auth/google/callback` |
 | `GOOGLE_PLAY_PACKAGE_NAME`       | Android app package name                  | Required for subscriptions  |
 | `GOOGLE_SERVICE_ACCOUNT_KEY_PATH`| Path to Google service account JSON       | `google-services.json`      |
+| `S3_ENDPOINT`                    | S3-compatible storage endpoint (Railway Buckets) | Required for file uploads |
+| `S3_REGION`                      | S3 region                                 | `us-east-1`                 |
+| `S3_ACCESS_KEY_ID`               | S3 access key ID                          | Required for file uploads   |
+| `S3_SECRET_ACCESS_KEY`           | S3 secret access key                      | Required for file uploads   |
+| `S3_BUCKET_NAME`                 | S3 bucket name for avatar storage         | Required for file uploads   |
 
 ---
 

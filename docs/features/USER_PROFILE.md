@@ -11,6 +11,7 @@ The **User Profile** feature manages detailed user information beyond basic auth
 
 - **Onboarding flow** for first-time users to set up their fitness profile
 - **Profile CRUD** operations for users to manage their personal data
+- **Avatar upload** via multipart form-data with S3 storage
 - **Coach access** to view subscribed clients' profiles for personalized training
 
 This feature is separate from the basic `User` model (which handles authentication and basic identity) and stores extended fitness-specific information like physical stats, experience level, equipment, availability, and health history.
@@ -58,6 +59,18 @@ model UserProfile {
 - `daysAvailable` and `sessionDurationMinutes` are **required** (non-nullable)
 - All other fields are optional to support gradual profile completion
 
+### Avatar Storage Architecture
+
+**S3-Compatible Object Storage** (Railway Buckets):
+- `avatarUrl` column stores **S3 object keys**, not URLs (e.g., `avatars/clxxx123/1708000000.webp`)
+- **Presigned URLs** are generated on-demand at read-time (1-hour TTL)
+- Files uploaded via multipart/form-data → stored in memory → uploaded to S3
+- Old avatars automatically deleted from S3 when replaced or removed
+
+**Key Format**: `avatars/<userId>/<timestamp>.<ext>`
+
+**Supported Image Types**: JPEG, PNG, WebP, HEIC, HEIF (max 5MB)
+
 ---
 
 ## API Endpoints
@@ -88,7 +101,7 @@ interface ApiResponse<T> {
       "id": "clxxx123",
       "userId": "clyyy456",
       "bio": "Fitness enthusiast",
-      "avatarUrl": "https://example.com/avatar.jpg",
+      "avatarUrl": "https://railway-bucket.s3.amazonaws.com/avatars/clyyy456/1708000000.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=...",
       "heightCm": 175,
       "weightKg": 70,
       "unitPreference": "metric",
@@ -128,21 +141,27 @@ interface ApiResponse<T> {
 
 **Endpoint**: `POST /api/profile`  
 **Auth**: Required (`requireAppUser`)  
+**Content-Type**: `multipart/form-data`  
 **Description**: Create initial user profile during onboarding
 
-**Request Body**:
-```json
+**Request Body** (multipart/form-data):
+
+**Form Fields**:
+```javascript
 {
-  "daysAvailable": 5,
-  "sessionDurationMinutes": 60,
-  "heightCm": 175,
-  "weightKg": 70,
+  "daysAvailable": "5",
+  "sessionDurationMinutes": "60",
+  "heightCm": "175",
+  "weightKg": "70",
   "sex": "MALE",
   "experienceLevel": "BEGINNER",
-  "equipment": ["dumbbells"],
+  "equipment": ["dumbbells"],  // JSON array as string
   "unitPreference": "metric"
 }
 ```
+
+**File Field** (optional):
+- `avatar`: Image file (JPEG, PNG, WebP, HEIC, HEIF; max 5MB)
 
 **Required Fields**:
 - `daysAvailable` (1-7)
@@ -150,13 +169,13 @@ interface ApiResponse<T> {
 
 **Optional Fields**:
 - `bio` (max 2000 chars)
-- `avatarUrl` (valid URL)
+- `avatar` (image file, max 5MB)
 - `heightCm` (positive, max 300)
 - `weightKg` (positive, max 700)
 - `unitPreference` (string, max 20 chars)
 - `sex` (`"MALE"` | `"FEMALE"`)
 - `dateOfBirth` (ISO 8601 datetime with offset)
-- `equipment` (array of strings, max 50 items, each max 100 chars)
+- `equipment` (JSON array of strings, max 50 items, each max 100 chars)
 - `injuryHistory` (max 5000 chars)
 - `experienceLevel` (`"BEGINNER"` | `"INTERMEDIATE"` | `"ADVANCED"`)
 
@@ -180,6 +199,8 @@ interface ApiResponse<T> {
 - `401`: Not authenticated
 - `409`: Profile already exists (use PATCH to update)
 - `400`: Validation errors (missing required fields, invalid values)
+- `400`: File validation errors (file too large, invalid type)
+- `500`: S3 upload failure
 
 **Validation Rules**:
 ```typescript
@@ -190,6 +211,7 @@ weightKg: > 0, ≤ 700
 equipment: max 50 items
 bio: max 2000 characters
 injuryHistory: max 5000 characters
+avatar: max 5MB, types: [image/jpeg, image/png, image/webp, image/heic, image/heif]
 ```
 
 ---
@@ -198,19 +220,30 @@ injuryHistory: max 5000 characters
 
 **Endpoint**: `PATCH /api/profile` or `PUT /api/profile`  
 **Auth**: Required (`requireAppUser`)  
+**Content-Type**: `multipart/form-data`  
 **Description**: Partially update existing profile fields
 
-**Request Body** (all fields optional):
-```json
+**Request Body** (multipart/form-data, all fields optional):
+
+**Form Fields**:
+```javascript
 {
-  "weightKg": 72,
+  "weightKg": "72",
   "experienceLevel": "INTERMEDIATE",
-  "equipment": ["dumbbells", "resistance bands", "pull-up bar"]
+  "equipment": ["dumbbells", "resistance bands", "pull-up bar"],
+  "removeAvatar": "true"  // Set to true to delete avatar
 }
 ```
 
-**Nullable Fields** (can be explicitly set to `null`):
-- `avatarUrl`
+**File Field** (optional):
+- `avatar`: New avatar image file (replaces existing)
+
+**Avatar Management**:
+- Upload new file → replaces old avatar (old one deleted from S3)
+- `removeAvatar: true` → deletes avatar without replacement
+- No file + no `removeAvatar` → avatar unchanged
+
+**Nullable Fields** (can be explicitly cleared):
 - `dateOfBirth`
 - `injuryHistory`
 
@@ -294,6 +327,9 @@ injuryHistory: max 5000 characters
 | `/src/schemas/profile.schema.ts` | Zod validation schemas |
 | `/src/controllers/profile.controller.ts` | Business logic handlers |
 | `/src/routes/profile.routes.ts` | Route definitions |
+| `/src/middleware/upload.middleware.ts` | Multer file upload middleware |
+| `/src/services/upload.service.ts` | S3 upload/delete/presigned URL service |
+| `/src/config/s3.ts` | S3 client configuration |
 | `/prisma/schema.prisma` | Database schema (`UserProfile` model) |
 
 ### Key Patterns
@@ -305,14 +341,23 @@ const profileSelect = {
   id: true,
   userId: true,
   bio: true,
+  avatarUrl: true,  // Stores S3 key
   // ... all fields
 } as const;
 
+// Helper: Convert S3 keys to presigned URLs
+async function withSignedAvatar<T extends { avatarUrl: string | null }>(profile: T | null) {
+  if (!profile) return null;
+  const avatarUrl = await resolveAvatarUrl(profile.avatarUrl);  // Generates presigned URL
+  return { ...profile, avatarUrl };
+}
+
 export const getUserProfile = async (req: Request, res: Response): Promise<void> => {
-  const profile = await prisma.userProfile.findUnique({
+  const raw = await prisma.userProfile.findUnique({
     where: { userId: appUser.id },
     select: profileSelect,
   });
+  const profile = await withSignedAvatar(raw);
   sendSuccess(res, { profile: profile ?? null });
 };
 ```
@@ -324,12 +369,21 @@ export const getUserProfile = async (req: Request, res: Response): Promise<void>
 
 **Middleware Chain**:
 ```typescript
-// User endpoints
-authenticateSupabaseUser → requireAppUser → validateRequest → controller
+// User endpoints (GET)
+authenticateSupabaseUser → requireAppUser → controller
+
+// User endpoints (POST/PATCH/PUT - with file upload)
+authenticateSupabaseUser → requireAppUser → uploadAvatar → validateRequest → controller
 
 // Coach endpoints
 authenticateSupabaseUser → requireCoach → validateRequest → controller
 ```
+
+**Upload Middleware** (`uploadAvatar`):
+- Parses multipart/form-data using multer
+- Extracts `avatar` file field → stored in `req.file`
+- Validates file size (max 5MB) and MIME type
+- Attaches file buffer to request for S3 upload in controller
 
 ---
 
@@ -423,18 +477,26 @@ Future<Result<UserProfile?, AppError>> getProfile() async {
 
 ```dart
 // lib/features/profile/presentation/providers/onboarding_provider.dart
-Future<void> completeOnboarding(OnboardingData data) async {
+import 'package:dio/dio.dart';
+
+Future<void> completeOnboarding(OnboardingData data, File? avatarFile) async {
   state = OnboardingLoading();
   
-  final result = await profileRepository.createProfile(
-    daysAvailable: data.daysAvailable,
-    sessionDurationMinutes: data.sessionDuration,
-    heightCm: data.heightCm,
-    weightKg: data.weightKg,
-    sex: data.sex,
-    experienceLevel: data.experienceLevel,
-    equipment: data.equipment,
-  );
+  final formData = FormData.fromMap({
+    'daysAvailable': data.daysAvailable.toString(),
+    'sessionDurationMinutes': data.sessionDuration.toString(),
+    if (data.heightCm != null) 'heightCm': data.heightCm.toString(),
+    if (data.weightKg != null) 'weightKg': data.weightKg.toString(),
+    if (data.sex != null) 'sex': data.sex,
+    if (data.experienceLevel != null) 'experienceLevel': data.experienceLevel,
+    if (data.equipment.isNotEmpty) 'equipment': jsonEncode(data.equipment),
+    if (avatarFile != null) 'avatar': await MultipartFile.fromFile(
+      avatarFile.path,
+      filename: basename(avatarFile.path),
+    ),
+  });
+  
+  final result = await profileRepository.createProfile(formData);
   
   result.when(
     success: (profile) {
@@ -446,24 +508,80 @@ Future<void> completeOnboarding(OnboardingData data) async {
 }
 ```
 
-### Example: Update Profile
+### Example: Update Profile with Avatar
 
 ```dart
+import 'package:dio/dio.dart';
+
 Future<void> updateProfile({
   double? weightKg,
   List<String>? equipment,
+  File? newAvatar,
+  bool removeAvatar = false,
 }) async {
+  final formData = FormData.fromMap({
+    if (weightKg != null) 'weightKg': weightKg.toString(),
+    if (equipment != null) 'equipment': jsonEncode(equipment),
+    if (removeAvatar) 'removeAvatar': 'true',
+    if (newAvatar != null) 'avatar': await MultipartFile.fromFile(
+      newAvatar.path,
+      filename: basename(newAvatar.path),
+    ),
+  });
+  
   final result = await apiClient.patch<Map<String, dynamic>>(
     '/profile',
-    data: {
-      if (weightKg != null) 'weightKg': weightKg,
-      if (equipment != null) 'equipment': equipment,
-    },
+    data: formData,
   );
   
   // Handle result...
 }
 ```
+
+### Example: Display Avatar with Caching
+
+```dart
+import 'package:cached_network_image/cached_network_image.dart';
+
+Widget buildAvatar(String? presignedUrl) {
+  if (presignedUrl == null) {
+    return CircleAvatar(child: Icon(Icons.person));
+  }
+  
+  // Extract S3 key from presigned URL for cache key (ignore query params)
+  final uri = Uri.parse(presignedUrl);
+  final cacheKey = uri.path;  // e.g., "/avatars/clxxx123/1708000000.webp"
+  
+  return CachedNetworkImage(
+    imageUrl: presignedUrl,
+    cacheKey: cacheKey,  // Use S3 path as cache key, not the full URL with query params
+    placeholder: (context, url) => CircularProgressIndicator(),
+    errorWidget: (context, url, error) => Icon(Icons.error),
+    imageBuilder: (context, imageProvider) => CircleAvatar(
+      backgroundImage: imageProvider,
+    ),
+  );
+}
+```
+
+---
+
+## Environment Variables
+
+**S3 Configuration** (Railway Buckets):
+
+| Variable | Required | Description | Example |
+|---|---|---|---|
+| `S3_ENDPOINT` | ✅ | Railway Bucket endpoint URL | `https://your-bucket.railway.app` |
+| `S3_REGION` | ❌ | AWS region | `us-east-1` (default) |
+| `S3_ACCESS_KEY_ID` | ✅ | S3 access key | `AKIAxxxxxxxxxxxxxxxx` |
+| `S3_SECRET_ACCESS_KEY` | ✅ | S3 secret key | `xxxxxxxxxxxxxxxxxxxxxxxx` |
+| `S3_BUCKET_NAME` | ✅ | Bucket name | `get-gains-avatars` |
+
+**Notes**:
+- If S3 variables are missing, file uploads will fail with `500` errors
+- Railway Buckets are S3-compatible (no public URLs → presigned URLs required)
+- Set `forcePathStyle: true` for S3-compatible services
 
 ---
 
@@ -489,21 +607,45 @@ Future<void> updateProfile({
 
 **Why?** `daysAvailable` and `sessionDurationMinutes` are core to program assignment logic and must be set. All other fields are optional to reduce friction during onboarding — users can fill in additional details later via PATCH.
 
-### 4. Nullish Update Fields
+### 4. Store S3 Keys, Generate Presigned URLs on Demand
 
-**Why?** Users should be able to **clear** optional fields (e.g., remove avatar, clear injury history). Zod's `.nullish()` allows both `null` (clear) and `undefined` (no change).
+**Why?** Railway Buckets (S3-compatible) don't support public URLs. Storing keys instead of URLs provides:
+- **Provider-agnostic**: Migrate between S3/R2/MinIO without database changes
+- **Security**: Auth middleware gates URL generation; coaches can't access non-subscribed clients
+- **No expiry issues**: Keys are permanent, URLs regenerated fresh on each read
+- **Simple cleanup**: Delete key from S3 when avatar changes, update DB atomically
+
+**Implementation**:
+```typescript
+// Storage: avatarUrl column stores "avatars/clxxx123/1708000000.webp"
+// Read-time: Generate presigned URL with 1-hour TTL
+const avatarUrl = await getPresignedUrl(profile.avatarUrl);
+
+// Update: Upload new file, delete old key from S3
+const newKey = buildAvatarKey(userId, file.originalname);
+await uploadFile(newKey, file.buffer, file.mimetype);
+if (existing.avatarUrl) await deleteFile(existing.avatarUrl);
+data.avatarUrl = newKey;
+```
+
+**Tradeoff**: ~1-2ms latency per read to sign URL (in-process HMAC, negligible)
+
+### 5. Avatar Removal via `removeAvatar` Flag
+
+**Why?** Multipart forms can't send `null` values. A boolean flag lets users explicitly delete their avatar without uploading a new one.
 
 ```typescript
 // Schema
-avatarUrl: z.string().url().nullish(),
+removeAvatar: z.boolean().optional(),
 
 // Update logic
-if (body.avatarUrl !== undefined) {
-  data.avatarUrl = body.avatarUrl ?? null;
+if (body.removeAvatar) {
+  if (existing.avatarUrl) await deleteFile(existing.avatarUrl);
+  data.avatarUrl = null;
 }
 ```
 
-### 5. Coach Access via Active Subscription
+### 6. Coach Access via Active Subscription
 
 **Why?** Privacy protection. Coaches should only access profiles of users who are **currently** subscribed (`endedAt IS NULL`). Past clients' data is off-limits.
 
@@ -529,21 +671,19 @@ if (!subscription || subscription.endedAt !== null) {
 # Setup: Login to get token
 TOKEN="eyJhbGciOi..."
 
-# Create profile
+# Create profile with avatar
 curl -X POST http://localhost:3000/api/profile \
   -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "daysAvailable": 5,
-    "sessionDurationMinutes": 60,
-    "heightCm": 180,
-    "weightKg": 75,
-    "sex": "MALE",
-    "experienceLevel": "BEGINNER",
-    "equipment": ["dumbbells", "pull-up bar"]
-  }'
+  -F "daysAvailable=5" \
+  -F "sessionDurationMinutes=60" \
+  -F "heightCm=180" \
+  -F "weightKg=75" \
+  -F "sex=MALE" \
+  -F "experienceLevel=BEGINNER" \
+  -F 'equipment=["dumbbells", "pull-up bar"]' \
+  -F "avatar=@/path/to/profile.jpg"
 
-# Expected: 201 with profile data
+# Expected: 201 with profile data (avatarUrl contains presigned URL)
 ```
 
 ### Test: Onboarding Detection
@@ -562,13 +702,32 @@ curl http://localhost:3000/api/profile \
 # Update only weight and experience
 curl -X PATCH http://localhost:3000/api/profile \
   -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "weightKg": 77,
-    "experienceLevel": "INTERMEDIATE"
-  }'
+  -F "weightKg=77" \
+  -F "experienceLevel=INTERMEDIATE"
 
 # Expected: 200 with updated profile (other fields unchanged)
+```
+
+### Test: Update Avatar
+
+```bash
+# Replace avatar with new image
+curl -X PATCH http://localhost:3000/api/profile \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "avatar=@/path/to/new-avatar.webp"
+
+# Expected: 200 with updated profile (avatarUrl changed, old S3 key deleted)
+```
+
+### Test: Remove Avatar
+
+```bash
+# Explicitly delete avatar
+curl -X PATCH http://localhost:3000/api/profile \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "removeAvatar=true"
+
+# Expected: 200 with profile (avatarUrl = null, S3 key deleted)
 ```
 
 ### Test: Coach Access (Unauthorized)
@@ -595,6 +754,9 @@ curl http://localhost:3000/api/profile/clients/$USER_ID \
 | Profile not found (PATCH) | 404 | `"Profile not found. Complete onboarding first."` |
 | Missing required fields (POST) | 400 | Validation errors array |
 | Invalid field values | 400 | Validation errors array |
+| File too large (> 5MB) | 400 | `"File too large. Maximum size is 5MB"` |
+| Invalid file type | 400 | `"Invalid file type: image/svg+xml. Allowed: image/jpeg, ..."` |
+| S3 upload failure | 500 | `"Failed to upload avatar image"` |
 | Coach: Not subscribed | 403 | `"User is not subscribed to you"` |
 | Coach: Subscription ended | 403 | `"User is not subscribed to you"` |
 | Client profile not found | 404 | `"Client has not completed their profile"` |
@@ -623,4 +785,4 @@ curl http://localhost:3000/api/profile/clients/$USER_ID \
 
 ---
 
-*Last updated: February 14, 2026*
+*Last updated: February 15, 2026*
