@@ -8,7 +8,6 @@ const experienceLevelEnum = z.enum(['BEGINNER', 'INTERMEDIATE', 'ADVANCED']);
 export const CreateUserProfileSchema = z.object({
   body: z.object({
     bio: z.string().max(2000).optional(),
-    avatarUrl: z.string().url().optional(),
 
     // Personal Data
     heightCm: z.number().positive().max(300).optional(),
@@ -42,7 +41,7 @@ export const UpdateUserProfileSchema = z.object({
   body: z
     .object({
       bio: z.string().max(2000).optional(),
-      avatarUrl: z.string().url().nullish(),
+      removeAvatar: z.boolean().optional(),
 
       // Personal Data
       heightCm: z.number().positive().max(300).optional(),
