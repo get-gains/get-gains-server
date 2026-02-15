@@ -2,6 +2,12 @@ import { Request, Response } from 'express';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
 import { sendSuccess, sendSingleError } from '../utils/response';
+import {
+  buildAvatarKey,
+  uploadFile,
+  deleteFile,
+  resolveAvatarUrl,
+} from '../services/upload.service';
 import type {
   CreateUserProfileInput,
   UpdateUserProfileInput,
@@ -28,6 +34,18 @@ const profileSelect = {
   updatedAt: true,
 } as const;
 
+/**
+ * Takes a raw profile from Prisma (with avatarUrl storing an S3 key)
+ * and resolves it to a response object with a presigned avatar URL.
+ */
+async function withSignedAvatar<T extends { avatarUrl: string | null }>(
+  profile: T | null
+): Promise<(T & { avatarUrl: string | null }) | null> {
+  if (!profile) return null;
+  const avatarUrl = await resolveAvatarUrl(profile.avatarUrl);
+  return { ...profile, avatarUrl };
+}
+
 // ─── GET  /profile — Get own user profile ───────────────────────────
 export const getUserProfile = async (
   req: Request,
@@ -40,12 +58,13 @@ export const getUserProfile = async (
       return;
     }
 
-    const profile = await prisma.userProfile.findUnique({
+    const raw = await prisma.userProfile.findUnique({
       where: { userId: appUser.id },
       select: profileSelect,
     });
 
     // Return null data so the frontend knows onboarding is needed
+    const profile = await withSignedAvatar(raw);
     sendSuccess(res, { profile: profile ?? null });
   } catch (error) {
     const err = error as Error;
@@ -80,11 +99,25 @@ export const createUserProfile = async (
 
     const body = req.body as CreateUserProfileInput;
 
+    // Handle avatar file upload if provided
+    let avatarKey: string | null = null;
+    const file = req.file;
+    if (file) {
+      try {
+        avatarKey = buildAvatarKey(appUser.id, file.originalname);
+        await uploadFile(avatarKey, file.buffer, file.mimetype);
+      } catch (uploadError) {
+        logger.error('Failed to upload avatar during onboarding', uploadError);
+        sendSingleError(res, 'Failed to upload avatar image', 500);
+        return;
+      }
+    }
+
     const profile = await prisma.userProfile.create({
       data: {
         userId: appUser.id,
         bio: body.bio ?? null,
-        avatarUrl: body.avatarUrl ?? null,
+        avatarUrl: avatarKey,
         heightCm: body.heightCm ?? null,
         weightKg: body.weightKg ?? null,
         unitPreference: body.unitPreference ?? null,
@@ -104,7 +137,8 @@ export const createUserProfile = async (
       profileId: profile.id,
     });
 
-    sendSuccess(res, { profile }, 201);
+    const resolved = await withSignedAvatar(profile);
+    sendSuccess(res, { profile: resolved }, 201);
   } catch (error) {
     const err = error as Error;
     logger.error('Error creating user profile', {
@@ -144,8 +178,44 @@ export const updateUserProfile = async (
     // Build update data only from provided fields
     const data: Record<string, unknown> = {};
 
+    // Handle avatar upload or removal
+    const file = req.file;
+    if (file) {
+      try {
+        // Delete old avatar from S3 if it exists
+        if (existing.avatarUrl) {
+          await deleteFile(existing.avatarUrl).catch((err) =>
+            logger.warn('Failed to delete old avatar from S3', {
+              key: existing.avatarUrl,
+              err,
+            })
+          );
+        }
+        const newKey = buildAvatarKey(appUser.id, file.originalname);
+        await uploadFile(newKey, file.buffer, file.mimetype);
+        data.avatarUrl = newKey;
+      } catch (uploadError) {
+        logger.error(
+          'Failed to upload avatar during profile update',
+          uploadError
+        );
+        sendSingleError(res, 'Failed to upload avatar image', 500);
+        return;
+      }
+    } else if (body.removeAvatar) {
+      // Explicitly remove avatar
+      if (existing.avatarUrl) {
+        await deleteFile(existing.avatarUrl).catch((err) =>
+          logger.warn('Failed to delete avatar from S3', {
+            key: existing.avatarUrl,
+            err,
+          })
+        );
+      }
+      data.avatarUrl = null;
+    }
+
     if (body.bio !== undefined) data.bio = body.bio;
-    if (body.avatarUrl !== undefined) data.avatarUrl = body.avatarUrl ?? null;
     if (body.heightCm !== undefined) data.heightCm = body.heightCm;
     if (body.weightKg !== undefined) data.weightKg = body.weightKg;
     if (body.unitPreference !== undefined)
@@ -165,11 +235,12 @@ export const updateUserProfile = async (
 
     // If nothing to update, return the existing profile
     if (Object.keys(data).length === 0) {
-      const profile = await prisma.userProfile.findUnique({
+      const raw = await prisma.userProfile.findUnique({
         where: { userId: appUser.id },
         select: profileSelect,
       });
-      sendSuccess(res, { profile });
+      const resolved = await withSignedAvatar(raw);
+      sendSuccess(res, { profile: resolved });
       return;
     }
 
@@ -185,7 +256,8 @@ export const updateUserProfile = async (
       fields: Object.keys(data),
     });
 
-    sendSuccess(res, { profile });
+    const resolved = await withSignedAvatar(profile);
+    sendSuccess(res, { profile: resolved });
   } catch (error) {
     const err = error as Error;
     logger.error('Error updating user profile', {
@@ -242,7 +314,8 @@ export const getClientProfile = async (
       return;
     }
 
-    sendSuccess(res, { profile });
+    const resolved = await withSignedAvatar(profile);
+    sendSuccess(res, { profile: resolved });
   } catch (error) {
     const err = error as Error;
     logger.error('Error fetching client profile', {

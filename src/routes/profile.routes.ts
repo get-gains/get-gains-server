@@ -16,6 +16,7 @@ import {
   updateUserProfile,
   getClientProfile,
 } from '../controllers/profile.controller';
+import { uploadAvatar } from '../middleware/upload.middleware';
 
 const router = Router();
 
@@ -25,10 +26,12 @@ const router = Router();
 router.get('/', authenticateSupabaseUser, requireAppUser, getUserProfile);
 
 // POST   /api/profile       → Create profile (onboarding)
+// uploadAvatar parses multipart form-data and extracts the "avatar" file
 router.post(
   '/',
   authenticateSupabaseUser,
   requireAppUser,
+  uploadAvatar,
   validateRequest(CreateUserProfileSchema),
   createUserProfile
 );
@@ -38,6 +41,7 @@ router.patch(
   '/',
   authenticateSupabaseUser,
   requireAppUser,
+  uploadAvatar,
   validateRequest(UpdateUserProfileSchema),
   updateUserProfile
 );
@@ -47,6 +51,7 @@ router.put(
   '/',
   authenticateSupabaseUser,
   requireAppUser,
+  uploadAvatar,
   validateRequest(UpdateUserProfileSchema),
   updateUserProfile
 );
