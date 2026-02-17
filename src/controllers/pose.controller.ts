@@ -186,10 +186,16 @@ export const getExerciseForms = async (
     const { activeOnly } = req.query as unknown as GetExerciseFormsQuery;
     const coachId = req.coach!.id;
 
+    const shouldFilterActiveOnly =
+      activeOnly === true ||
+      String(activeOnly).toLowerCase() === 'true' ||
+      String(activeOnly) === '1';
+
     logger.debug('Fetching exercise forms', {
       exerciseId,
       coachId,
       activeOnly,
+      shouldFilterActiveOnly,
     });
 
     // Verify exercise exists
@@ -207,7 +213,7 @@ export const getExerciseForms = async (
       coachId,
     };
 
-    if (activeOnly) {
+    if (shouldFilterActiveOnly) {
       where.isActive = true;
     }
 
