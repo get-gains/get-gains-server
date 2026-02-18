@@ -200,8 +200,8 @@ export const verifyPurchase = async (
 ): Promise<void> => {
   try {
     const user = req.user!;
-    const { productId, purchaseToken, provider } =
-      req.body as VerifyPurchaseInput;
+    const { productId, purchaseToken, provider } = res.locals.validated
+      ?.body as VerifyPurchaseInput;
 
     const dbUser = await prisma.user.findFirst({
       where: { supabaseId: user.id },

@@ -32,7 +32,7 @@ export const createPromoCode = async (
   res: Response
 ): Promise<void> => {
   try {
-    const input = req.body as CreatePromoCodeInput;
+    const input = res.locals.validated?.body as CreatePromoCodeInput;
 
     logger.debug('Creating promo code', { code: input.code });
 
@@ -133,7 +133,7 @@ export const getPromoCode = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { id } = req.params as GetPromoCodeByIdParams;
+    const { id } = res.locals.validated?.params as GetPromoCodeByIdParams;
 
     logger.debug('Fetching promo code', { id });
 
@@ -184,7 +184,7 @@ export const deactivatePromoCode = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { id } = req.params as DeactivatePromoCodeParams;
+    const { id } = res.locals.validated?.params as DeactivatePromoCodeParams;
 
     logger.debug('Deactivating promo code', { id });
 
@@ -224,7 +224,8 @@ export const validatePromoCode = async (
 ): Promise<void> => {
   try {
     const user = req.user!;
-    const { code, planId } = req.body as ValidatePromoCodeInput;
+    const { code, planId } = res.locals.validated
+      ?.body as ValidatePromoCodeInput;
 
     const dbUser = await prisma.user.findFirst({
       where: { supabaseId: user.id },
@@ -287,7 +288,8 @@ export const redeemPromoCode = async (
 ): Promise<void> => {
   try {
     const user = req.user!;
-    const { code, subscriptionId } = req.body as RedeemPromoCodeInput;
+    const { code, subscriptionId } = res.locals.validated
+      ?.body as RedeemPromoCodeInput;
 
     const dbUser = await prisma.user.findFirst({
       where: { supabaseId: user.id },
