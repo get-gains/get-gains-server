@@ -48,7 +48,7 @@ export const uploadCoachForm = async (
       normalizedFrames,
       avgLandmarkConfidence,
       recordingQuality,
-    } = req.body as UploadFormInput;
+    } = res.locals.validated?.body as UploadFormInput;
 
     logger.debug('Uploading coach form', { coachId, exerciseId, cameraAngle });
 
@@ -141,7 +141,7 @@ export const getFormById = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { formId } = req.params as unknown as FormIdParams;
+    const { formId } = res.locals.validated?.params as FormIdParams;
     const coachId = req.coach!.id;
 
     logger.debug('Fetching form by ID', { formId, coachId });
@@ -182,7 +182,8 @@ export const getExerciseForms = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { exerciseId } = req.params as unknown as GetExerciseFormsParams;
+    const { exerciseId } = res.locals.validated
+      ?.params as GetExerciseFormsParams;
     const { activeOnly } = res.locals.validated?.query as GetExerciseFormsQuery;
     const coachId = req.coach!.id;
 
@@ -252,9 +253,9 @@ export const updateForm = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { formId } = req.params as unknown as UpdateFormParams;
+    const { formId } = res.locals.validated?.params as UpdateFormParams;
     const coachId = req.coach!.id;
-    const updateData = req.body as UpdateFormInput;
+    const updateData = res.locals.validated?.body as UpdateFormInput;
 
     logger.debug('Updating form', { formId, coachId });
 
@@ -357,7 +358,7 @@ export const deleteForm = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { formId } = req.params as unknown as FormIdParams;
+    const { formId } = res.locals.validated?.params as FormIdParams;
     const coachId = req.coach!.id;
 
     logger.debug('Deleting form', { formId, coachId });
@@ -398,7 +399,7 @@ export const activateForm = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { formId } = req.params as unknown as FormIdParams;
+    const { formId } = res.locals.validated?.params as FormIdParams;
     const coachId = req.coach!.id;
 
     logger.debug('Activating form', { formId, coachId });
@@ -470,14 +471,15 @@ export const upsertPoseConfig = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { exerciseId } = req.params as unknown as UpsertPoseConfigParams;
+    const { exerciseId } = res.locals.validated
+      ?.params as UpsertPoseConfigParams;
     const {
       activeSegments,
       recommendedAngles,
       trackedAngles,
       minLandmarkConfidence,
       setupInstructions,
-    } = req.body as UpsertPoseConfigInput;
+    } = res.locals.validated?.body as UpsertPoseConfigInput;
 
     logger.debug('Upserting pose config', { exerciseId });
 
@@ -528,7 +530,7 @@ export const getPoseConfig = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { exerciseId } = req.params as unknown as GetPoseConfigParams;
+    const { exerciseId } = res.locals.validated?.params as GetPoseConfigParams;
 
     logger.debug('Fetching pose config', { exerciseId });
 
@@ -564,7 +566,7 @@ export const submitClientResult = async (
 ): Promise<void> => {
   try {
     const userId = req.appUser!.id;
-    const body = req.body as SubmitResultInput;
+    const body = res.locals.validated?.body as SubmitResultInput;
 
     logger.debug('Submitting client result', {
       userId,
@@ -748,7 +750,7 @@ export const getResultById = async (
 ): Promise<void> => {
   try {
     const userId = req.appUser!.id;
-    const { resultId } = req.params as unknown as ResultIdParams;
+    const { resultId } = res.locals.validated?.params as ResultIdParams;
 
     const result = await prisma.formComparisonResult.findFirst({
       where: { id: resultId, userId },
@@ -785,7 +787,8 @@ export const getResultsByExercise = async (
 ): Promise<void> => {
   try {
     const userId = req.appUser!.id;
-    const { exerciseId } = req.params as unknown as ResultsByExerciseParams;
+    const { exerciseId } = res.locals.validated
+      ?.params as ResultsByExerciseParams;
     const { limit, offset } = res.locals.validated
       ?.query as ResultsByExerciseQuery;
 
@@ -835,7 +838,8 @@ export const getResultsBySession = async (
 ): Promise<void> => {
   try {
     const userId = req.appUser!.id;
-    const { sessionId } = req.params as unknown as ResultsBySessionParams;
+    const { sessionId } = res.locals.validated
+      ?.params as ResultsBySessionParams;
 
     // Verify session belongs to user
     const session = await prisma.workoutSession.findFirst({
@@ -881,7 +885,8 @@ export const bulkDownloadProgramForms = async (
 ): Promise<void> => {
   try {
     const userId = req.appUser!.id;
-    const { programId } = req.params as unknown as DownloadProgramFormsParams;
+    const { programId } = res.locals.validated
+      ?.params as DownloadProgramFormsParams;
     const { since } = res.locals.validated?.query as DownloadProgramFormsQuery;
 
     logger.debug('Bulk download program forms', { userId, programId, since });
@@ -1032,7 +1037,8 @@ export const downloadExerciseForm = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { exerciseId } = req.params as unknown as DownloadExerciseFormParams;
+    const { exerciseId } = res.locals.validated
+      ?.params as DownloadExerciseFormParams;
 
     logger.debug('Downloading exercise form', { exerciseId });
 

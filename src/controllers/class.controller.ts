@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
 import { sendSuccess, sendSingleError } from '../utils/response';
-import { RemoveClientParams } from '../schemas/class.schema';
+import { GetClassQuery, RemoveClientParams } from '../schemas/class.schema';
 
 /**
  * Get coach's class (client roster)
@@ -15,8 +15,7 @@ export const getClass = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const limit = Number(req.query.limit) || 50;
-    const offset = Number(req.query.offset) || 0;
+    const { limit, offset } = res.locals.validated?.query as GetClassQuery;
     const take = Math.min(Math.max(1, limit), 100);
     const skip = Math.max(0, offset);
 
@@ -95,7 +94,7 @@ export const removeClient = async (
       return;
     }
 
-    const { userId } = req.params as unknown as RemoveClientParams;
+    const { userId } = res.locals.validated?.params as RemoveClientParams;
 
     const subscription = await prisma.subscribedCoach.findUnique({
       where: {

@@ -46,7 +46,7 @@ export const createCoachProfile = async (
       return;
     }
 
-    const body = (req.body as CreateCoachProfileInput) ?? {};
+    const body = (res.locals.validated?.body as CreateCoachProfileInput) ?? {};
     const name = body.name ?? appUser.name;
     const email = body.email ?? appUser.email;
 
@@ -301,8 +301,8 @@ export const assignProgram = async (
       return;
     }
 
-    const { userId, programId, startDate, endDate, notes } =
-      req.body as AssignProgramInput;
+    const { userId, programId, startDate, endDate, notes } = res.locals
+      .validated?.body as AssignProgramInput;
 
     const programRecord = await prisma.program.findUnique({
       where: { id: programId },

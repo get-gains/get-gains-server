@@ -97,7 +97,12 @@ export const createUserProfile = async (
       return;
     }
 
-    const body = req.body as CreateUserProfileInput;
+    // Use res.locals.validated.body — the validateRequest middleware stores
+    // the Zod-parsed (and coerced) result here. Multipart text fields arrive as
+    // strings; the schema's z.preprocess(toNumber, …) converts them to numbers
+    // before Prisma receives them. Reading req.body directly would bypass that
+    // coercion and hand raw strings to Prisma, causing a type-mismatch error.
+    const body = res.locals.validated?.body as CreateUserProfileInput;
 
     // Handle avatar file upload if provided
     let avatarKey: string | null = null;
@@ -173,7 +178,8 @@ export const updateUserProfile = async (
       return;
     }
 
-    const body = req.body as UpdateUserProfileInput;
+    // Use res.locals.validated.body — see createUserProfile for rationale.
+    const body = res.locals.validated?.body as UpdateUserProfileInput;
 
     // Build update data only from provided fields
     const data: Record<string, unknown> = {};
@@ -280,7 +286,7 @@ export const getClientProfile = async (
       return;
     }
 
-    const { userId } = req.params as unknown as GetClientProfileParams;
+    const { userId } = res.locals.validated?.params as GetClientProfileParams;
 
     // Verify the user is actively subscribed to this coach
     const subscription = await prisma.subscribedCoach.findUnique({

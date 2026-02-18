@@ -44,8 +44,8 @@ export const createUserFromGoogle = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { email, name, nickname, supabaseId }: CreateUserFromGoogleData =
-      req.body;
+    const { email, name, nickname, supabaseId }: CreateUserFromGoogleData = res
+      .locals.validated?.body as CreateUserFromGoogleData;
 
     logger.debug('Creating user from Google OAuth', { email, supabaseId });
 
@@ -260,7 +260,7 @@ export const subscribeToCoach = async (
       return;
     }
 
-    const { coachId } = req.params as unknown as SubscribeCoachParams;
+    const { coachId } = res.locals.validated?.params as SubscribeCoachParams;
 
     const coach = await prisma.coach.findUnique({
       where: { id: coachId },
@@ -389,7 +389,7 @@ export const unsubscribeFromCoach = async (
       return;
     }
 
-    const { coachId } = req.params as unknown as UnsubscribeCoachParams;
+    const { coachId } = res.locals.validated?.params as UnsubscribeCoachParams;
 
     const subscription = await prisma.subscribedCoach.findUnique({
       where: {
@@ -493,7 +493,7 @@ export const updateProfile = async (
       return;
     }
 
-    const body = req.body as UpdateProfileInput;
+    const body = res.locals.validated?.body as UpdateProfileInput;
     const data: { name?: string; nickname?: string } = {};
     if (body.name !== undefined) data.name = body.name;
     if (body.nickname !== undefined) data.nickname = body.nickname;
