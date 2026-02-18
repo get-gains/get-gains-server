@@ -183,7 +183,7 @@ export const getExerciseForms = async (
 ): Promise<void> => {
   try {
     const { exerciseId } = req.params as unknown as GetExerciseFormsParams;
-    const { activeOnly } = req.query as unknown as GetExerciseFormsQuery;
+    const { activeOnly } = res.locals.validated?.query as GetExerciseFormsQuery;
     const coachId = req.coach!.id;
 
     logger.debug('Fetching exercise forms', {
@@ -676,8 +676,8 @@ export const getClientHistory = async (
 ): Promise<void> => {
   try {
     const userId = req.appUser!.id;
-    const { exerciseId, limit, offset, from, to } =
-      req.query as unknown as ResultHistoryQuery;
+    const { exerciseId, limit, offset, from, to } = res.locals.validated
+      ?.query as ResultHistoryQuery;
 
     logger.debug('Fetching client history', {
       userId,
@@ -786,7 +786,8 @@ export const getResultsByExercise = async (
   try {
     const userId = req.appUser!.id;
     const { exerciseId } = req.params as unknown as ResultsByExerciseParams;
-    const { limit, offset } = req.query as unknown as ResultsByExerciseQuery;
+    const { limit, offset } = res.locals.validated
+      ?.query as ResultsByExerciseQuery;
 
     const where = {
       userId,
@@ -881,7 +882,7 @@ export const bulkDownloadProgramForms = async (
   try {
     const userId = req.appUser!.id;
     const { programId } = req.params as unknown as DownloadProgramFormsParams;
-    const { since } = req.query as unknown as DownloadProgramFormsQuery;
+    const { since } = res.locals.validated?.query as DownloadProgramFormsQuery;
 
     logger.debug('Bulk download program forms', { userId, programId, since });
 

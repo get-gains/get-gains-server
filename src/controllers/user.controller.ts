@@ -108,8 +108,8 @@ export const discoverCoaches = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { search, limit, offset } =
-      req.query as unknown as DiscoverCoachesQuery;
+    const { search, limit, offset } = res.locals.validated
+      ?.query as DiscoverCoachesQuery;
     const take = Math.min(Math.max(1, limit || 50), 100);
     const skip = Math.max(0, offset || 0);
 
@@ -183,7 +183,8 @@ export const getSubscribedCoaches = async (
       return;
     }
 
-    const { limit, offset } = req.query as unknown as GetSubscribedCoachesQuery;
+    const { limit, offset } = res.locals.validated
+      ?.query as GetSubscribedCoachesQuery;
     const take = Math.min(Math.max(1, limit || 50), 100);
     const skip = Math.max(0, offset || 0);
 
