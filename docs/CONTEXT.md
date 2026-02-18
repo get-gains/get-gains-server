@@ -308,10 +308,18 @@ export const getThings = async (req: Request, res: Response) => {
 
 **Rules:**
 - `res.locals.validated?.query` → for query-param coercion (`z.coerce.number()`, `z.coerce.boolean()`, `z.coerce.date()`, `.default()`)
-- `res.locals.validated?.body` → for request body (already works via `req.body`, but preferred for consistency)
+- `res.locals.validated?.body` → **always required** for `multipart/form-data` request bodies (multer delivers every text field as a string; the schema's `z.preprocess(toNumber, …)` coerces them — but only the `res.locals.validated` copy is coerced)
 - `res.locals.validated?.params` → for route params (coerced where needed)
-- `req.body` / `req.params` as casts are still acceptable for **body and params** that don't use `z.coerce.*` or `.default()`
+- **Never** use `req.body` directly for multipart endpoints that coerce numeric fields — Prisma will throw `PrismaClientValidationError` ("Expected Float, provided String")
 - **Never** use `req.query as unknown as T` — query strings are always raw `string | string[]` at runtime
+
+**Multipart numeric field convention**: Mobile clients (Flutter) send numeric values
+(`heightCm`, `weightKg`, integer counts, etc.) as **plain strings** inside
+`multipart/form-data` — this is standard HTTP behaviour and avoids floating-point
+precision loss. All multipart schemas **must** use `z.preprocess(toNumber, z.number())`
+(or `z.preprocess(toNumber, z.number().int())` for integers) for these fields.
+Controllers **must** read `res.locals.validated?.body` to receive the Prisma-compatible
+numbers.
 
 **Type augmentation** is declared in `src/types/express.d.ts` — no import needed.
 

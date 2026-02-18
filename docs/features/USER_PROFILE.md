@@ -1,7 +1,7 @@
 # User Profile Feature
 
 > **Feature Status**: ✅ Fully Implemented  
-> **Last Updated**: February 14, 2026
+> **Last Updated**: February 18, 2026
 
 ---
 
@@ -146,16 +146,25 @@ interface ApiResponse<T> {
 
 **Request Body** (multipart/form-data):
 
+> **Multipart type coercion**: All numeric fields (`heightCm`, `weightKg`,
+> `daysAvailable`, `sessionDurationMinutes`) are intentionally sent as **strings**
+> from mobile clients (this is standard HTTP multipart/form-data behaviour and
+> avoids floating-point precision loss). The Zod schema coerces them to the
+> correct types via `z.preprocess(toNumber, z.number())`. Controllers **must**
+> read `res.locals.validated.body` — never `req.body` directly — to receive the
+> coerced values that Prisma expects (`Float`, `Int`). Reading `req.body` would
+> bypass coercion and cause a Prisma `PrismaClientValidationError`.
+
 **Form Fields**:
 ```javascript
 {
-  "daysAvailable": "5",
-  "sessionDurationMinutes": "60",
-  "heightCm": "175",
-  "weightKg": "70",
+  "daysAvailable": "5",           // sent as string, coerced to Int
+  "sessionDurationMinutes": "60", // sent as string, coerced to Int
+  "heightCm": "175.0",           // sent as string, coerced to Float
+  "weightKg": "70.0",            // sent as string, coerced to Float
   "sex": "MALE",
   "experienceLevel": "BEGINNER",
-  "equipment": ["dumbbells"],  // JSON array as string
+  "equipment": "[\"dumbbells\"]",  // JSON-encoded array as string
   "unitPreference": "metric"
 }
 ```
@@ -225,13 +234,17 @@ avatar: max 5MB, types: [image/jpeg, image/png, image/webp, image/heic, image/he
 
 **Request Body** (multipart/form-data, all fields optional):
 
+> **Multipart type coercion**: Same as POST — numeric fields are sent as strings
+> and coerced by the Zod schema. Controllers read `res.locals.validated.body`.
+
 **Form Fields**:
 ```javascript
 {
-  "weightKg": "72",
+  "weightKg": "72.0",            // sent as string, coerced to Float
+  "daysAvailable": "4",          // sent as string, coerced to Int
   "experienceLevel": "INTERMEDIATE",
-  "equipment": ["dumbbells", "resistance bands", "pull-up bar"],
-  "removeAvatar": "true"  // Set to true to delete avatar
+  "equipment": "[\"dumbbells\",\"resistance bands\",\"pull-up bar\"]", // JSON string
+  "removeAvatar": "true"         // sent as string, coerced to boolean
 }
 ```
 
@@ -366,6 +379,19 @@ export const getUserProfile = async (req: Request, res: Response): Promise<void>
 - `CreateUserProfileSchema`: Requires `daysAvailable` and `sessionDurationMinutes`
 - `UpdateUserProfileSchema`: All fields optional, `.strict()` prevents extra fields
 - `GetClientProfileSchema`: Validates `:userId` param as CUID
+- All numeric fields use `z.preprocess(toNumber, z.number())` to coerce multipart strings
+
+**Critical — always read from `res.locals.validated.body`**:
+```typescript
+// ✅ CORRECT — Zod-coerced types (Float, Int) ready for Prisma
+const body = res.locals.validated?.body as CreateUserProfileInput;
+
+// ❌ WRONG — raw multipart strings; Prisma throws PrismaClientValidationError
+const body = req.body as CreateUserProfileInput;
+```
+The `validateRequest` middleware stores the fully-coerced output in
+`res.locals.validated`; `req.body` is the un-transformed multer parse result
+where every text field is a string.
 
 **Middleware Chain**:
 ```typescript
