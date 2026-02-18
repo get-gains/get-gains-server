@@ -13,14 +13,21 @@ import { sendError, sendSingleError } from '../utils/response';
 export const validateRequest = <T extends z.ZodTypeAny>(schema: T) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      // Validate request data against schema
-      // Note: Express 5 made body/query/params read-only, so we can't replace them
-      // The validation ensures the data is valid; controllers use the original values
-      await schema.parseAsync({
+      // Parse and coerce request data. Express 5 makes req.query/params read-only,
+      // so we store the fully-coerced result in res.locals.validated instead of
+      // mutating req. Controllers must read from res.locals.validated to get
+      // properly typed/coerced values (booleans, numbers, dates, defaults).
+      const parsed = await schema.parseAsync({
         body: req.body,
         query: req.query,
         params: req.params,
       });
+
+      res.locals.validated = parsed as {
+        body?: unknown;
+        query?: unknown;
+        params?: unknown;
+      };
 
       logger.debug('Request validation passed', {
         path: req.path,
