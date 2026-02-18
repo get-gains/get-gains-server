@@ -281,7 +281,39 @@ try {
 
 1. Define schema in `/schemas`
 2. Use `validateRequest` middleware in routes
-3. Access validated data in controller via `req.body`, `req.params`, `req.query`
+3. Access **coerced/defaulted** validated data in controllers via `res.locals.validated`
+
+> **Critical — Express 5 compatibility**: `req.query` and `req.params` are
+> read-only getters in Express 5. The `validateRequest` middleware stores the
+> fully-parsed Zod output (with all `z.coerce.*` transforms and `.default()`
+> values applied) in `res.locals.validated`. Controllers **must** read from
+> `res.locals.validated` — never from `req.query as unknown as T` — to receive
+> correct types.
+
+```typescript
+// ✅ CORRECT — reads coerced values from validated middleware output
+import type { GetThingsQuery } from '../schemas/thing.schema';
+
+export const getThings = async (req: Request, res: Response) => {
+  const { limit, offset, includeInactive } =
+    res.locals.validated?.query as GetThingsQuery;
+  // limit/offset are numbers (not strings), includeInactive is a boolean
+};
+
+// ❌ WRONG — bypasses Zod coercion; limit is a string, booleans are always truthy
+export const getThings = async (req: Request, res: Response) => {
+  const { limit, offset } = req.query as unknown as GetThingsQuery;
+};
+```
+
+**Rules:**
+- `res.locals.validated?.query` → for query-param coercion (`z.coerce.number()`, `z.coerce.boolean()`, `z.coerce.date()`, `.default()`)
+- `res.locals.validated?.body` → for request body (already works via `req.body`, but preferred for consistency)
+- `res.locals.validated?.params` → for route params (coerced where needed)
+- `req.body` / `req.params` as casts are still acceptable for **body and params** that don't use `z.coerce.*` or `.default()`
+- **Never** use `req.query as unknown as T` — query strings are always raw `string | string[]` at runtime
+
+**Type augmentation** is declared in `src/types/express.d.ts` — no import needed.
 
 ---
 
