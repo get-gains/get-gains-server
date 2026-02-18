@@ -24,7 +24,7 @@ import prisma from '../config/database';
  */
 export const getPlans = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { includeInactive } = req.query as unknown as GetPlansQuery;
+    const { includeInactive } = res.locals.validated?.query as GetPlansQuery;
 
     logger.debug('Fetching subscription plans', { includeInactive });
 
@@ -67,8 +67,8 @@ export const getSubscriptionStatus = async (
 ): Promise<void> => {
   try {
     const user = req.user!;
-    const { includeHistory } =
-      req.query as unknown as GetSubscriptionStatusQuery;
+    const { includeHistory } = res.locals.validated
+      ?.query as GetSubscriptionStatusQuery;
 
     // Get user from database using Supabase ID
     const dbUser = await prisma.user.findFirst({
@@ -135,8 +135,8 @@ export const getSubscriptionHistory = async (
 ): Promise<void> => {
   try {
     const user = req.user!;
-    const { limit, offset } =
-      req.query as unknown as GetSubscriptionHistoryQuery;
+    const { limit, offset } = res.locals.validated
+      ?.query as GetSubscriptionHistoryQuery;
 
     const dbUser = await prisma.user.findFirst({
       where: { supabaseId: user.id },

@@ -163,8 +163,8 @@ export const getRoutines = async (
 ): Promise<void> => {
   try {
     const supabaseId = req.user?.id; // This is the Supabase ID from JWT
-    const { programId, limit, offset } =
-      req.query as unknown as GetRoutinesQuery;
+    const { programId, limit, offset } = res.locals.validated
+      ?.query as GetRoutinesQuery;
 
     if (!supabaseId) {
       sendSingleError(res, 'Unauthorized', 401);

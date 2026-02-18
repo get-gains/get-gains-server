@@ -86,8 +86,8 @@ export const listAllPromoCodes = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { limit, offset, includeInactive } =
-      req.query as unknown as ListPromoCodesQuery;
+    const { limit, offset, includeInactive } = res.locals.validated
+      ?.query as ListPromoCodesQuery;
 
     logger.debug('Listing promo codes', { limit, offset, includeInactive });
 
