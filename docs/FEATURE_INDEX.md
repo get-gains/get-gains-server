@@ -146,20 +146,32 @@ Core fitness tracking functionality:
 
 ### Program Management _(Documented in [features/PROGRAM.md](features/PROGRAM.md))_
 
-Coach-facing program creation features:
+Complete coach program flow — build, manage, assign, and deliver training programs:
 
-| Feature         | Description                     | Status        |
-| --------------- | ------------------------------- | ------------- |
-| Create Program  | Create training programs        | ✅ Documented |
-| Assign Routines | Assign routines to program days | ✅ Documented |
-| Add Exercises   | Add exercises to routines       | ✅ Documented |
+| Feature                    | Description                                          | Status        |
+| -------------------------- | ---------------------------------------------------- | ------------- |
+| Program CRUD               | Create, list, get, update, delete programs           | ✅ Documented |
+| Routine CRUD (standalone)  | Create, list, get, update, delete reusable routines  | ✅ Documented |
+| Assign Routines to Program | ProgramRoutine junction: assign, reorder, remove     | ✅ Documented |
+| Add Exercises to Routine   | RoutineExercise junction: add, update, remove        | ✅ Documented |
+| Routine Ownership          | `coachId` on Routine model, ownership enforcement    | ✅ Documented |
+| Assignment Management      | Assign/view/update/revoke program for clients        | ✅ Documented |
+| Today's Workout            | Resolve scheduled routine from day cycling logic     | ✅ Documented |
+| Subscription Guards        | `requireSubscription()` on coach-content client routes | ✅ Documented |
 
 **Primary Files:**
 
 - `/src/routes/program.routes.ts`
+- `/src/routes/routine.routes.ts`
+- `/src/routes/coach.routes.ts` (assignment management)
+- `/src/routes/workout.routes.ts` (client-facing: routines, today, sessions)
 - `/src/controllers/program.controller.ts`
+- `/src/controllers/coach.controller.ts` (assignment management)
+- `/src/controllers/workout.controller.ts` (client-facing)
 - `/src/schemas/program.schema.ts`
-- `/prisma/schema.prisma` (Program, ProgramRoutine, RoutineExercise models)
+- `/src/schemas/coach.schema.ts` (assignment schemas)
+- `/src/schemas/workout.schema.ts` (today's workout schema)
+- `/prisma/schema.prisma` (Program, Routine, ProgramRoutine, RoutineExercise, AssignedProgram models)
 
 ### Subscription & Payments _(Documented in [features/SUBSCRIPTION.md](features/SUBSCRIPTION.md))_
 
@@ -276,42 +288,52 @@ The app unwraps `data` and treats non-empty `errors` as failure. 404 and 500 han
 
 ### Coach Endpoints
 
-| Method   | Endpoint                                            | Description                           | Auth Required |
-| -------- | --------------------------------------------------- | ------------------------------------- | ------------- |
-| `POST`   | `/api/coach/profile`                                | Create coach profile (become a coach) | Yes           |
-| `GET`    | `/api/coach/class`                                  | List coach's clients                  | Yes (Coach)   |
-| `DELETE` | `/api/coach/class/:userId`                          | Remove client from class              | Yes (Coach)   |
-| `GET`    | `/api/coach/clients`                                | List clients with filters             | Yes (Coach)   |
-| `GET`    | `/api/coach/performance`                            | Performance report                    | Yes (Coach)   |
-| `POST`   | `/api/coach/assign-program`                         | Assign program to client              | Yes (Coach)   |
-| `POST`   | `/api/coach/programs`                               | Create program                        | Yes (Coach)   |
-| `POST`   | `/api/coach/programs/:programId/routines`           | Assign routine to program             | Yes (Coach)   |
-| `POST`   | `/api/coach/programs/routines/:routineId/exercises` | Add exercise to routine               | Yes (Coach)   |
+| Method   | Endpoint                                                          | Description                              | Auth Required |
+| -------- | ----------------------------------------------------------------- | ---------------------------------------- | ------------- |
+| `POST`   | `/api/coach/profile`                                              | Create coach profile (become a coach)    | Yes           |
+| `GET`    | `/api/coach/class`                                                | List coach's clients                     | Yes (Coach)   |
+| `DELETE` | `/api/coach/class/:userId`                                        | Remove client from class                 | Yes (Coach)   |
+| `GET`    | `/api/coach/clients`                                              | List clients with filters                | Yes (Coach)   |
+| `GET`    | `/api/coach/clients/:userId/programs`                             | List client's program assignments        | Yes (Coach)   |
+| `GET`    | `/api/coach/performance`                                          | Performance report                       | Yes (Coach)   |
+| `POST`   | `/api/coach/assign-program`                                       | Assign program to client                 | Yes (Coach)   |
+| `PATCH`  | `/api/coach/assign-program/:assignmentId`                         | Update assignment                        | Yes (Coach)   |
+| `DELETE` | `/api/coach/assign-program/:assignmentId`                         | Delete assignment                        | Yes (Coach)   |
+| `POST`   | `/api/coach/programs`                                             | Create program                           | Yes (Coach)   |
+| `GET`    | `/api/coach/programs`                                             | List coach's programs                    | Yes (Coach)   |
+| `GET`    | `/api/coach/programs/:programId`                                  | Get program with full tree               | Yes (Coach)   |
+| `PATCH`  | `/api/coach/programs/:programId`                                  | Update program                           | Yes (Coach)   |
+| `DELETE` | `/api/coach/programs/:programId`                                  | Delete program                           | Yes (Coach)   |
+| `POST`   | `/api/coach/programs/:programId/routines`                         | Assign routine to program day            | Yes (Coach)   |
+| `PATCH`  | `/api/coach/programs/:programId/routines/:programRoutineId`       | Reassign day number                      | Yes (Coach)   |
+| `DELETE` | `/api/coach/programs/:programId/routines/:programRoutineId`       | Remove routine from program              | Yes (Coach)   |
+| `POST`   | `/api/coach/programs/routines/:routineId/exercises`               | Add exercise to routine                  | Yes (Coach)   |
+| `PATCH`  | `/api/coach/programs/routines/:routineId/exercises/:routineExerciseId` | Update exercise prescription       | Yes (Coach)   |
+| `DELETE` | `/api/coach/programs/routines/:routineId/exercises/:routineExerciseId` | Remove exercise from routine       | Yes (Coach)   |
+| `POST`   | `/api/coach/routines`                                             | Create standalone routine                | Yes (Coach)   |
+| `GET`    | `/api/coach/routines`                                             | List coach's routines                    | Yes (Coach)   |
+| `GET`    | `/api/coach/routines/:routineId`                                  | Get routine with exercises               | Yes (Coach)   |
+| `PATCH`  | `/api/coach/routines/:routineId`                                  | Update routine                           | Yes (Coach)   |
+| `DELETE` | `/api/coach/routines/:routineId`                                  | Delete routine                           | Yes (Coach)   |
 
 ### Workout Endpoints
 
-| Method   | Endpoint                                    | Description                  | Auth Required |
-| -------- | ------------------------------------------- | ---------------------------- | ------------- |
-| `GET`    | `/api/workout/exercises`                    | Get exercises with filtering | Yes           |
-| `GET`    | `/api/workout/routines`                     | Get user's assigned routines | Yes           |
-| `GET`    | `/api/workout/routines/:routineId`          | Get single routine by ID     | Yes           |
-| `POST`   | `/api/workout/sessions`                     | Start a new workout session  | Yes           |
-| `GET`    | `/api/workout/sessions/active`              | Get active workout session   | Yes           |
-| `GET`    | `/api/workout/sessions`                     | Get workout session history  | Yes           |
-| `GET`    | `/api/workout/sessions/:sessionId`          | Get session by ID            | Yes           |
-| `POST`   | `/api/workout/sessions/:sessionId/complete` | Complete a workout session   | Yes           |
-| `POST`   | `/api/workout/sets`                         | Log a new set                | Yes           |
-| `PUT`    | `/api/workout/sets/:setId`                  | Update an existing set       | Yes           |
-| `DELETE` | `/api/workout/sets/:setId`                  | Delete a set                 | Yes           |
-| `POST`   | `/api/workout/sets/sync`                    | Batch sync offline sets      | Yes           |
-
-### Program Endpoints (Coach)
-
-| Method | Endpoint                                      | Description                   | Auth Required |
-| ------ | --------------------------------------------- | ----------------------------- | ------------- |
-| `POST` | `/api/programs`                               | Create a workout program      | Yes           |
-| `POST` | `/api/programs/:programId/routines`           | Assign routine to program day | Yes           |
-| `POST` | `/api/programs/routines/:routineId/exercises` | Add exercise to routine       | Yes           |
+| Method   | Endpoint                                    | Description                          | Auth Required                |
+| -------- | ------------------------------------------- | ------------------------------------ | ---------------------------- |
+| `GET`    | `/api/workout/exercises`                    | Get exercises with filtering         | Yes                          |
+| `POST`   | `/api/workout/exercises`                    | Create exercise (coach only)         | Yes (Coach)                  |
+| `GET`    | `/api/workout/routines`                     | Get coach-assigned routines          | Yes + Subscription           |
+| `GET`    | `/api/workout/routines/:routineId`          | Get single routine by ID             | Yes + Subscription           |
+| `GET`    | `/api/workout/today`                        | Get today's scheduled workout        | Yes + Subscription           |
+| `POST`   | `/api/workout/sessions`                     | Start a new workout session          | Yes + Subscription           |
+| `GET`    | `/api/workout/sessions/active`              | Get active workout session           | Yes                          |
+| `GET`    | `/api/workout/sessions`                     | Get workout session history          | Yes                          |
+| `GET`    | `/api/workout/sessions/:sessionId`          | Get session by ID                    | Yes                          |
+| `POST`   | `/api/workout/sessions/:sessionId/complete` | Complete a workout session           | Yes                          |
+| `POST`   | `/api/workout/sets`                         | Log a new set                        | Yes                          |
+| `PUT`    | `/api/workout/sets/:setId`                  | Update an existing set               | Yes                          |
+| `DELETE` | `/api/workout/sets/:setId`                  | Delete a set                         | Yes                          |
+| `POST`   | `/api/workout/sets/sync`                    | Batch sync offline sets              | Yes                          |
 
 ### Subscription Endpoints
 
