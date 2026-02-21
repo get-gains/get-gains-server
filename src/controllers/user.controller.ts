@@ -6,6 +6,7 @@ import {
   CreateUserData,
   CreateUserFromGoogleData,
   DiscoverCoachesQuery,
+  GetCoachProfileParams,
   GetSubscribedCoachesQuery,
   SubscribeCoachParams,
   UnsubscribeCoachParams,
@@ -113,14 +114,23 @@ export const discoverCoaches = async (
     const take = Math.min(Math.max(1, limit || 50), 100);
     const skip = Math.max(0, offset || 0);
 
-    const where: any = {};
+    // Coaches with no settings row are treated as discoverable (backward-compatible).
+    const where: any = {
+      AND: [
+        {
+          OR: [{ settings: null }, { settings: { isDiscoverable: true } }],
+        },
+      ],
+    };
     if (search) {
       const searchLower = search.toLowerCase();
-      where.OR = [
-        { name: { contains: searchLower, mode: 'insensitive' } },
-        { bio: { contains: searchLower, mode: 'insensitive' } },
-        { specialties: { hasSome: [searchLower] } },
-      ];
+      where.AND.push({
+        OR: [
+          { name: { contains: searchLower, mode: 'insensitive' } },
+          { bio: { contains: searchLower, mode: 'insensitive' } },
+          { specialties: { hasSome: [searchLower] } },
+        ],
+      });
     }
 
     const [coaches, total] = await Promise.all([
@@ -166,6 +176,50 @@ export const discoverCoaches = async (
       stack: err.stack,
     });
     sendSingleError(res, 'Failed to discover coaches', 500);
+  }
+};
+
+/**
+ * Get a single coach's public profile
+ */
+export const getCoachProfile = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { coachId } = req.params as unknown as GetCoachProfileParams;
+
+    const coach = await prisma.coach.findUnique({
+      where: { id: coachId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        avatarUrl: true,
+        bio: true,
+        yearsExperience: true,
+        certifications: true,
+        awards: true,
+        specialties: true,
+        isVerified: true,
+        socialLinks: true,
+        createdAt: true,
+      },
+    });
+
+    if (!coach) {
+      sendSingleError(res, 'Coach not found', 404, 'coachId');
+      return;
+    }
+
+    sendSuccess(res, { coach });
+  } catch (error) {
+    const err = error as Error;
+    logger.error('Error fetching coach profile', {
+      message: err.message,
+      stack: err.stack,
+    });
+    sendSingleError(res, 'Failed to fetch coach profile', 500);
   }
 };
 
@@ -263,11 +317,39 @@ export const subscribeToCoach = async (
 
     const coach = await prisma.coach.findUnique({
       where: { id: coachId },
+      include: { settings: true },
     });
 
     if (!coach) {
       sendSingleError(res, 'Coach not found', 404, 'coachId');
       return;
+    }
+
+    const settings = coach.settings;
+
+    // Guard 1: manual intake toggle
+    if (settings && !settings.acceptingClients) {
+      sendSingleError(
+        res,
+        'This coach is not accepting new clients at this time',
+        409
+      );
+      return;
+    }
+
+    // Guard 2: capacity cap
+    if (settings) {
+      const activeClientCount = await prisma.subscribedCoach.count({
+        where: { coachId, endedAt: null },
+      });
+      if (activeClientCount >= settings.maxClients) {
+        sendSingleError(
+          res,
+          'This coach has reached their maximum client capacity',
+          409
+        );
+        return;
+      }
     }
 
     // Check if already subscribed

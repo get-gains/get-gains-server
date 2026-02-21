@@ -9,6 +9,7 @@ import {
   AssignProgramInput,
 } from '../schemas/coach.schema';
 import { getUserBySupabaseId } from './user.controller';
+import { SubscriptionStatus } from '@prisma/client';
 
 const DAYS_FOR_GOOD_PERFORMANCE = 7;
 const DAYS_FOR_FALLING_BEHIND = 14;
@@ -63,6 +64,9 @@ export const createCoachProfile = async (
         awards: body.awards ?? [],
         specialties: body.specialties ?? [],
         socialLinks: body.socialLinks ?? [],
+        settings: {
+          create: {},
+        },
       },
     });
 
@@ -135,6 +139,16 @@ export const getClients = async (
               where: { isActive: true },
               select: { programId: true, program: { select: { name: true } } },
             },
+            subscriptions: {
+              where: {
+                status: {
+                  in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE],
+                },
+              },
+              select: { currentPeriodEnd: true },
+              orderBy: { currentPeriodEnd: 'desc' },
+              take: 1,
+            },
           },
         },
       },
@@ -147,6 +161,7 @@ export const getClients = async (
       name: cr.user.name,
       nickname: cr.user.nickname,
       subscribedAt: cr.startedAt,
+      subscriptionExpiresAt: cr.user.subscriptions[0]?.currentPeriodEnd ?? null,
       assignedPrograms: cr.user.assignedPrograms,
       isAssigned: cr.user.assignedPrograms.length > 0,
     }));
