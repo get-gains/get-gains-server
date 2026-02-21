@@ -341,6 +341,16 @@ export const processWebhookEvent = async (
           subscription.plan.currency
         );
       }
+
+      // Evict from coach rosters on terminal events only.
+      // CANCELED = paid through end of period; PAST_DUE = grace period retrying payment.
+      // Only EXPIRED and REVOKED mean the user has truly lost access.
+      if (
+        eventData.eventType === 'SUBSCRIPTION_EXPIRED' ||
+        eventData.eventType === 'SUBSCRIPTION_REVOKED'
+      ) {
+        await evictUserFromCoachRosters(subscription.userId);
+      }
     }
 
     // Mark webhook as completed
@@ -367,6 +377,23 @@ export const processWebhookEvent = async (
 
     return { processed: false, error };
   }
+};
+
+/**
+ * Bulk-ends all active SubscribedCoach relationships for a user.
+ * Call only on terminal events (EXPIRED, REVOKED) — not on CANCELED or PAST_DUE.
+ * CANCELED means the user paid through the end of the period.
+ * PAST_DUE means a grace period is active and the payment provider is retrying.
+ */
+const evictUserFromCoachRosters = async (userId: string): Promise<void> => {
+  const result = await prisma.subscribedCoach.updateMany({
+    where: { userId, endedAt: null },
+    data: { endedAt: new Date() },
+  });
+  logger.info('Evicted user from coach rosters', {
+    userId,
+    affectedRosters: result.count,
+  });
 };
 
 /**
