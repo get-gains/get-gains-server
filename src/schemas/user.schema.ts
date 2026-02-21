@@ -82,6 +82,19 @@ export type SubscribeCoachParams = z.infer<
 >['params'];
 
 /**
+ * Schema for viewing a single coach's public profile
+ */
+export const GetCoachProfileSchema = z.object({
+  params: z.object({
+    coachId: z.string().cuid('Invalid coach ID'),
+  }),
+});
+
+export type GetCoachProfileParams = z.infer<
+  typeof GetCoachProfileSchema
+>['params'];
+
+/**
  * Schema for unsubscribing from a coach
  */
 export const UnsubscribeCoachSchema = z.object({
