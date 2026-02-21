@@ -1,6 +1,12 @@
 import { Request, Response } from 'express';
 import prisma from '../config/database';
 import { sendSuccess, sendSingleError } from '../utils/response';
+import {
+  CreateProgramSchema,
+  AssignRoutineSchema,
+  addRoutineExerciseSchema,
+} from '../schemas/program.schema';
+import { z } from 'zod';
 
 export const createProgram = async (req: Request, res: Response) => {
   const coach = req.coach;
@@ -9,7 +15,9 @@ export const createProgram = async (req: Request, res: Response) => {
     return;
   }
 
-  const { name, description } = req.body;
+  const { name, description } = res.locals.validated?.body as z.infer<
+    typeof CreateProgramSchema
+  >['body'];
 
   const program = await prisma.program.create({
     data: {
@@ -29,9 +37,13 @@ export const assignRoutineToProgram = async (req: Request, res: Response) => {
     return;
   }
 
-  const { programId } = req.params;
-  const { routineId, dayNumber } = req.body;
-  const pid = Array.isArray(programId) ? programId[0] : programId;
+  const { programId } = res.locals.validated?.params as z.infer<
+    typeof AssignRoutineSchema
+  >['params'];
+  const { routineId, dayNumber } = res.locals.validated?.body as z.infer<
+    typeof AssignRoutineSchema
+  >['body'];
+  const pid = programId;
 
   const program = await prisma.program.findUnique({
     where: { id: pid },
@@ -60,9 +72,13 @@ export const addExerciseToRoutine = async (req: Request, res: Response) => {
     return;
   }
 
-  const { routineId } = req.params;
-  const rid = Array.isArray(routineId) ? routineId[0] : routineId;
-  const data = req.body;
+  const { routineId } = res.locals.validated?.params as z.infer<
+    typeof addRoutineExerciseSchema
+  >['params'];
+  const rid = routineId;
+  const data = res.locals.validated?.body as z.infer<
+    typeof addRoutineExerciseSchema
+  >['body'];
 
   const routine = await prisma.routine.findUnique({
     where: { id: rid },

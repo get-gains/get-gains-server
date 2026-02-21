@@ -29,10 +29,8 @@ export const getExercises = async (
   res: Response
 ): Promise<void> => {
   try {
-    const query = req.query as unknown as GetExercisesQuery;
-    const limit = query.limit ? Number(query.limit) : 50;
-    const offset = query.offset ? Number(query.offset) : 0;
-    const { muscleGroup, search } = query;
+    const { limit, offset, muscleGroup, search } = res.locals.validated
+      ?.query as GetExercisesQuery;
 
     logger.debug('Fetching exercises', { muscleGroup, search, limit, offset });
 
@@ -99,7 +97,8 @@ export const createExercise = async (
       primaryMuscleGroup,
       targetMuscles,
       equipmentNeeded,
-    } = req.body as import('../schemas/workout.schema').CreateExerciseInput;
+    } = res.locals.validated
+      ?.body as import('../schemas/workout.schema').CreateExerciseInput;
 
     logger.debug('Creating exercise', { name, primaryMuscleGroup });
 
@@ -163,8 +162,8 @@ export const getRoutines = async (
 ): Promise<void> => {
   try {
     const supabaseId = req.user?.id; // This is the Supabase ID from JWT
-    const { programId, limit, offset } =
-      req.query as unknown as GetRoutinesQuery;
+    const { programId, limit, offset } = res.locals.validated
+      ?.query as GetRoutinesQuery;
 
     if (!supabaseId) {
       sendSingleError(res, 'Unauthorized', 401);
@@ -274,7 +273,7 @@ export const getRoutineById = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { routineId } = req.params as unknown as GetRoutineByIdParams;
+    const { routineId } = res.locals.validated?.params as GetRoutineByIdParams;
     const userId = req.user?.id;
 
     if (!userId) {
@@ -346,8 +345,8 @@ export const startWorkoutSession = async (
 ): Promise<void> => {
   try {
     const userId = req.user?.id;
-    const { routineId, assignedProgramId } =
-      req.body as StartWorkoutSessionInput;
+    const { routineId, assignedProgramId } = res.locals.validated
+      ?.body as StartWorkoutSessionInput;
 
     if (!userId) {
       sendSingleError(res, 'Unauthorized', 401);
@@ -491,8 +490,9 @@ export const completeWorkoutSession = async (
 ): Promise<void> => {
   try {
     const userId = req.user?.id;
-    const { sessionId } = req.params as unknown as CompleteWorkoutSessionParams;
-    const { notes } = req.body as CompleteWorkoutSessionInput;
+    const { sessionId } = res.locals.validated
+      ?.params as CompleteWorkoutSessionParams;
+    const { notes } = res.locals.validated?.body as CompleteWorkoutSessionInput;
 
     if (!userId) {
       sendSingleError(res, 'Unauthorized', 401);
@@ -579,10 +579,8 @@ export const getWorkoutSessions = async (
 ): Promise<void> => {
   try {
     const userId = req.user?.id;
-    const query = req.query as unknown as GetWorkoutSessionsQuery;
-    const limit = query.limit ? Number(query.limit) : 50;
-    const offset = query.offset ? Number(query.offset) : 0;
-    const { startDate, endDate } = query;
+    const { limit, offset, startDate, endDate } = res.locals.validated
+      ?.query as GetWorkoutSessionsQuery;
 
     if (!userId) {
       sendSingleError(res, 'Unauthorized', 401);
@@ -650,7 +648,8 @@ export const getWorkoutSessionById = async (
 ): Promise<void> => {
   try {
     const userId = req.user?.id;
-    const { sessionId } = req.params as unknown as GetWorkoutSessionByIdParams;
+    const { sessionId } = res.locals.validated
+      ?.params as GetWorkoutSessionByIdParams;
 
     if (!userId) {
       sendSingleError(res, 'Unauthorized', 401);
@@ -731,7 +730,7 @@ export const logSet = async (req: Request, res: Response): Promise<void> => {
       weightKg,
       rpe,
       notes,
-    } = req.body as LogSetInput;
+    } = res.locals.validated?.body as LogSetInput;
 
     if (!userId) {
       sendSingleError(res, 'Unauthorized', 401);
@@ -832,8 +831,9 @@ export const logSet = async (req: Request, res: Response): Promise<void> => {
 export const updateSet = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user?.id;
-    const { setId } = req.params as unknown as UpdateSetParams;
-    const { repsCompleted, weightKg, rpe, notes } = req.body as UpdateSetInput;
+    const { setId } = res.locals.validated?.params as UpdateSetParams;
+    const { repsCompleted, weightKg, rpe, notes } = res.locals.validated
+      ?.body as UpdateSetInput;
 
     if (!userId) {
       sendSingleError(res, 'Unauthorized', 401);
@@ -891,7 +891,7 @@ export const updateSet = async (req: Request, res: Response): Promise<void> => {
 export const deleteSet = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user?.id;
-    const { setId } = req.params as unknown as DeleteSetParams;
+    const { setId } = res.locals.validated?.params as DeleteSetParams;
 
     if (!userId) {
       sendSingleError(res, 'Unauthorized', 401);
@@ -933,7 +933,7 @@ export const batchSyncSets = async (
 ): Promise<void> => {
   try {
     const userId = req.user?.id;
-    const { sets } = req.body as BatchSyncSetsInput;
+    const { sets } = res.locals.validated?.body as BatchSyncSetsInput;
 
     if (!userId) {
       sendSingleError(res, 'Unauthorized', 401);
