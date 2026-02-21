@@ -265,6 +265,24 @@ model Coach {
   clientRelations SubscribedCoach[]
   programs        Program[]
   exerciseForms   ExerciseForm[]
+  settings        CoachSettings?
+}
+
+model CoachSettings {
+  id      String @id @default(cuid())
+  coachId String @unique
+
+  // Client capacity
+  maxClients       Int     @default(40) // Hard cap on active client count
+  acceptingClients Boolean @default(true) // Manual on/off switch for new intake
+
+  // Discovery
+  isDiscoverable Boolean @default(true) // Appear in public coach search results
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  coach Coach @relation(fields: [coachId], references: [id], onDelete: Cascade)
 }
 
 model SubscribedCoach {
