@@ -264,6 +264,7 @@ model Coach {
   userId          String            @unique
   clientRelations SubscribedCoach[]
   programs        Program[]
+  routines        Routine[]
   exerciseForms   ExerciseForm[]
   settings        CoachSettings?
 }
@@ -332,6 +333,9 @@ model ProgramRoutine {
 
 model Routine {
   id String @id @default(cuid())
+
+  coachId String
+  coach   Coach  @relation(fields: [coachId], references: [id], onDelete: Cascade)
 
   name                     String
   description              String        @db.Text
