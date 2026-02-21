@@ -281,7 +281,47 @@ try {
 
 1. Define schema in `/schemas`
 2. Use `validateRequest` middleware in routes
-3. Access validated data in controller via `req.body`, `req.params`, `req.query`
+3. Access **coerced/defaulted** validated data in controllers via `res.locals.validated`
+
+> **Critical — Express 5 compatibility**: `req.query` and `req.params` are
+> read-only getters in Express 5. The `validateRequest` middleware stores the
+> fully-parsed Zod output (with all `z.coerce.*` transforms and `.default()`
+> values applied) in `res.locals.validated`. Controllers **must** read from
+> `res.locals.validated` — never from `req.query as unknown as T` — to receive
+> correct types.
+
+```typescript
+// ✅ CORRECT — reads coerced values from validated middleware output
+import type { GetThingsQuery } from '../schemas/thing.schema';
+
+export const getThings = async (req: Request, res: Response) => {
+  const { limit, offset, includeInactive } =
+    res.locals.validated?.query as GetThingsQuery;
+  // limit/offset are numbers (not strings), includeInactive is a boolean
+};
+
+// ❌ WRONG — bypasses Zod coercion; limit is a string, booleans are always truthy
+export const getThings = async (req: Request, res: Response) => {
+  const { limit, offset } = req.query as unknown as GetThingsQuery;
+};
+```
+
+**Rules:**
+- `res.locals.validated?.query` → for query-param coercion (`z.coerce.number()`, `z.coerce.boolean()`, `z.coerce.date()`, `.default()`)
+- `res.locals.validated?.body` → **always required** for `multipart/form-data` request bodies (multer delivers every text field as a string; the schema's `z.preprocess(toNumber, …)` coerces them — but only the `res.locals.validated` copy is coerced)
+- `res.locals.validated?.params` → for route params (coerced where needed)
+- **Never** use `req.body` directly for multipart endpoints that coerce numeric fields — Prisma will throw `PrismaClientValidationError` ("Expected Float, provided String")
+- **Never** use `req.query as unknown as T` — query strings are always raw `string | string[]` at runtime
+
+**Multipart numeric field convention**: Mobile clients (Flutter) send numeric values
+(`heightCm`, `weightKg`, integer counts, etc.) as **plain strings** inside
+`multipart/form-data` — this is standard HTTP behaviour and avoids floating-point
+precision loss. All multipart schemas **must** use `z.preprocess(toNumber, z.number())`
+(or `z.preprocess(toNumber, z.number().int())` for integers) for these fields.
+Controllers **must** read `res.locals.validated?.body` to receive the Prisma-compatible
+numbers.
+
+**Type augmentation** is declared in `src/types/express.d.ts` — no import needed.
 
 ---
 
@@ -312,6 +352,11 @@ try {
 | `GOOGLE_CALLBACK_URL`            | Google OAuth callback URL                 | `/api/auth/google/callback` |
 | `GOOGLE_PLAY_PACKAGE_NAME`       | Android app package name                  | Required for subscriptions  |
 | `GOOGLE_SERVICE_ACCOUNT_KEY_PATH`| Path to Google service account JSON       | `google-services.json`      |
+| `S3_ENDPOINT`                    | S3-compatible storage endpoint (Railway Buckets) | Required for file uploads |
+| `S3_REGION`                      | S3 region                                 | `us-east-1`                 |
+| `S3_ACCESS_KEY_ID`               | S3 access key ID                          | Required for file uploads   |
+| `S3_SECRET_ACCESS_KEY`           | S3 secret access key                      | Required for file uploads   |
+| `S3_BUCKET_NAME`                 | S3 bucket name for avatar storage         | Required for file uploads   |
 
 ---
 

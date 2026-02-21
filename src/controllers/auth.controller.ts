@@ -23,7 +23,8 @@ export const registerWithEmailAndPassword = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { email, password, name, nickname }: RegisterInput = req.body;
+    const { email, password, name, nickname } = res.locals.validated
+      ?.body as RegisterInput;
 
     logger.debug('Registration attempt', { email });
 
@@ -102,7 +103,7 @@ export const signInWithGoogle = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { idToken }: GoogleSignInInput = req.body;
+    const { idToken } = res.locals.validated?.body as GoogleSignInInput;
 
     if (!idToken) {
       sendSingleError(res, 'ID token is required', 400);
@@ -179,7 +180,7 @@ export const loginWithEmailAndPassword = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { email, password }: LoginInput = req.body;
+    const { email, password } = res.locals.validated?.body as LoginInput;
 
     const { data, error } = await supabase.auth.signInWithPassword({
       email: email.toLowerCase(),
@@ -262,7 +263,7 @@ export const signInWithGoogleWithUserData = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { idToken }: GoogleSignInInput = req.body;
+    const { idToken } = res.locals.validated?.body as GoogleSignInInput;
 
     if (!idToken) {
       sendSingleError(res, 'ID token is required', 400);
@@ -362,7 +363,8 @@ export const refreshTokenWithBody = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { refreshToken: refreshTokenValue }: RefreshTokenInput = req.body;
+    const { refreshToken: refreshTokenValue } = res.locals.validated
+      ?.body as RefreshTokenInput;
 
     if (!refreshTokenValue) {
       sendSingleError(res, 'Refresh token is required', 401);
@@ -424,7 +426,7 @@ export const refreshToken = async (
   res: Response
 ): Promise<void> => {
   try {
-    const refreshToken = req.body?.refreshToken as string | undefined;
+    const { refreshToken } = res.locals.validated?.body as RefreshTokenInput;
 
     if (!refreshToken) {
       sendSingleError(res, 'Refresh token is required', 401);
@@ -532,7 +534,7 @@ export const sendRecoveryEmail = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { email }: SendRecoveryEmailInput = req.body;
+    const { email } = res.locals.validated?.body as SendRecoveryEmailInput;
 
     logger.debug('Password recovery email request', { email });
     logger.debug('Using password reset redirect URL', {
@@ -575,7 +577,7 @@ export const resetPassword = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { newPassword }: ResetPasswordInput = req.body;
+    const { newPassword } = res.locals.validated?.body as ResetPasswordInput;
 
     // The user is already authenticated via Bearer token (authenticateSupabaseUser middleware)
     // req.user contains the validated Supabase user from getUser(token)
@@ -630,7 +632,7 @@ export const exchangeCodeForSession = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { code }: ExchangeCodeInput = req.body;
+    const { code } = res.locals.validated?.body as ExchangeCodeInput;
 
     logger.debug('Exchanging auth code for session');
 
@@ -694,7 +696,7 @@ export const checkEmailVerified = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { email }: CheckEmailVerifiedInput = req.body;
+    const { email } = res.locals.validated?.body as CheckEmailVerifiedInput;
 
     logger.debug('Checking email verification status', { email });
 
