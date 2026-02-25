@@ -4,8 +4,10 @@ import {
   authenticateSupabaseUser,
   requireAppUser,
 } from '../middleware/auth.middleware';
+import { requireSubscription } from '../middleware/subscription.middleware';
 import {
   DiscoverCoachesSchema,
+  GetCoachProfileSchema,
   GetSubscribedCoachesSchema,
   SubscribeCoachSchema,
   UnsubscribeCoachSchema,
@@ -13,6 +15,7 @@ import {
 } from '../schemas/user.schema';
 import {
   discoverCoaches,
+  getCoachProfile,
   getSubscribedCoaches,
   subscribeToCoach,
   unsubscribeFromCoach,
@@ -71,14 +74,26 @@ router.get(
 );
 
 /**
+ * @route   GET /user/coaches/:coachId
+ * @desc    Get a single coach's public profile
+ * @access  Public (no auth required)
+ */
+router.get(
+  '/coaches/:coachId',
+  validateRequest(GetCoachProfileSchema),
+  getCoachProfile
+);
+
+/**
  * @route   POST /user/coaches/:coachId
- * @desc    Subscribe to a coach
- * @access  Protected (authenticateSupabaseUser + requireAppUser)
+ * @desc    Subscribe to a coach (requires active platform subscription)
+ * @access  Protected (authenticateSupabaseUser + requireAppUser + requireSubscription)
  */
 router.post(
   '/coaches/:coachId',
   authenticateSupabaseUser,
   requireAppUser,
+  requireSubscription(),
   validateRequest(SubscribeCoachSchema),
   subscribeToCoach
 );

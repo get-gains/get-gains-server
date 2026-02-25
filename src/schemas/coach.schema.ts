@@ -65,3 +65,53 @@ export const AssignProgramSchema = z.object({
 });
 
 export type AssignProgramInput = z.infer<typeof AssignProgramSchema>['body'];
+
+// ============== Assignment Management Schemas ==============
+
+/**
+ * Get all program assignments for a specific client
+ */
+export const GetClientProgramsSchema = z.object({
+  params: z.object({
+    userId: z.string().cuid('Invalid user ID'),
+  }),
+});
+
+export type GetClientProgramsParams = z.infer<
+  typeof GetClientProgramsSchema
+>['params'];
+
+/**
+ * Update an existing program assignment
+ */
+export const UpdateAssignmentSchema = z.object({
+  params: z.object({
+    assignmentId: z.string().cuid('Invalid assignment ID'),
+  }),
+  body: z.object({
+    startDate: z.string().datetime().optional(),
+    endDate: z.string().datetime().nullable().optional(),
+    notes: z.string().max(1000).nullable().optional(),
+    isActive: z.boolean().optional(),
+  }),
+});
+
+export type UpdateAssignmentParams = z.infer<
+  typeof UpdateAssignmentSchema
+>['params'];
+export type UpdateAssignmentInput = z.infer<
+  typeof UpdateAssignmentSchema
+>['body'];
+
+/**
+ * Delete a program assignment
+ */
+export const DeleteAssignmentSchema = z.object({
+  params: z.object({
+    assignmentId: z.string().cuid('Invalid assignment ID'),
+  }),
+});
+
+export type DeleteAssignmentParams = z.infer<
+  typeof DeleteAssignmentSchema
+>['params'];

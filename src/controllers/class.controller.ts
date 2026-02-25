@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
 import { sendSuccess, sendSingleError } from '../utils/response';
+import { SubscriptionStatus } from '@prisma/client';
 import { GetClassQuery, RemoveClientParams } from '../schemas/class.schema';
 
 /**
@@ -38,6 +39,19 @@ export const getClass = async (req: Request, res: Response): Promise<void> => {
               email: true,
               name: true,
               nickname: true,
+              subscriptions: {
+                where: {
+                  status: {
+                    in: [
+                      SubscriptionStatus.ACTIVE,
+                      SubscriptionStatus.PAST_DUE,
+                    ],
+                  },
+                },
+                select: { currentPeriodEnd: true },
+                orderBy: { currentPeriodEnd: 'desc' },
+                take: 1,
+              },
             },
           },
         },
@@ -59,6 +73,7 @@ export const getClass = async (req: Request, res: Response): Promise<void> => {
       name: cr.user.name,
       nickname: cr.user.nickname,
       subscribedAt: cr.startedAt,
+      subscriptionExpiresAt: cr.user.subscriptions[0]?.currentPeriodEnd ?? null,
     }));
 
     sendSuccess(res, {

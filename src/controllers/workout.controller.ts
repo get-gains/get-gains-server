@@ -16,6 +16,7 @@ import {
   UpdateSetInput,
   DeleteSetParams,
   BatchSyncSetsInput,
+  GetTodayWorkoutQuery,
 } from '../schemas/workout.schema';
 import { MuscleGroup } from '@prisma/client';
 
@@ -345,8 +346,7 @@ export const startWorkoutSession = async (
 ): Promise<void> => {
   try {
     const userId = req.user?.id;
-    const { routineId, assignedProgramId } = res.locals.validated
-      ?.body as StartWorkoutSessionInput;
+    const { assignedProgramId } = req.body as StartWorkoutSessionInput;
 
     if (!userId) {
       sendSingleError(res, 'Unauthorized', 401);
@@ -355,7 +355,6 @@ export const startWorkoutSession = async (
 
     logger.info('Starting workout session', {
       userId,
-      routineId,
       assignedProgramId,
     });
 
@@ -1018,5 +1017,164 @@ export const batchSyncSets = async (
   } catch (error) {
     logger.error('Error batch syncing sets', error);
     sendSingleError(res, 'Failed to sync sets', 500);
+  }
+};
+
+// ============== Today's Workout Controller ==============
+
+/**
+ * Resolve which routine the user should do today based on their assigned program
+ * and the program's day cycle.
+ */
+export const getTodayWorkout = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const supabaseId = req.user?.id;
+    const { assignedProgramId: queryProgramId } =
+      req.query as unknown as GetTodayWorkoutQuery;
+
+    if (!supabaseId) {
+      sendSingleError(res, 'Unauthorized', 401);
+      return;
+    }
+
+    const user = await prisma.user.findUnique({ where: { supabaseId } });
+    if (!user) {
+      sendSingleError(res, 'User not found', 404);
+      return;
+    }
+
+    const assignment = await prisma.assignedProgram.findFirst({
+      where: {
+        userId: user.id,
+        isActive: true,
+        ...(queryProgramId && { id: queryProgramId }),
+      },
+      include: {
+        program: {
+          include: {
+            programRoutines: {
+              include: {
+                routine: {
+                  include: {
+                    routineExercises: {
+                      include: { exercise: true },
+                      orderBy: { orderInRoutine: 'asc' },
+                    },
+                  },
+                },
+              },
+              orderBy: { dayNumber: 'asc' },
+            },
+          },
+        },
+      },
+      orderBy: { startDate: 'desc' },
+    });
+
+    if (!assignment) {
+      sendSingleError(res, 'No active program assigned', 404);
+      return;
+    }
+
+    const programRoutines = assignment.program.programRoutines;
+    if (programRoutines.length === 0) {
+      sendSuccess(res, {
+        today: null,
+        isRestDay: true,
+        message: 'Program has no routines scheduled',
+        assignedProgramId: assignment.id,
+        programName: assignment.program.name,
+      });
+      return;
+    }
+
+    const today = new Date();
+    const startDate = assignment.startDate;
+    const msPerDay = 1000 * 60 * 60 * 24;
+    const daysSinceStart = Math.floor(
+      (today.getTime() - startDate.getTime()) / msPerDay
+    );
+
+    // Program hasn't started yet
+    if (daysSinceStart < 0) {
+      sendSuccess(res, {
+        today: null,
+        isRestDay: false,
+        message: 'Program has not started yet',
+        startDate: assignment.startDate,
+        assignedProgramId: assignment.id,
+        programName: assignment.program.name,
+      });
+      return;
+    }
+
+    const totalCycleDays = Math.max(
+      ...programRoutines.map((pr) => pr.dayNumber)
+    );
+    const cycleDayNumber = (daysSinceStart % totalCycleDays) + 1;
+
+    logger.debug('Today workout calculation', {
+      userId: user.id,
+      daysSinceStart,
+      totalCycleDays,
+      cycleDayNumber,
+    });
+
+    const todayProgramRoutine = programRoutines.find(
+      (pr) => pr.dayNumber === cycleDayNumber
+    );
+
+    if (!todayProgramRoutine) {
+      sendSuccess(res, {
+        today: null,
+        isRestDay: true,
+        dayNumber: cycleDayNumber,
+        assignedProgramId: assignment.id,
+        programName: assignment.program.name,
+      });
+      return;
+    }
+
+    const { routine } = todayProgramRoutine;
+
+    sendSuccess(res, {
+      today: {
+        programRoutineId: todayProgramRoutine.id,
+        dayNumber: todayProgramRoutine.dayNumber,
+        assignedProgramId: assignment.id,
+        programName: assignment.program.name,
+        routine: {
+          id: routine.id,
+          name: routine.name,
+          description: routine.description,
+          estimatedDurationMinutes: routine.estimatedDurationMinutes,
+          muscleGroupsTargeted: routine.muscleGroupsTargeted,
+          exercises: routine.routineExercises.map((re) => ({
+            id: re.id,
+            exerciseId: re.exerciseId,
+            sets: re.sets,
+            repsMin: re.repsMin,
+            repsMax: re.repsMax,
+            restSeconds: re.restSeconds,
+            orderInRoutine: re.orderInRoutine,
+            notes: re.notes,
+            exercise: {
+              id: re.exercise.id,
+              name: re.exercise.name,
+              description: re.exercise.description,
+              primaryMuscleGroup: re.exercise.primaryMuscleGroup,
+              equipmentNeeded: re.exercise.equipmentNeeded,
+            },
+          })),
+        },
+      },
+      isRestDay: false,
+    });
+  } catch (error) {
+    logger.error('Error fetching today workout', error);
+    sendSingleError(res, 'Failed to fetch today workout', 500);
   }
 };
