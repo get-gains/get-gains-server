@@ -17,13 +17,18 @@ import {
   DeleteSetParams,
   BatchSyncSetsInput,
   GetTodayWorkoutQuery,
+  UpdateExerciseParams,
+  UpdateExerciseInput,
+  DeleteExerciseParams,
+  GetWeeklyStatsQuery,
 } from '../schemas/workout.schema';
 import { MuscleGroup } from '@prisma/client';
 
 // ============== Exercise Controllers ==============
 
 /**
- * Get all exercises with optional filtering
+ * Get all exercises with optional filtering.
+ * Returns public exercises + the requesting coach's private exercises (if applicable).
  */
 export const getExercises = async (
   req: Request,
@@ -35,16 +40,30 @@ export const getExercises = async (
 
     logger.debug('Fetching exercises', { muscleGroup, search, limit, offset });
 
-    const where: Record<string, unknown> = {};
+    // Resolve coach ID if the requester is a coach (for private exercise visibility)
+    const coachId = req.coach?.id;
+
+    // Build visibility filter: public exercises OR exercises owned by this coach
+    const visibilityFilter = coachId
+      ? { OR: [{ isPublic: true }, { coachId }] }
+      : { isPublic: true };
+
+    const where: Record<string, unknown> = {
+      ...visibilityFilter,
+    };
 
     if (muscleGroup) {
       where.primaryMuscleGroup = muscleGroup.toUpperCase() as MuscleGroup;
     }
 
     if (search) {
-      where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
+      where.AND = [
+        {
+          OR: [
+            { name: { contains: search, mode: 'insensitive' } },
+            { description: { contains: search, mode: 'insensitive' } },
+          ],
+        },
       ];
     }
 
@@ -68,6 +87,8 @@ export const getExercises = async (
         primaryMuscleGroup: e.primaryMuscleGroup,
         targetMuscles: e.targetMuscles,
         equipmentNeeded: e.equipmentNeeded,
+        coachId: e.coachId,
+        isPublic: e.isPublic,
         createdAt: e.createdAt,
         updatedAt: e.updatedAt,
       })),
@@ -85,7 +106,8 @@ export const getExercises = async (
 };
 
 /**
- * Create a new exercise (coach only)
+ * Create a new exercise (coach only).
+ * Sets coachId to the creating coach and supports isPublic flag.
  */
 export const createExercise = async (
   req: Request,
@@ -98,14 +120,29 @@ export const createExercise = async (
       primaryMuscleGroup,
       targetMuscles,
       equipmentNeeded,
+      isPublic,
     } = res.locals.validated
       ?.body as import('../schemas/workout.schema').CreateExerciseInput;
 
-    logger.debug('Creating exercise', { name, primaryMuscleGroup });
+    const coach = req.coach;
+    if (!coach) {
+      sendSingleError(res, 'Coach required', 403);
+      return;
+    }
 
-    // Check for duplicate name
+    logger.debug('Creating exercise', {
+      name,
+      primaryMuscleGroup,
+      coachId: coach.id,
+      isPublic,
+    });
+
+    // Check for duplicate name (within scope: global public OR this coach's exercises)
     const existing = await prisma.exercise.findFirst({
-      where: { name: { equals: name, mode: 'insensitive' } },
+      where: {
+        name: { equals: name, mode: 'insensitive' },
+        OR: [{ isPublic: true }, { coachId: coach.id }],
+      },
     });
 
     if (existing) {
@@ -125,10 +162,16 @@ export const createExercise = async (
         primaryMuscleGroup: primaryMuscleGroup as MuscleGroup,
         targetMuscles: targetMuscles as import('@prisma/client').TargetMuscle[],
         equipmentNeeded,
+        coachId: coach.id,
+        isPublic: isPublic ?? true,
       },
     });
 
-    logger.info('Exercise created', { exerciseId: exercise.id, name });
+    logger.info('Exercise created', {
+      exerciseId: exercise.id,
+      name,
+      coachId: coach.id,
+    });
 
     sendSuccess(
       res,
@@ -140,6 +183,8 @@ export const createExercise = async (
           primaryMuscleGroup: exercise.primaryMuscleGroup,
           targetMuscles: exercise.targetMuscles,
           equipmentNeeded: exercise.equipmentNeeded,
+          coachId: exercise.coachId,
+          isPublic: exercise.isPublic,
           createdAt: exercise.createdAt,
           updatedAt: exercise.updatedAt,
         },
@@ -1176,5 +1221,298 @@ export const getTodayWorkout = async (
   } catch (error) {
     logger.error('Error fetching today workout', error);
     sendSingleError(res, 'Failed to fetch today workout', 500);
+  }
+};
+
+// ============== Exercise Update / Delete Controllers ==============
+
+/**
+ * Update an exercise (coach only, must own the exercise).
+ */
+export const updateExercise = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const coach = req.coach;
+    if (!coach) {
+      sendSingleError(res, 'Coach required', 403);
+      return;
+    }
+
+    const { exerciseId } = res.locals.validated?.params as UpdateExerciseParams;
+    const updates = res.locals.validated?.body as UpdateExerciseInput;
+
+    logger.debug('Updating exercise', {
+      exerciseId,
+      coachId: coach.id,
+      updates,
+    });
+
+    // Find exercise and verify ownership
+    const exercise = await prisma.exercise.findUnique({
+      where: { id: exerciseId },
+    });
+
+    if (!exercise) {
+      sendSingleError(res, 'Exercise not found', 404);
+      return;
+    }
+
+    // Only the owning coach can update (global exercises with no coachId cannot be edited)
+    if (!exercise.coachId || exercise.coachId !== coach.id) {
+      sendSingleError(
+        res,
+        'You do not have permission to update this exercise',
+        403
+      );
+      return;
+    }
+
+    // Check for duplicate name if name is being changed
+    if (
+      updates.name &&
+      updates.name.toLowerCase() !== exercise.name.toLowerCase()
+    ) {
+      const duplicate = await prisma.exercise.findFirst({
+        where: {
+          name: { equals: updates.name, mode: 'insensitive' },
+          id: { not: exerciseId },
+          OR: [{ isPublic: true }, { coachId: coach.id }],
+        },
+      });
+
+      if (duplicate) {
+        sendSingleError(
+          res,
+          'An exercise with this name already exists',
+          409,
+          'name'
+        );
+        return;
+      }
+    }
+
+    const updated = await prisma.exercise.update({
+      where: { id: exerciseId },
+      data: {
+        ...(updates.name !== undefined && { name: updates.name }),
+        ...(updates.description !== undefined && {
+          description: updates.description,
+        }),
+        ...(updates.primaryMuscleGroup !== undefined && {
+          primaryMuscleGroup: updates.primaryMuscleGroup as MuscleGroup,
+        }),
+        ...(updates.targetMuscles !== undefined && {
+          targetMuscles:
+            updates.targetMuscles as import('@prisma/client').TargetMuscle[],
+        }),
+        ...(updates.equipmentNeeded !== undefined && {
+          equipmentNeeded: updates.equipmentNeeded,
+        }),
+        ...(updates.isPublic !== undefined && { isPublic: updates.isPublic }),
+      },
+    });
+
+    logger.info('Exercise updated', {
+      exerciseId: updated.id,
+      coachId: coach.id,
+    });
+
+    sendSuccess(res, {
+      exercise: {
+        id: updated.id,
+        name: updated.name,
+        description: updated.description,
+        primaryMuscleGroup: updated.primaryMuscleGroup,
+        targetMuscles: updated.targetMuscles,
+        equipmentNeeded: updated.equipmentNeeded,
+        coachId: updated.coachId,
+        isPublic: updated.isPublic,
+        createdAt: updated.createdAt,
+        updatedAt: updated.updatedAt,
+      },
+    });
+  } catch (error) {
+    logger.error('Error updating exercise', error);
+    sendSingleError(res, 'Failed to update exercise', 500);
+  }
+};
+
+/**
+ * Delete an exercise (coach only, must own the exercise).
+ * Cascades to RoutineExercise junctions.
+ */
+export const deleteExercise = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const coach = req.coach;
+    if (!coach) {
+      sendSingleError(res, 'Coach required', 403);
+      return;
+    }
+
+    const { exerciseId } = res.locals.validated?.params as DeleteExerciseParams;
+
+    logger.debug('Deleting exercise', { exerciseId, coachId: coach.id });
+
+    // Find exercise and verify ownership
+    const exercise = await prisma.exercise.findUnique({
+      where: { id: exerciseId },
+      include: {
+        routineExercises: { select: { id: true } },
+      },
+    });
+
+    if (!exercise) {
+      sendSingleError(res, 'Exercise not found', 404);
+      return;
+    }
+
+    // Only the owning coach can delete
+    if (!exercise.coachId || exercise.coachId !== coach.id) {
+      sendSingleError(
+        res,
+        'You do not have permission to delete this exercise',
+        403
+      );
+      return;
+    }
+
+    await prisma.exercise.delete({ where: { id: exerciseId } });
+
+    logger.info('Exercise deleted', {
+      exerciseId,
+      coachId: coach.id,
+      affectedRoutines: exercise.routineExercises.length,
+    });
+
+    sendSuccess(res, { deleted: true });
+  } catch (error) {
+    logger.error('Error deleting exercise', error);
+    sendSingleError(res, 'Failed to delete exercise', 500);
+  }
+};
+
+// ============== Weekly Stats Controller ==============
+
+/**
+ * Get weekly workout stats for the authenticated user.
+ * Returns: workoutsCompleted, totalMinutes, streakDays.
+ */
+export const getWeeklyStats = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const supabaseId = req.user?.id;
+    const { weekOf } = res.locals.validated?.query as GetWeeklyStatsQuery;
+
+    if (!supabaseId) {
+      sendSingleError(res, 'Unauthorized', 401);
+      return;
+    }
+
+    // Resolve app user
+    const user = await prisma.user.findUnique({
+      where: { supabaseId },
+    });
+
+    if (!user) {
+      sendSingleError(res, 'User not found', 404);
+      return;
+    }
+
+    // Determine the week window (Monday–Sunday)
+    const referenceDate = weekOf ? new Date(weekOf) : new Date();
+    const dayOfWeek = referenceDate.getUTCDay(); // 0=Sun, 1=Mon...
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+
+    const weekStart = new Date(referenceDate);
+    weekStart.setUTCDate(referenceDate.getUTCDate() + mondayOffset);
+    weekStart.setUTCHours(0, 0, 0, 0);
+
+    const weekEnd = new Date(weekStart);
+    weekEnd.setUTCDate(weekStart.getUTCDate() + 7);
+
+    logger.debug('Fetching weekly stats', {
+      userId: user.id,
+      weekStart,
+      weekEnd,
+    });
+
+    // Fetch completed sessions for the week
+    const sessions = await prisma.workoutSession.findMany({
+      where: {
+        userId: user.id,
+        completedAt: { not: null },
+        startedAt: { gte: weekStart, lt: weekEnd },
+      },
+      select: {
+        startedAt: true,
+        completedAt: true,
+      },
+      orderBy: { startedAt: 'asc' },
+    });
+
+    const workoutsCompleted = sessions.length;
+
+    // Total minutes: sum of (completedAt - startedAt) for each session
+    const totalMinutes = sessions.reduce((sum, s) => {
+      if (s.completedAt) {
+        const durationMs =
+          new Date(s.completedAt).getTime() - new Date(s.startedAt).getTime();
+        return sum + Math.round(durationMs / 60000);
+      }
+      return sum;
+    }, 0);
+
+    // Streak: count consecutive days (up to today) that have at least one completed session
+    // Look back up to 90 days to find the streak
+    const today = new Date();
+    today.setUTCHours(23, 59, 59, 999);
+    const lookbackStart = new Date(today);
+    lookbackStart.setUTCDate(today.getUTCDate() - 90);
+    lookbackStart.setUTCHours(0, 0, 0, 0);
+
+    const recentSessions = await prisma.workoutSession.findMany({
+      where: {
+        userId: user.id,
+        completedAt: { not: null },
+        startedAt: { gte: lookbackStart, lte: today },
+      },
+      select: { startedAt: true },
+      orderBy: { startedAt: 'desc' },
+    });
+
+    // Build a set of unique workout dates (YYYY-MM-DD in UTC)
+    const workoutDates = new Set(
+      recentSessions.map((s) => s.startedAt.toISOString().slice(0, 10))
+    );
+
+    // Count streak backwards from today
+    let streakDays = 0;
+    const checkDate = new Date(today);
+    checkDate.setUTCHours(0, 0, 0, 0);
+
+    while (workoutDates.has(checkDate.toISOString().slice(0, 10))) {
+      streakDays++;
+      checkDate.setUTCDate(checkDate.getUTCDate() - 1);
+    }
+
+    sendSuccess(res, {
+      stats: {
+        weekStart: weekStart.toISOString(),
+        weekEnd: weekEnd.toISOString(),
+        workoutsCompleted,
+        totalMinutes,
+        streakDays,
+      },
+    });
+  } catch (error) {
+    logger.error('Error fetching weekly stats', error);
+    sendSingleError(res, 'Failed to fetch weekly stats', 500);
   }
 };
