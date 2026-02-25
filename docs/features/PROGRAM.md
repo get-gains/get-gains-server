@@ -1,6 +1,6 @@
 # Program Management (Coach Flow)
 
-> **Last Updated**: February 21, 2026  
+> **Last Updated**: February 25, 2026  
 > **Status**: ✅ Fully Implemented (Coach flow)
 
 ## Overview
@@ -10,7 +10,8 @@ The Program Management feature enables coaches to build structured training prog
 
 **Scope:**  
 This document covers the complete coach program flow end-to-end:
-- Program CRUD
+
+- Program CRUD (including custom one-off programs for specific clients)
 - Routine CRUD (standalone, reusable)
 - ProgramRoutine junction management (assign/reorder/remove routines in programs)
 - RoutineExercise junction management (add/update/remove exercises in routines)
@@ -20,7 +21,8 @@ This document covers the complete coach program flow end-to-end:
 
 > **Personal Programs** (user-created, no coach) are **not yet implemented** and will be handled in a separate task.
 
-**Dependencies:**  
+**Dependencies:**
+
 - Express.js v5
 - Zod v4 (request validation)
 - Prisma (Program, Routine, ProgramRoutine, RoutineExercise, AssignedProgram models)
@@ -29,18 +31,18 @@ This document covers the complete coach program flow end-to-end:
 
 **Entry Points:**
 
-| File | Purpose |
-|------|---------|
-| `src/routes/program.routes.ts` | Program CRUD + ProgramRoutine + RoutineExercise routes |
-| `src/routes/routine.routes.ts` | Standalone routine CRUD routes |
-| `src/routes/coach.routes.ts` | Assignment management routes + sub-router mounts |
-| `src/routes/workout.routes.ts` | Client-facing routine/today/session routes |
-| `src/controllers/program.controller.ts` | All program & routine business logic (16 handlers) |
-| `src/controllers/coach.controller.ts` | Assignment management handlers |
+| File                                    | Purpose                                                    |
+| --------------------------------------- | ---------------------------------------------------------- |
+| `src/routes/program.routes.ts`          | Program CRUD + ProgramRoutine + RoutineExercise routes     |
+| `src/routes/routine.routes.ts`          | Standalone routine CRUD routes                             |
+| `src/routes/coach.routes.ts`            | Assignment management routes + sub-router mounts           |
+| `src/routes/workout.routes.ts`          | Client-facing routine/today/session routes                 |
+| `src/controllers/program.controller.ts` | All program & routine business logic (16 handlers)         |
+| `src/controllers/coach.controller.ts`   | Assignment management handlers                             |
 | `src/controllers/workout.controller.ts` | Client-facing workout handlers (routines, today, sessions) |
-| `src/schemas/program.schema.ts` | Zod schemas for program & routine operations |
-| `src/schemas/coach.schema.ts` | Zod schemas for assignment operations |
-| `src/schemas/workout.schema.ts` | Zod schemas for client workout operations |
+| `src/schemas/program.schema.ts`         | Zod schemas for program & routine operations               |
+| `src/schemas/coach.schema.ts`           | Zod schemas for assignment operations                      |
+| `src/schemas/workout.schema.ts`         | Zod schemas for client workout operations                  |
 
 ---
 
@@ -58,6 +60,7 @@ Coach creates Program (e.g. "Push Pull Legs")
 ```
 
 All three nodes are **reusable**:
+
 - A **Program** can be assigned to many clients
 - A **Routine** can be reused across multiple programs
 - An **Exercise** (global library) can be reused across routines
@@ -70,11 +73,13 @@ All three nodes are **reusable**:
 
 ```prisma
 model Program {
-  id          String @id @default(cuid())
-  name        String
-  description String @db.Text
-  coachId     String
-  coach       Coach  @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  id              String  @id @default(cuid())
+  name            String
+  description     String  @db.Text
+  coachId         String
+  coach           Coach   @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  customForUserId String? // When set, this program is a one-off for a specific client
+  customForUser   User?   @relation("CustomPrograms", ...)
   programRoutines  ProgramRoutine[]
   assignedPrograms AssignedProgram[]
 }
@@ -128,6 +133,7 @@ model AssignedProgram {
 ### Key Design Decisions
 
 - **`Routine.coachId`**: Enforces ownership. Coaches can only manage their own routines.
+- **`Program.customForUserId`**: When set, the program is a custom one-off created for a specific client. Custom programs are **hidden from the reusable library** (`GET /api/coach/programs` excludes them by default). Pass `?includeCustom=true` to include them. When creating a custom program, the server validates that the target user is in the coach's class.
 - **`ProgramRoutine` junction**: Allows the same routine in multiple programs; each assignment has its own `dayNumber`.
 - **`RoutineExercise` junction**: Stores the coach's prescription (sets/reps/rest) separately from the global `Exercise` record.
 - **Cascade rules**: Deleting a Program cascades to `ProgramRoutine` but NOT to `Routine`. Deleting a Routine cascades to `RoutineExercise` but NOT to `Exercise`.
@@ -140,67 +146,67 @@ model AssignedProgram {
 
 All routes are mounted at `/api/coach/programs` and require `authenticateSupabaseUser` + `requireCoach`.
 
-| Method | Path | Handler | Description |
-|--------|------|---------|-------------|
-| `POST` | `/` | `createProgram` | Create a new training program |
-| `GET` | `/` | `getCoachPrograms` | List all coach's programs (paginated) |
-| `GET` | `/:programId` | `getCoachProgramById` | Get program with full routine/exercise tree |
-| `PATCH` | `/:programId` | `updateProgram` | Update name or description |
-| `DELETE` | `/:programId` | `deleteProgram` | Delete program (cascades to ProgramRoutine) |
+| Method   | Path          | Handler               | Description                                 |
+| -------- | ------------- | --------------------- | ------------------------------------------- |
+| `POST`   | `/`           | `createProgram`       | Create a new training program               |
+| `GET`    | `/`           | `getCoachPrograms`    | List all coach's programs (paginated)       |
+| `GET`    | `/:programId` | `getCoachProgramById` | Get program with full routine/exercise tree |
+| `PATCH`  | `/:programId` | `updateProgram`       | Update name or description                  |
+| `DELETE` | `/:programId` | `deleteProgram`       | Delete program (cascades to ProgramRoutine) |
 
 ### Routine CRUD (Standalone)
 
 All routes are mounted at `/api/coach/routines` and require `authenticateSupabaseUser` + `requireCoach`.
 
-| Method | Path | Handler | Description |
-|--------|------|---------|-------------|
-| `POST` | `/` | `createRoutine` | Create a reusable routine |
-| `GET` | `/` | `getCoachRoutines` | List all coach's routines (paginated) |
-| `GET` | `/:routineId` | `getCoachRoutineById` | Get routine with exercise list |
-| `PATCH` | `/:routineId` | `updateRoutine` | Update routine fields |
-| `DELETE` | `/:routineId` | `deleteRoutine` | Delete routine (cascades to RoutineExercise) |
+| Method   | Path          | Handler               | Description                                  |
+| -------- | ------------- | --------------------- | -------------------------------------------- |
+| `POST`   | `/`           | `createRoutine`       | Create a reusable routine                    |
+| `GET`    | `/`           | `getCoachRoutines`    | List all coach's routines (paginated)        |
+| `GET`    | `/:routineId` | `getCoachRoutineById` | Get routine with exercise list               |
+| `PATCH`  | `/:routineId` | `updateRoutine`       | Update routine fields                        |
+| `DELETE` | `/:routineId` | `deleteRoutine`       | Delete routine (cascades to RoutineExercise) |
 
 ### ProgramRoutine Junction (Routine ↔ Program Day Slot)
 
 Mounted at `/api/coach/programs/:programId/routines`. Requires `authenticateSupabaseUser` + `requireCoach`.
 
-| Method | Path | Handler | Description |
-|--------|------|---------|-------------|
-| `POST` | `/` | `assignRoutineToProgram` | Assign a routine to a program day |
-| `PATCH` | `/:programRoutineId` | `updateProgramRoutine` | Change the day number |
-| `DELETE` | `/:programRoutineId` | `removeProgramRoutine` | Remove routine from program day |
+| Method   | Path                 | Handler                  | Description                       |
+| -------- | -------------------- | ------------------------ | --------------------------------- |
+| `POST`   | `/`                  | `assignRoutineToProgram` | Assign a routine to a program day |
+| `PATCH`  | `/:programRoutineId` | `updateProgramRoutine`   | Change the day number             |
+| `DELETE` | `/:programRoutineId` | `removeProgramRoutine`   | Remove routine from program day   |
 
 ### RoutineExercise Junction (Exercise ↔ Routine Prescription)
 
 Mounted at `/api/coach/programs/routines/:routineId/exercises`. Requires `authenticateSupabaseUser` + `requireCoach`.
 
-| Method | Path | Handler | Description |
-|--------|------|---------|-------------|
-| `POST` | `/` | `addExerciseToRoutine` | Add exercise with prescription |
-| `PATCH` | `/:routineExerciseId` | `updateRoutineExercise` | Update prescription (sets/reps/rest/order/notes) |
-| `DELETE` | `/:routineExerciseId` | `removeRoutineExercise` | Remove exercise from routine |
+| Method   | Path                  | Handler                 | Description                                      |
+| -------- | --------------------- | ----------------------- | ------------------------------------------------ |
+| `POST`   | `/`                   | `addExerciseToRoutine`  | Add exercise with prescription                   |
+| `PATCH`  | `/:routineExerciseId` | `updateRoutineExercise` | Update prescription (sets/reps/rest/order/notes) |
+| `DELETE` | `/:routineExerciseId` | `removeRoutineExercise` | Remove exercise from routine                     |
 
 ### Program Assignment (Coach → Client)
 
 Mounted at `/api/coach`. Requires `authenticateSupabaseUser` + `requireCoach`.
 
-| Method | Path | Handler | Description |
-|--------|------|---------|-------------|
-| `POST` | `/assign-program` | `assignProgram` | Assign program to client |
-| `GET` | `/clients/:userId/programs` | `getClientPrograms` | List assignments for a client |
-| `PATCH` | `/assign-program/:assignmentId` | `updateAssignment` | Update dates/notes/isActive |
-| `DELETE` | `/assign-program/:assignmentId` | `deleteAssignment` | Delete assignment |
+| Method   | Path                            | Handler             | Description                   |
+| -------- | ------------------------------- | ------------------- | ----------------------------- |
+| `POST`   | `/assign-program`               | `assignProgram`     | Assign program to client      |
+| `GET`    | `/clients/:userId/programs`     | `getClientPrograms` | List assignments for a client |
+| `PATCH`  | `/assign-program/:assignmentId` | `updateAssignment`  | Update dates/notes/isActive   |
+| `DELETE` | `/assign-program/:assignmentId` | `deleteAssignment`  | Delete assignment             |
 
 ### Client-Facing Workout Endpoints
 
 Mounted at `/api/workout`. Requires `authenticateSupabaseUser` + `requireSubscription()`.
 
-| Method | Path | Handler | Description |
-|--------|------|---------|-------------|
-| `GET` | `/routines` | `getRoutines` | Get coach-assigned routines |
-| `GET` | `/routines/:routineId` | `getRoutineById` | Get single routine |
-| `GET` | `/today` | `getTodayWorkout` | Get today's scheduled routine |
-| `POST` | `/sessions` | `startWorkoutSession` | Start a workout session |
+| Method | Path                   | Handler               | Description                   |
+| ------ | ---------------------- | --------------------- | ----------------------------- |
+| `GET`  | `/routines`            | `getRoutines`         | Get coach-assigned routines   |
+| `GET`  | `/routines/:routineId` | `getRoutineById`      | Get single routine            |
+| `GET`  | `/today`               | `getTodayWorkout`     | Get today's scheduled routine |
+| `POST` | `/sessions`            | `startWorkoutSession` | Start a workout session       |
 
 ---
 
@@ -215,7 +221,8 @@ Authorization: Bearer <token>
 Body:
 {
   "name": "Push Pull Legs",
-  "description": "Classic 6-day hypertrophy split"
+  "description": "Classic 6-day hypertrophy split",
+  "customForUserId": null  // Optional: set to a client's userId for a one-off program
 }
 
 Response (201):
@@ -226,6 +233,7 @@ Response (201):
       "name": "Push Pull Legs",
       "description": "Classic 6-day hypertrophy split",
       "coachId": "clx...",
+      "customForUserId": null,
       "createdAt": "...",
       "updatedAt": "..."
     }
@@ -234,10 +242,12 @@ Response (201):
 }
 ```
 
+> **Custom programs**: Pass `customForUserId` with a client's user ID to create a custom one-off program for that client. The server validates the client is in the coach's class. Custom programs are hidden from the reusable library listing by default.
+
 ### List Coach's Programs
 
 ```
-GET /api/coach/programs?limit=50&offset=0
+GET /api/coach/programs?limit=50&offset=0&includeCustom=false
 Authorization: Bearer <token>
 
 Response (200):
@@ -248,6 +258,7 @@ Response (200):
         "id": "clx...",
         "name": "Push Pull Legs",
         "description": "Classic 6-day hypertrophy split",
+        "customForUserId": null,
         "routineCount": 6,
         "assignedClientCount": 3,
         "createdAt": "...",
@@ -264,6 +275,8 @@ Response (200):
   "errors": []
 }
 ```
+
+> **Query parameter `includeCustom`**: Defaults to `false`. When `false`, custom programs (those with `customForUserId` set) are excluded. Pass `true` to include all programs.
 
 ### Get Program with Full Tree
 
@@ -470,48 +483,48 @@ All schemas are defined in `src/schemas/program.schema.ts` and `src/schemas/coac
 
 ### Program Schemas
 
-| Schema | Validates | Fields |
-|--------|-----------|--------|
-| `CreateProgramSchema` | `body` | `name` (string, min 1), `description` (string, min 1) |
-| `GetCoachProgramsSchema` | `query` | `limit` (1-100, default 50), `offset` (≥0, default 0) |
-| `GetCoachProgramByIdSchema` | `params` | `programId` (cuid) |
-| `UpdateProgramSchema` | `params` + `body` | `programId` (cuid); `name?`, `description?` |
-| `DeleteProgramSchema` | `params` | `programId` (cuid) |
+| Schema                      | Validates         | Fields                                                |
+| --------------------------- | ----------------- | ----------------------------------------------------- |
+| `CreateProgramSchema`       | `body`            | `name` (string, min 1), `description` (string, min 1) |
+| `GetCoachProgramsSchema`    | `query`           | `limit` (1-100, default 50), `offset` (≥0, default 0) |
+| `GetCoachProgramByIdSchema` | `params`          | `programId` (cuid)                                    |
+| `UpdateProgramSchema`       | `params` + `body` | `programId` (cuid); `name?`, `description?`           |
+| `DeleteProgramSchema`       | `params`          | `programId` (cuid)                                    |
 
 ### Routine Schemas
 
-| Schema | Validates | Fields |
-|--------|-----------|--------|
-| `CreateRoutineSchema` | `body` | `name`, `description`, `estimatedDurationMinutes` (int ≥1), `muscleGroupsTargeted?` (string[]) |
-| `GetCoachRoutinesSchema` | `query` | `limit`, `offset` |
-| `GetCoachRoutineByIdSchema` | `params` | `routineId` (cuid) |
-| `UpdateRoutineSchema` | `params` + `body` | `routineId`; `name?`, `description?`, `estimatedDurationMinutes?`, `muscleGroupsTargeted?` |
-| `DeleteRoutineSchema` | `params` | `routineId` (cuid) |
+| Schema                      | Validates         | Fields                                                                                         |
+| --------------------------- | ----------------- | ---------------------------------------------------------------------------------------------- |
+| `CreateRoutineSchema`       | `body`            | `name`, `description`, `estimatedDurationMinutes` (int ≥1), `muscleGroupsTargeted?` (string[]) |
+| `GetCoachRoutinesSchema`    | `query`           | `limit`, `offset`                                                                              |
+| `GetCoachRoutineByIdSchema` | `params`          | `routineId` (cuid)                                                                             |
+| `UpdateRoutineSchema`       | `params` + `body` | `routineId`; `name?`, `description?`, `estimatedDurationMinutes?`, `muscleGroupsTargeted?`     |
+| `DeleteRoutineSchema`       | `params`          | `routineId` (cuid)                                                                             |
 
 ### ProgramRoutine Schemas
 
-| Schema | Validates | Fields |
-|--------|-----------|--------|
-| `AssignRoutineSchema` | `params` + `body` | `programId`; `routineId` (cuid), `dayNumber` (int, positive) |
-| `UpdateProgramRoutineSchema` | `params` + `body` | `programId`, `programRoutineId`; `dayNumber` |
-| `RemoveProgramRoutineSchema` | `params` | `programId`, `programRoutineId` |
+| Schema                       | Validates         | Fields                                                       |
+| ---------------------------- | ----------------- | ------------------------------------------------------------ |
+| `AssignRoutineSchema`        | `params` + `body` | `programId`; `routineId` (cuid), `dayNumber` (int, positive) |
+| `UpdateProgramRoutineSchema` | `params` + `body` | `programId`, `programRoutineId`; `dayNumber`                 |
+| `RemoveProgramRoutineSchema` | `params`          | `programId`, `programRoutineId`                              |
 
 ### RoutineExercise Schemas
 
-| Schema | Validates | Fields |
-|--------|-----------|--------|
-| `addRoutineExerciseSchema` | `params` + `body` | `routineId`; `exerciseId`, `sets`, `repsMin`, `repsMax`, `restSeconds`, `orderInRoutine`, `notes?` |
-| `UpdateRoutineExerciseSchema` | `params` + `body` | `routineId`, `routineExerciseId`; all prescription fields optional, `notes` nullable |
-| `RemoveRoutineExerciseSchema` | `params` | `routineId`, `routineExerciseId` |
+| Schema                        | Validates         | Fields                                                                                             |
+| ----------------------------- | ----------------- | -------------------------------------------------------------------------------------------------- |
+| `addRoutineExerciseSchema`    | `params` + `body` | `routineId`; `exerciseId`, `sets`, `repsMin`, `repsMax`, `restSeconds`, `orderInRoutine`, `notes?` |
+| `UpdateRoutineExerciseSchema` | `params` + `body` | `routineId`, `routineExerciseId`; all prescription fields optional, `notes` nullable               |
+| `RemoveRoutineExerciseSchema` | `params`          | `routineId`, `routineExerciseId`                                                                   |
 
 ### Assignment Schemas (in `coach.schema.ts`)
 
-| Schema | Validates | Fields |
-|--------|-----------|--------|
-| `AssignProgramSchema` | `body` | `userId`, `programId`, `startDate` (datetime), `endDate?`, `notes?` |
-| `GetClientProgramsSchema` | `params` | `userId` (cuid) |
-| `UpdateAssignmentSchema` | `params` + `body` | `assignmentId`; `startDate?`, `endDate?` (nullable), `notes?` (nullable), `isActive?` |
-| `DeleteAssignmentSchema` | `params` | `assignmentId` (cuid) |
+| Schema                    | Validates         | Fields                                                                                |
+| ------------------------- | ----------------- | ------------------------------------------------------------------------------------- |
+| `AssignProgramSchema`     | `body`            | `userId`, `programId`, `startDate` (datetime), `endDate?`, `notes?`                   |
+| `GetClientProgramsSchema` | `params`          | `userId` (cuid)                                                                       |
+| `UpdateAssignmentSchema`  | `params` + `body` | `assignmentId`; `startDate?`, `endDate?` (nullable), `notes?` (nullable), `isActive?` |
+| `DeleteAssignmentSchema`  | `params`          | `assignmentId` (cuid)                                                                 |
 
 ---
 
@@ -525,12 +538,13 @@ Every coach endpoint verifies the authenticated coach owns the resource before a
 // Pattern used across all program/routine controllers
 const existing = await prisma.program.findUnique({ where: { id: programId } });
 if (!existing || existing.coachId !== coach.id) {
-    sendSingleError(res, 'Program not found or access denied', 404);
-    return;
+  sendSingleError(res, 'Program not found or access denied', 404);
+  return;
 }
 ```
 
 This applies to:
+
 - Programs (`program.coachId === coach.id`)
 - Routines (`routine.coachId === coach.id`)
 - ProgramRoutine operations (verified via parent program ownership)
@@ -540,6 +554,7 @@ This applies to:
 ### Assignment Guards
 
 Before assigning a program, the system verifies:
+
 1. The program belongs to the coach
 2. The client is in the coach's class (`SubscribedCoach` record exists and is active)
 3. No duplicate active assignment exists (returns 409)
@@ -548,12 +563,12 @@ Before assigning a program, the system verifies:
 
 Client-facing routes that access coach-assigned content require an active subscription:
 
-| Route | Middleware |
-|-------|-----------|
-| `GET /api/workout/routines` | `requireSubscription()` |
+| Route                                  | Middleware              |
+| -------------------------------------- | ----------------------- |
+| `GET /api/workout/routines`            | `requireSubscription()` |
 | `GET /api/workout/routines/:routineId` | `requireSubscription()` |
-| `GET /api/workout/today` | `requireSubscription()` |
-| `POST /api/workout/sessions` | `requireSubscription()` |
+| `GET /api/workout/today`               | `requireSubscription()` |
+| `POST /api/workout/sessions`           | `requireSubscription()` |
 
 The `requireSubscription()` middleware checks the user has an active subscription with sufficient tier level before granting access.
 
@@ -582,29 +597,29 @@ All controllers follow the standard pattern:
 
 ```typescript
 try {
-    // Business logic
-    sendSuccess(res, { data }, statusCode);
+  // Business logic
+  sendSuccess(res, { data }, statusCode);
 } catch (error) {
-    // Prisma unique constraint violations return 409
-    if ((error as { code?: string }).code === 'P2002') {
-        sendSingleError(res, 'Duplicate resource', 409);
-        return;
-    }
-    logger.error('Context message', error);
-    sendSingleError(res, 'User-friendly message', 500);
+  // Prisma unique constraint violations return 409
+  if ((error as { code?: string }).code === 'P2002') {
+    sendSingleError(res, 'Duplicate resource', 409);
+    return;
+  }
+  logger.error('Context message', error);
+  sendSingleError(res, 'User-friendly message', 500);
 }
 ```
 
 ### Common Error Responses
 
-| Status | Condition |
-|--------|-----------|
-| 400 | No fields provided in PATCH request |
-| 401 | Missing or invalid authentication |
-| 403 | Coach required / Access denied / Client not in class / No active subscription |
-| 404 | Resource not found or not owned by coach |
-| 409 | Duplicate (routine already in program, exercise already in routine, program already assigned) |
-| 500 | Internal server error |
+| Status | Condition                                                                                     |
+| ------ | --------------------------------------------------------------------------------------------- |
+| 400    | No fields provided in PATCH request                                                           |
+| 401    | Missing or invalid authentication                                                             |
+| 403    | Coach required / Access denied / Client not in class / No active subscription                 |
+| 404    | Resource not found or not owned by coach                                                      |
+| 409    | Duplicate (routine already in program, exercise already in routine, program already assigned) |
+| 500    | Internal server error                                                                         |
 
 ---
 
@@ -614,8 +629,8 @@ Routes are mounted via sub-routers in `coach.routes.ts`:
 
 ```typescript
 // src/routes/coach.routes.ts
-router.use('/programs', programRoutes);   // → /api/coach/programs/*
-router.use('/routines', routineRoutes);   // → /api/coach/routines/*
+router.use('/programs', programRoutes); // → /api/coach/programs/*
+router.use('/routines', routineRoutes); // → /api/coach/routines/*
 router.use('/settings', coachSettingsRoutes);
 router.use('/class', classRoutes);
 ```
@@ -631,19 +646,19 @@ app.use('/api/workout', workoutRoutes);
 
 ## Implementation Changelog (from MISSING_LINKS audit)
 
-| # | Gap | Resolution |
-|---|-----|------------|
-| 1 | No "Create Routine" endpoint | ✅ `POST /api/coach/routines` |
-| 2 | `Routine` has no `coachId` | ✅ Migration `20260221093755_add_coach_id_to_routine` |
-| 3 | No read endpoints for coach programs | ✅ `GET /api/coach/programs` + `GET /api/coach/programs/:id` |
-| 4 | No update/delete for programs | ✅ `PATCH` + `DELETE /api/coach/programs/:id` |
-| 5 | No read/update/delete for routines | ✅ Full CRUD at `/api/coach/routines` |
-| 6 | No remove/update ProgramRoutine | ✅ `PATCH` + `DELETE /api/coach/programs/:id/routines/:id` |
-| 7 | No update/remove RoutineExercise | ✅ `PATCH` + `DELETE /api/coach/programs/routines/:id/exercises/:id` |
-| 8 | No assignment management | ✅ View/update/delete at `/api/coach/assign-program` and `/clients/:userId/programs` |
-| 9 | `addExerciseToRoutine` no ownership check | ✅ `routine.coachId !== coach.id` guard added |
-| 10 | Dead `routineId` in `StartWorkoutSessionSchema` | ✅ Removed from schema; session takes only `assignedProgramId` |
-| 11 | No "today's workout" endpoint | ✅ `GET /api/workout/today` with day cycling logic |
-| 12 | Subscription guard on client routes | ✅ `requireSubscription()` on routines/today/sessions |
+| #   | Gap                                             | Resolution                                                                           |
+| --- | ----------------------------------------------- | ------------------------------------------------------------------------------------ |
+| 1   | No "Create Routine" endpoint                    | ✅ `POST /api/coach/routines`                                                        |
+| 2   | `Routine` has no `coachId`                      | ✅ Migration `20260221093755_add_coach_id_to_routine`                                |
+| 3   | No read endpoints for coach programs            | ✅ `GET /api/coach/programs` + `GET /api/coach/programs/:id`                         |
+| 4   | No update/delete for programs                   | ✅ `PATCH` + `DELETE /api/coach/programs/:id`                                        |
+| 5   | No read/update/delete for routines              | ✅ Full CRUD at `/api/coach/routines`                                                |
+| 6   | No remove/update ProgramRoutine                 | ✅ `PATCH` + `DELETE /api/coach/programs/:id/routines/:id`                           |
+| 7   | No update/remove RoutineExercise                | ✅ `PATCH` + `DELETE /api/coach/programs/routines/:id/exercises/:id`                 |
+| 8   | No assignment management                        | ✅ View/update/delete at `/api/coach/assign-program` and `/clients/:userId/programs` |
+| 9   | `addExerciseToRoutine` no ownership check       | ✅ `routine.coachId !== coach.id` guard added                                        |
+| 10  | Dead `routineId` in `StartWorkoutSessionSchema` | ✅ Removed from schema; session takes only `assignedProgramId`                       |
+| 11  | No "today's workout" endpoint                   | ✅ `GET /api/workout/today` with day cycling logic                                   |
+| 12  | Subscription guard on client routes             | ✅ `requireSubscription()` on routines/today/sessions                                |
 
 ---

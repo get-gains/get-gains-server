@@ -33,20 +33,20 @@
 
 ## Documentation Structure
 
-| Document                                             | Purpose                                                  |
-| ---------------------------------------------------- | -------------------------------------------------------- |
-| [CONTEXT.md](CONTEXT.md)                             | Core infrastructure, patterns, conventions, utilities    |
-| [FEATURE_INDEX.md](FEATURE_INDEX.md)                 | This file - navigation hub                               |
-| [FEATURE_PROMPT.md](FEATURE_PROMPT.md)               | Reusable prompt for generating feature docs              |
-| [features/AUTH.md](features/AUTH.md)                 | Authentication & security feature                        |
-| [features/USER.md](features/USER.md)                 | User profile management (GET/PATCH/PUT)                  |
-| [features/USER_PROFILE.md](features/USER_PROFILE.md) | Extended user profile CRUD (onboarding, fitness stats)   |
-| [features/WORKOUT.md](features/WORKOUT.md)           | Workout, exercises, routines, sessions, and set logging  |
-| [features/PROGRAM.md](features/PROGRAM.md)           | Program creation and routine assignment (coach features) |
-| [features/COACH.md](features/COACH.md)               | Coach dashboard, class management                        |
-| [features/SUBSCRIPTION.md](features/SUBSCRIPTION.md) | Subscriptions, payments, webhooks, and promo codes       |
-| [features/POSE_DETECTION.md](features/POSE_DETECTION.md) | Pose detection storage, form analysis, limb isolation  |
-| [features/VERIFY_RESET_FLOW.md](features/VERIFY_RESET_FLOW.md) | Email verification & password reset flows |
+| Document                                                       | Purpose                                                  |
+| -------------------------------------------------------------- | -------------------------------------------------------- |
+| [CONTEXT.md](CONTEXT.md)                                       | Core infrastructure, patterns, conventions, utilities    |
+| [FEATURE_INDEX.md](FEATURE_INDEX.md)                           | This file - navigation hub                               |
+| [FEATURE_PROMPT.md](FEATURE_PROMPT.md)                         | Reusable prompt for generating feature docs              |
+| [features/AUTH.md](features/AUTH.md)                           | Authentication & security feature                        |
+| [features/USER.md](features/USER.md)                           | User profile management (GET/PATCH/PUT)                  |
+| [features/USER_PROFILE.md](features/USER_PROFILE.md)           | Extended user profile CRUD (onboarding, fitness stats)   |
+| [features/WORKOUT.md](features/WORKOUT.md)                     | Workout, exercises, routines, sessions, and set logging  |
+| [features/PROGRAM.md](features/PROGRAM.md)                     | Program creation and routine assignment (coach features) |
+| [features/COACH.md](features/COACH.md)                         | Coach dashboard, class management                        |
+| [features/SUBSCRIPTION.md](features/SUBSCRIPTION.md)           | Subscriptions, payments, webhooks, and promo codes       |
+| [features/POSE_DETECTION.md](features/POSE_DETECTION.md)       | Pose detection storage, form analysis, limb isolation    |
+| [features/VERIFY_RESET_FLOW.md](features/VERIFY_RESET_FLOW.md) | Email verification & password reset flows                |
 
 ---
 
@@ -71,18 +71,18 @@ These patterns are documented in CONTEXT.md - no separate feature docs needed:
 
 All auth-related functionality is documented together:
 
-| Feature                  | Description                                              | Status        |
-| ------------------------ | -------------------------------------------------------- | ------------- |
-| Authentication Endpoints | Register, login, OAuth, password reset                   | ✅ Documented |
-| Token Refresh            | POST /auth/refresh with refresh token in body            | ✅ Updated    |
-| Auth Middleware          | JWT Bearer token validation (`authenticateSupabaseUser`) | ✅ Documented |
-| User Model               | Prisma schema and CRUD operations                        | ✅ Documented |
-| Token Refresh (POST)     | POST /auth/refresh with body `{ refreshToken }` (Flutter) | ✅ Documented |
-| Logout                   | POST /auth/logout (client clears tokens)                 | ✅ Documented |
-| Supabase Integration     | Auth client configuration and methods                    | ✅ Documented |
-| Google OAuth             | ID token verification                                    | ✅ Documented |
-| Email Verification       | Verify email flow with PKCE code exchange                | ✅ Implemented |
-| Password Reset           | Reset password via web app redirect + token exchange     | ✅ Implemented |
+| Feature                  | Description                                               | Status         |
+| ------------------------ | --------------------------------------------------------- | -------------- |
+| Authentication Endpoints | Register, login, OAuth, password reset                    | ✅ Documented  |
+| Token Refresh            | POST /auth/refresh with refresh token in body             | ✅ Updated     |
+| Auth Middleware          | JWT Bearer token validation (`authenticateSupabaseUser`)  | ✅ Documented  |
+| User Model               | Prisma schema and CRUD operations                         | ✅ Documented  |
+| Token Refresh (POST)     | POST /auth/refresh with body `{ refreshToken }` (Flutter) | ✅ Documented  |
+| Logout                   | POST /auth/logout (client clears tokens)                  | ✅ Documented  |
+| Supabase Integration     | Auth client configuration and methods                     | ✅ Documented  |
+| Google OAuth             | ID token verification                                     | ✅ Documented  |
+| Email Verification       | Verify email flow with PKCE code exchange                 | ✅ Implemented |
+| Password Reset           | Reset password via web app redirect + token exchange      | ✅ Implemented |
 
 **Primary Files:**
 
@@ -99,13 +99,13 @@ All auth-related functionality is documented together:
 
 Extended fitness profile management (separate from basic User model):
 
-| Feature             | Description                                | Status        |
-| ------------------- | ------------------------------------------ | ------------- |
+| Feature             | Description                                   | Status        |
+| ------------------- | --------------------------------------------- | ------------- |
 | Profile Retrieval   | GET /api/profile (returns null if not set up) | ✅ Documented |
-| Profile Creation    | POST /api/profile (onboarding)             | ✅ Documented |
-| Profile Update      | PATCH/PUT /api/profile                     | ✅ Documented |
-| Coach Client Access | GET /api/profile/clients/:userId           | ✅ Documented |
-| Response Envelope   | data.profile with errors array             | ✅ Documented |
+| Profile Creation    | POST /api/profile (onboarding)                | ✅ Documented |
+| Profile Update      | PATCH/PUT /api/profile                        | ✅ Documented |
+| Coach Client Access | GET /api/profile/clients/:userId              | ✅ Documented |
+| Response Envelope   | data.profile with errors array                | ✅ Documented |
 
 **Primary Files:**
 
@@ -118,12 +118,12 @@ Extended fitness profile management (separate from basic User model):
 
 User account management endpoints (basic identity):
 
-| Feature             | Description                                | Status        |
-| ------------------- | ------------------------------------------ | ------------- |
-| Profile Retrieval   | GET /api/users/profile, /api/user/profile | ✅ Documented |
-| Profile Update      | PATCH/PUT /api/users/profile              | ✅ Documented |
-| Dual Endpoint       | Both /user and /users paths supported      | ✅ Documented |
-| Response Envelope   | data.user with errors array                | ✅ Documented |
+| Feature           | Description                               | Status        |
+| ----------------- | ----------------------------------------- | ------------- |
+| Profile Retrieval | GET /api/users/profile, /api/user/profile | ✅ Documented |
+| Profile Update    | PATCH/PUT /api/users/profile              | ✅ Documented |
+| Dual Endpoint     | Both /user and /users paths supported     | ✅ Documented |
+| Response Envelope | data.user with errors array               | ✅ Documented |
 
 **Primary Files:**
 
@@ -134,21 +134,21 @@ User account management endpoints (basic identity):
 
 ### Coach Dashboard _(Documented in [features/COACH.md](features/COACH.md))_
 
-| Feature                    | Description                                    | Status        |
-| -------------------------- | ---------------------------------------------- | ------------- |
-| Coach indication (isCoach) | Login/refresh/me return isCoach                | ✅ Documented |
-| GET /auth/me               | Current user and isCoach                       | ✅ Documented |
-| Coach profile creation     | POST /coach/profile (become a coach)           | ✅ Documented |
-| User Profile (GET/PATCH)  | GET/PUT/PATCH /api/user/profile, /api/users/profile | ✅ Documented |
-| Client Coach Discovery     | Discover/search coaches (public)               | ✅ Documented |
-| Client Coach Subscription  | Subscribe/unsubscribe to coaches (clients)     | ✅ Documented |
-| Class Roster               | List and remove clients (coaches)              | ✅ Documented |
-| Client List                | List clients with assigned/unassigned filters  | ✅ Documented |
-| Performance Report         | Good/falling behind dashboard                  | ✅ Documented |
-| Program Assignment         | Assign programs to clients                     | ✅ Documented |
-| Program Management         | Create program, assign routines, add exercises | ✅ Documented |
-| requireAppUser Middleware  | Authenticated user route protection            | ✅ Documented |
-| requireCoach Middleware    | Coach-only route protection                    | ✅ Documented |
+| Feature                    | Description                                         | Status        |
+| -------------------------- | --------------------------------------------------- | ------------- |
+| Coach indication (isCoach) | Login/refresh/me return isCoach                     | ✅ Documented |
+| GET /auth/me               | Current user and isCoach                            | ✅ Documented |
+| Coach profile creation     | POST /coach/profile (become a coach)                | ✅ Documented |
+| User Profile (GET/PATCH)   | GET/PUT/PATCH /api/user/profile, /api/users/profile | ✅ Documented |
+| Client Coach Discovery     | Discover/search coaches (public)                    | ✅ Documented |
+| Client Coach Subscription  | Subscribe/unsubscribe to coaches (clients)          | ✅ Documented |
+| Class Roster               | List and remove clients (coaches)                   | ✅ Documented |
+| Client List                | List clients with assigned/unassigned filters       | ✅ Documented |
+| Performance Report         | Good/falling behind dashboard                       | ✅ Documented |
+| Program Assignment         | Assign programs to clients                          | ✅ Documented |
+| Program Management         | Create program, assign routines, add exercises      | ✅ Documented |
+| requireAppUser Middleware  | Authenticated user route protection                 | ✅ Documented |
+| requireCoach Middleware    | Coach-only route protection                         | ✅ Documented |
 
 **Primary Files:**
 
@@ -168,13 +168,16 @@ User account management endpoints (basic identity):
 
 Core fitness tracking functionality:
 
-| Feature          | Description                                       | Status        |
-| ---------------- | ------------------------------------------------- | ------------- |
-| Exercises        | Browse and search exercise library with filtering | ✅ Documented |
-| Routines         | View assigned routines from programs              | ✅ Documented |
-| Workout Sessions | Start, track, and complete workout sessions       | ✅ Documented |
-| Set Logging      | Record individual sets (reps, weight, RPE)        | ✅ Documented |
-| Batch Sync       | Offline-first synchronization for mobile          | ✅ Documented |
+| Feature            | Description                                          | Status        |
+| ------------------ | ---------------------------------------------------- | ------------- |
+| Exercises          | Browse and search exercise library with filtering    | ✅ Documented |
+| Exercise CRUD      | Create, update, delete exercises (coach-owned)       | ✅ Documented |
+| Exercise Ownership | Coach scoping with `coachId` + `isPublic` visibility | ✅ Documented |
+| Routines           | View assigned routines from programs                 | ✅ Documented |
+| Workout Sessions   | Start, track, and complete workout sessions          | ✅ Documented |
+| Set Logging        | Record individual sets (reps, weight, RPE)           | ✅ Documented |
+| Batch Sync         | Offline-first synchronization for mobile             | ✅ Documented |
+| Weekly Stats       | Server-side aggregated weekly workout statistics     | ✅ Documented |
 
 **Primary Files:**
 
@@ -187,16 +190,17 @@ Core fitness tracking functionality:
 
 Complete coach program flow — build, manage, assign, and deliver training programs:
 
-| Feature                    | Description                                          | Status        |
-| -------------------------- | ---------------------------------------------------- | ------------- |
-| Program CRUD               | Create, list, get, update, delete programs           | ✅ Documented |
-| Routine CRUD (standalone)  | Create, list, get, update, delete reusable routines  | ✅ Documented |
-| Assign Routines to Program | ProgramRoutine junction: assign, reorder, remove     | ✅ Documented |
-| Add Exercises to Routine   | RoutineExercise junction: add, update, remove        | ✅ Documented |
-| Routine Ownership          | `coachId` on Routine model, ownership enforcement    | ✅ Documented |
-| Assignment Management      | Assign/view/update/revoke program for clients        | ✅ Documented |
-| Today's Workout            | Resolve scheduled routine from day cycling logic     | ✅ Documented |
-| Subscription Guards        | `requireSubscription()` on coach-content client routes | ✅ Documented |
+| Feature                    | Description                                               | Status        |
+| -------------------------- | --------------------------------------------------------- | ------------- |
+| Program CRUD               | Create, list, get, update, delete programs                | ✅ Documented |
+| Custom Programs            | One-off programs for specific clients (`customForUserId`) | ✅ Documented |
+| Routine CRUD (standalone)  | Create, list, get, update, delete reusable routines       | ✅ Documented |
+| Assign Routines to Program | ProgramRoutine junction: assign, reorder, remove          | ✅ Documented |
+| Add Exercises to Routine   | RoutineExercise junction: add, update, remove             | ✅ Documented |
+| Routine Ownership          | `coachId` on Routine model, ownership enforcement         | ✅ Documented |
+| Assignment Management      | Assign/view/update/revoke program for clients             | ✅ Documented |
+| Today's Workout            | Resolve scheduled routine from day cycling logic          | ✅ Documented |
+| Subscription Guards        | `requireSubscription()` on coach-content client routes    | ✅ Documented |
 
 **Primary Files:**
 
@@ -243,13 +247,13 @@ In-app purchases, subscriptions, and promo codes:
 
 Backend storage for on-device pose detection analysis:
 
-| Feature                  | Description                                              | Status             |
-| ------------------------ | -------------------------------------------------------- | ------------------ |
-| Coach Form Storage       | Store reference pose landmark data for exercises         | ✅ Implemented      |
-| Client Result Storage    | Persist comparison results and correction feedback       | ✅ Implemented      |
-| Limb Isolation Config    | Per-exercise body segment configuration                  | ✅ Implemented      |
-| Offline Form Download    | Bulk form data serving for client-side caching           | ✅ Implemented      |
-| Historical Records       | Client form attempt history and progress queries         | ✅ Implemented      |
+| Feature               | Description                                        | Status         |
+| --------------------- | -------------------------------------------------- | -------------- |
+| Coach Form Storage    | Store reference pose landmark data for exercises   | ✅ Implemented |
+| Client Result Storage | Persist comparison results and correction feedback | ✅ Implemented |
+| Limb Isolation Config | Per-exercise body segment configuration            | ✅ Implemented |
+| Offline Form Download | Bulk form data serving for client-side caching     | ✅ Implemented |
+| Historical Records    | Client form attempt history and progress queries   | ✅ Implemented |
 
 **Primary Files:**
 
@@ -260,11 +264,11 @@ Backend storage for on-device pose detection analysis:
 
 ### Future Domain Features _(Needs Implementation)_
 
-| Feature           | Description             | Status             | Location |
-| ----------------- | ----------------------- | ------------------ | -------- |
-| Progress Tracking | User progress and stats | 🔮 Not Implemented | -        |
+| Feature           | Description                | Status             | Location |
+| ----------------- | -------------------------- | ------------------ | -------- |
+| Progress Tracking | User progress and stats    | 🔮 Not Implemented | -        |
 | User Settings     | Preferences beyond profile | 🔮 Not Implemented | -        |
-| Personal Records  | PR tracking and history | 🔮 Not Implemented | -        |
+| Personal Records  | PR tracking and history    | 🔮 Not Implemented | -        |
 
 ---
 
@@ -290,31 +294,31 @@ The app unwraps `data` and treats non-empty `errors` as failure. 404 and 500 han
 
 ### Authentication Endpoints
 
-| Method | Endpoint                        | Description                                   | Auth Required |
-| ------ | ------------------------------- | --------------------------------------------- | ------------- |
-| `POST` | `/api/auth/register`            | Register with email/password                  | No            |
-| `POST` | `/api/auth/login`               | Login with email/password                     | No            |
-| `POST` | `/api/auth/google`              | Sign in with Google (new user flow)           | No            |
-| `POST` | `/api/auth/google/link`         | Link Google account to existing user          | Yes           |
-| `POST` | `/api/auth/login/google`        | Login with Google (existing user)             | No            |
-| `GET`  | `/api/auth/refresh`             | Refresh token (Bearer)                        | Yes           |
-| `POST` | `/api/auth/refresh`             | Refresh token (body `{ refreshToken }`, Flutter) | No         |
-| `POST` | `/api/auth/logout`              | Logout (client clears tokens)                 | No            |
-| `GET`  | `/api/auth/me`                  | Get current user and isCoach status           | Yes           |
-| `POST` | `/api/auth/send-recovery-email` | Send password recovery email                  | No            |
-| `POST` | `/api/auth/reset-password`      | Reset password                                | Yes           |
-| `POST` | `/api/auth/exchange-code`       | Exchange Supabase PKCE code for session tokens | No            |
-| `POST` | `/api/auth/check-email-verified`| Check if user's email is verified             | No            |
+| Method | Endpoint                         | Description                                      | Auth Required |
+| ------ | -------------------------------- | ------------------------------------------------ | ------------- |
+| `POST` | `/api/auth/register`             | Register with email/password                     | No            |
+| `POST` | `/api/auth/login`                | Login with email/password                        | No            |
+| `POST` | `/api/auth/google`               | Sign in with Google (new user flow)              | No            |
+| `POST` | `/api/auth/google/link`          | Link Google account to existing user             | Yes           |
+| `POST` | `/api/auth/login/google`         | Login with Google (existing user)                | No            |
+| `GET`  | `/api/auth/refresh`              | Refresh token (Bearer)                           | Yes           |
+| `POST` | `/api/auth/refresh`              | Refresh token (body `{ refreshToken }`, Flutter) | No            |
+| `POST` | `/api/auth/logout`               | Logout (client clears tokens)                    | No            |
+| `GET`  | `/api/auth/me`                   | Get current user and isCoach status              | Yes           |
+| `POST` | `/api/auth/send-recovery-email`  | Send password recovery email                     | No            |
+| `POST` | `/api/auth/reset-password`       | Reset password                                   | Yes           |
+| `POST` | `/api/auth/exchange-code`        | Exchange Supabase PKCE code for session tokens   | No            |
+| `POST` | `/api/auth/check-email-verified` | Check if user's email is verified                | No            |
 
 ### User Profile Endpoints (Flutter contract)
 
-| Method   | Endpoint                | Description                          | Auth Required |
-| -------- | ----------------------- | ------------------------------------ | ------------- |
-| `GET`    | `/api/users/profile`    | Current user profile (data.user)     | Yes           |
-| `GET`    | `/api/user/profile`     | Same as above                         | Yes           |
-| `PATCH`  | `/api/users/profile`    | Update name/nickname                 | Yes           |
-| `PUT`    | `/api/users/profile`    | Same as PATCH                         | Yes           |
-| `PATCH`  | `/api/user/profile`     | Same as above                         | Yes           |
+| Method  | Endpoint             | Description                      | Auth Required |
+| ------- | -------------------- | -------------------------------- | ------------- |
+| `GET`   | `/api/users/profile` | Current user profile (data.user) | Yes           |
+| `GET`   | `/api/user/profile`  | Same as above                    | Yes           |
+| `PATCH` | `/api/users/profile` | Update name/nickname             | Yes           |
+| `PUT`   | `/api/users/profile` | Same as PATCH                    | Yes           |
+| `PATCH` | `/api/user/profile`  | Same as above                    | Yes           |
 
 ### Client Coach Selection Endpoints
 
@@ -327,52 +331,55 @@ The app unwraps `data` and treats non-empty `errors` as failure. 404 and 500 han
 
 ### Coach Endpoints
 
-| Method   | Endpoint                                                          | Description                              | Auth Required |
-| -------- | ----------------------------------------------------------------- | ---------------------------------------- | ------------- |
-| `POST`   | `/api/coach/profile`                                              | Create coach profile (become a coach)    | Yes           |
-| `GET`    | `/api/coach/class`                                                | List coach's clients                     | Yes (Coach)   |
-| `DELETE` | `/api/coach/class/:userId`                                        | Remove client from class                 | Yes (Coach)   |
-| `GET`    | `/api/coach/clients`                                              | List clients with filters                | Yes (Coach)   |
-| `GET`    | `/api/coach/clients/:userId/programs`                             | List client's program assignments        | Yes (Coach)   |
-| `GET`    | `/api/coach/performance`                                          | Performance report                       | Yes (Coach)   |
-| `POST`   | `/api/coach/assign-program`                                       | Assign program to client                 | Yes (Coach)   |
-| `PATCH`  | `/api/coach/assign-program/:assignmentId`                         | Update assignment                        | Yes (Coach)   |
-| `DELETE` | `/api/coach/assign-program/:assignmentId`                         | Delete assignment                        | Yes (Coach)   |
-| `POST`   | `/api/coach/programs`                                             | Create program                           | Yes (Coach)   |
-| `GET`    | `/api/coach/programs`                                             | List coach's programs                    | Yes (Coach)   |
-| `GET`    | `/api/coach/programs/:programId`                                  | Get program with full tree               | Yes (Coach)   |
-| `PATCH`  | `/api/coach/programs/:programId`                                  | Update program                           | Yes (Coach)   |
-| `DELETE` | `/api/coach/programs/:programId`                                  | Delete program                           | Yes (Coach)   |
-| `POST`   | `/api/coach/programs/:programId/routines`                         | Assign routine to program day            | Yes (Coach)   |
-| `PATCH`  | `/api/coach/programs/:programId/routines/:programRoutineId`       | Reassign day number                      | Yes (Coach)   |
-| `DELETE` | `/api/coach/programs/:programId/routines/:programRoutineId`       | Remove routine from program              | Yes (Coach)   |
-| `POST`   | `/api/coach/programs/routines/:routineId/exercises`               | Add exercise to routine                  | Yes (Coach)   |
-| `PATCH`  | `/api/coach/programs/routines/:routineId/exercises/:routineExerciseId` | Update exercise prescription       | Yes (Coach)   |
-| `DELETE` | `/api/coach/programs/routines/:routineId/exercises/:routineExerciseId` | Remove exercise from routine       | Yes (Coach)   |
-| `POST`   | `/api/coach/routines`                                             | Create standalone routine                | Yes (Coach)   |
-| `GET`    | `/api/coach/routines`                                             | List coach's routines                    | Yes (Coach)   |
-| `GET`    | `/api/coach/routines/:routineId`                                  | Get routine with exercises               | Yes (Coach)   |
-| `PATCH`  | `/api/coach/routines/:routineId`                                  | Update routine                           | Yes (Coach)   |
-| `DELETE` | `/api/coach/routines/:routineId`                                  | Delete routine                           | Yes (Coach)   |
+| Method   | Endpoint                                                               | Description                           | Auth Required |
+| -------- | ---------------------------------------------------------------------- | ------------------------------------- | ------------- |
+| `POST`   | `/api/coach/profile`                                                   | Create coach profile (become a coach) | Yes           |
+| `GET`    | `/api/coach/class`                                                     | List coach's clients                  | Yes (Coach)   |
+| `DELETE` | `/api/coach/class/:userId`                                             | Remove client from class              | Yes (Coach)   |
+| `GET`    | `/api/coach/clients`                                                   | List clients with filters             | Yes (Coach)   |
+| `GET`    | `/api/coach/clients/:userId/programs`                                  | List client's program assignments     | Yes (Coach)   |
+| `GET`    | `/api/coach/performance`                                               | Performance report                    | Yes (Coach)   |
+| `POST`   | `/api/coach/assign-program`                                            | Assign program to client              | Yes (Coach)   |
+| `PATCH`  | `/api/coach/assign-program/:assignmentId`                              | Update assignment                     | Yes (Coach)   |
+| `DELETE` | `/api/coach/assign-program/:assignmentId`                              | Delete assignment                     | Yes (Coach)   |
+| `POST`   | `/api/coach/programs`                                                  | Create program                        | Yes (Coach)   |
+| `GET`    | `/api/coach/programs`                                                  | List coach's programs                 | Yes (Coach)   |
+| `GET`    | `/api/coach/programs/:programId`                                       | Get program with full tree            | Yes (Coach)   |
+| `PATCH`  | `/api/coach/programs/:programId`                                       | Update program                        | Yes (Coach)   |
+| `DELETE` | `/api/coach/programs/:programId`                                       | Delete program                        | Yes (Coach)   |
+| `POST`   | `/api/coach/programs/:programId/routines`                              | Assign routine to program day         | Yes (Coach)   |
+| `PATCH`  | `/api/coach/programs/:programId/routines/:programRoutineId`            | Reassign day number                   | Yes (Coach)   |
+| `DELETE` | `/api/coach/programs/:programId/routines/:programRoutineId`            | Remove routine from program           | Yes (Coach)   |
+| `POST`   | `/api/coach/programs/routines/:routineId/exercises`                    | Add exercise to routine               | Yes (Coach)   |
+| `PATCH`  | `/api/coach/programs/routines/:routineId/exercises/:routineExerciseId` | Update exercise prescription          | Yes (Coach)   |
+| `DELETE` | `/api/coach/programs/routines/:routineId/exercises/:routineExerciseId` | Remove exercise from routine          | Yes (Coach)   |
+| `POST`   | `/api/coach/routines`                                                  | Create standalone routine             | Yes (Coach)   |
+| `GET`    | `/api/coach/routines`                                                  | List coach's routines                 | Yes (Coach)   |
+| `GET`    | `/api/coach/routines/:routineId`                                       | Get routine with exercises            | Yes (Coach)   |
+| `PATCH`  | `/api/coach/routines/:routineId`                                       | Update routine                        | Yes (Coach)   |
+| `DELETE` | `/api/coach/routines/:routineId`                                       | Delete routine                        | Yes (Coach)   |
 
 ### Workout Endpoints
 
-| Method   | Endpoint                                    | Description                          | Auth Required                |
-| -------- | ------------------------------------------- | ------------------------------------ | ---------------------------- |
-| `GET`    | `/api/workout/exercises`                    | Get exercises with filtering         | Yes                          |
-| `POST`   | `/api/workout/exercises`                    | Create exercise (coach only)         | Yes (Coach)                  |
-| `GET`    | `/api/workout/routines`                     | Get coach-assigned routines          | Yes + Subscription           |
-| `GET`    | `/api/workout/routines/:routineId`          | Get single routine by ID             | Yes + Subscription           |
-| `GET`    | `/api/workout/today`                        | Get today's scheduled workout        | Yes + Subscription           |
-| `POST`   | `/api/workout/sessions`                     | Start a new workout session          | Yes + Subscription           |
-| `GET`    | `/api/workout/sessions/active`              | Get active workout session           | Yes                          |
-| `GET`    | `/api/workout/sessions`                     | Get workout session history          | Yes                          |
-| `GET`    | `/api/workout/sessions/:sessionId`          | Get session by ID                    | Yes                          |
-| `POST`   | `/api/workout/sessions/:sessionId/complete` | Complete a workout session           | Yes                          |
-| `POST`   | `/api/workout/sets`                         | Log a new set                        | Yes                          |
-| `PUT`    | `/api/workout/sets/:setId`                  | Update an existing set               | Yes                          |
-| `DELETE` | `/api/workout/sets/:setId`                  | Delete a set                         | Yes                          |
-| `POST`   | `/api/workout/sets/sync`                    | Batch sync offline sets              | Yes                          |
+| Method   | Endpoint                                    | Description                         | Auth Required      |
+| -------- | ------------------------------------------- | ----------------------------------- | ------------------ |
+| `GET`    | `/api/workout/exercises`                    | Get exercises with filtering        | Yes                |
+| `POST`   | `/api/workout/exercises`                    | Create exercise (coach only)        | Yes (Coach)        |
+| `PATCH`  | `/api/workout/exercises/:exerciseId`        | Update exercise (coach only, owner) | Yes (Coach)        |
+| `DELETE` | `/api/workout/exercises/:exerciseId`        | Delete exercise (coach only, owner) | Yes (Coach)        |
+| `GET`    | `/api/workout/routines`                     | Get coach-assigned routines         | Yes + Subscription |
+| `GET`    | `/api/workout/routines/:routineId`          | Get single routine by ID            | Yes + Subscription |
+| `GET`    | `/api/workout/today`                        | Get today's scheduled workout       | Yes + Subscription |
+| `POST`   | `/api/workout/sessions`                     | Start a new workout session         | Yes + Subscription |
+| `GET`    | `/api/workout/sessions/active`              | Get active workout session          | Yes                |
+| `GET`    | `/api/workout/sessions`                     | Get workout session history         | Yes                |
+| `GET`    | `/api/workout/sessions/:sessionId`          | Get session by ID                   | Yes                |
+| `POST`   | `/api/workout/sessions/:sessionId/complete` | Complete a workout session          | Yes                |
+| `GET`    | `/api/workout/stats/weekly`                 | Get weekly workout stats            | Yes                |
+| `POST`   | `/api/workout/sets`                         | Log a new set                       | Yes                |
+| `PUT`    | `/api/workout/sets/:setId`                  | Update an existing set              | Yes                |
+| `DELETE` | `/api/workout/sets/:setId`                  | Delete a set                        | Yes                |
+| `POST`   | `/api/workout/sets/sync`                    | Batch sync offline sets             | Yes                |
 
 ### Subscription Endpoints
 
@@ -406,23 +413,23 @@ The app unwraps `data` and treats non-empty `errors` as failure. 404 and 500 han
 
 ### Pose Detection Endpoints
 
-| Method   | Endpoint                                      | Description                          | Auth Required |
-| -------- | --------------------------------------------- | ------------------------------------ | ------------- |
-| `POST`   | `/api/pose/forms`                             | Upload coach reference form          | Yes (Coach)   |
-| `GET`    | `/api/pose/forms/:formId`                     | Get a specific form by ID            | Yes (Coach)   |
-| `GET`    | `/api/pose/exercises/:exerciseId/forms`       | Get all forms for an exercise        | Yes (Coach)   |
-| `PUT`    | `/api/pose/forms/:formId`                     | Update/replace a form                | Yes (Coach)   |
-| `DELETE` | `/api/pose/forms/:formId`                     | Delete a form                        | Yes (Coach)   |
-| `PATCH`  | `/api/pose/forms/:formId/activate`            | Set form as active version           | Yes (Coach)   |
-| `PUT`    | `/api/pose/exercises/:exerciseId/config`      | Create/update pose config            | Yes (Coach)   |
-| `GET`    | `/api/pose/exercises/:exerciseId/config`      | Get pose config for exercise         | Yes           |
-| `POST`   | `/api/pose/results`                           | Submit comparison result             | Yes           |
-| `GET`    | `/api/pose/results`                           | Get user's comparison history        | Yes           |
-| `GET`    | `/api/pose/results/:resultId`                 | Get a specific result                | Yes           |
-| `GET`    | `/api/pose/results/exercise/:exerciseId`      | Get results for an exercise          | Yes           |
-| `GET`    | `/api/pose/results/session/:sessionId`        | Get results from a workout session   | Yes           |
-| `GET`    | `/api/pose/download/program/:programId`       | Bulk download forms for a program    | Yes           |
-| `GET`    | `/api/pose/download/exercise/:exerciseId`     | Download form for a single exercise  | Yes           |
+| Method   | Endpoint                                  | Description                         | Auth Required |
+| -------- | ----------------------------------------- | ----------------------------------- | ------------- |
+| `POST`   | `/api/pose/forms`                         | Upload coach reference form         | Yes (Coach)   |
+| `GET`    | `/api/pose/forms/:formId`                 | Get a specific form by ID           | Yes (Coach)   |
+| `GET`    | `/api/pose/exercises/:exerciseId/forms`   | Get all forms for an exercise       | Yes (Coach)   |
+| `PUT`    | `/api/pose/forms/:formId`                 | Update/replace a form               | Yes (Coach)   |
+| `DELETE` | `/api/pose/forms/:formId`                 | Delete a form                       | Yes (Coach)   |
+| `PATCH`  | `/api/pose/forms/:formId/activate`        | Set form as active version          | Yes (Coach)   |
+| `PUT`    | `/api/pose/exercises/:exerciseId/config`  | Create/update pose config           | Yes (Coach)   |
+| `GET`    | `/api/pose/exercises/:exerciseId/config`  | Get pose config for exercise        | Yes           |
+| `POST`   | `/api/pose/results`                       | Submit comparison result            | Yes           |
+| `GET`    | `/api/pose/results`                       | Get user's comparison history       | Yes           |
+| `GET`    | `/api/pose/results/:resultId`             | Get a specific result               | Yes           |
+| `GET`    | `/api/pose/results/exercise/:exerciseId`  | Get results for an exercise         | Yes           |
+| `GET`    | `/api/pose/results/session/:sessionId`    | Get results from a workout session  | Yes           |
+| `GET`    | `/api/pose/download/program/:programId`   | Bulk download forms for a program   | Yes           |
+| `GET`    | `/api/pose/download/exercise/:exerciseId` | Download form for a single exercise | Yes           |
 
 ---
 
