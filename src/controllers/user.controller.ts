@@ -45,8 +45,8 @@ export const createUserFromGoogle = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { email, name, nickname, supabaseId }: CreateUserFromGoogleData =
-      req.body;
+    const { email, name, nickname, supabaseId }: CreateUserFromGoogleData = res
+      .locals.validated?.body as CreateUserFromGoogleData;
 
     logger.debug('Creating user from Google OAuth', { email, supabaseId });
 
@@ -109,8 +109,8 @@ export const discoverCoaches = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { search, limit, offset } =
-      req.query as unknown as DiscoverCoachesQuery;
+    const { search, limit, offset } = res.locals.validated
+      ?.query as DiscoverCoachesQuery;
     const take = Math.min(Math.max(1, limit || 50), 100);
     const skip = Math.max(0, offset || 0);
 
@@ -237,7 +237,8 @@ export const getSubscribedCoaches = async (
       return;
     }
 
-    const { limit, offset } = req.query as unknown as GetSubscribedCoachesQuery;
+    const { limit, offset } = res.locals.validated
+      ?.query as GetSubscribedCoachesQuery;
     const take = Math.min(Math.max(1, limit || 50), 100);
     const skip = Math.max(0, offset || 0);
 
@@ -313,7 +314,7 @@ export const subscribeToCoach = async (
       return;
     }
 
-    const { coachId } = req.params as unknown as SubscribeCoachParams;
+    const { coachId } = res.locals.validated?.params as SubscribeCoachParams;
 
     const coach = await prisma.coach.findUnique({
       where: { id: coachId },
@@ -470,7 +471,7 @@ export const unsubscribeFromCoach = async (
       return;
     }
 
-    const { coachId } = req.params as unknown as UnsubscribeCoachParams;
+    const { coachId } = res.locals.validated?.params as UnsubscribeCoachParams;
 
     const subscription = await prisma.subscribedCoach.findUnique({
       where: {
@@ -574,7 +575,7 @@ export const updateProfile = async (
       return;
     }
 
-    const body = req.body as UpdateProfileInput;
+    const body = res.locals.validated?.body as UpdateProfileInput;
     const data: { name?: string; nickname?: string } = {};
     if (body.name !== undefined) data.name = body.name;
     if (body.nickname !== undefined) data.nickname = body.nickname;
