@@ -66,7 +66,6 @@ export type GetRoutineByIdParams = z.infer<
  */
 export const StartWorkoutSessionSchema = z.object({
   body: z.object({
-    routineId: z.string().optional(),
     assignedProgramId: z.string().optional(),
   }),
 });
@@ -74,6 +73,19 @@ export const StartWorkoutSessionSchema = z.object({
 export type StartWorkoutSessionInput = z.infer<
   typeof StartWorkoutSessionSchema
 >['body'];
+
+/**
+ * Schema for getting today's scheduled workout
+ */
+export const GetTodayWorkoutSchema = z.object({
+  query: z.object({
+    assignedProgramId: z.string().optional(),
+  }),
+});
+
+export type GetTodayWorkoutQuery = z.infer<
+  typeof GetTodayWorkoutSchema
+>['query'];
 
 /**
  * Schema for completing a workout session

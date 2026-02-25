@@ -4,11 +4,13 @@ import {
   authenticateSupabaseUser,
   requireCoach,
 } from '../middleware/auth.middleware';
+import { requireSubscription } from '../middleware/subscription.middleware';
 import {
   GetExercisesSchema,
   CreateExerciseSchema,
   GetRoutinesSchema,
   GetRoutineByIdSchema,
+  GetTodayWorkoutSchema,
   StartWorkoutSessionSchema,
   CompleteWorkoutSessionSchema,
   GetWorkoutSessionsSchema,
@@ -23,6 +25,7 @@ import {
   createExercise,
   getRoutines,
   getRoutineById,
+  getTodayWorkout,
   startWorkoutSession,
   getActiveSession,
   completeWorkoutSession,
@@ -67,12 +70,13 @@ router.post(
 
 /**
  * @route   GET /workout/routines
- * @desc    Get all routines for the authenticated user
- * @access  Protected
+ * @desc    Get all coach-assigned routines for the authenticated user
+ * @access  Protected (requires active subscription)
  */
 router.get(
   '/routines',
   authenticateSupabaseUser,
+  requireSubscription(),
   validateRequest(GetRoutinesSchema),
   getRoutines
 );
@@ -85,8 +89,24 @@ router.get(
 router.get(
   '/routines/:routineId',
   authenticateSupabaseUser,
+  requireSubscription(),
   validateRequest(GetRoutineByIdSchema),
   getRoutineById
+);
+
+// ============== Today's Workout Route ==============
+
+/**
+ * @route   GET /workout/today
+ * @desc    Get the routine scheduled for today based on the user's active program
+ * @access  Protected (requires active subscription)
+ */
+router.get(
+  '/today',
+  authenticateSupabaseUser,
+  requireSubscription(),
+  validateRequest(GetTodayWorkoutSchema),
+  getTodayWorkout
 );
 
 // ============== Workout Session Routes ==============
@@ -94,11 +114,12 @@ router.get(
 /**
  * @route   POST /workout/sessions
  * @desc    Start a new workout session
- * @access  Protected
+ * @access  Protected (requires active subscription for coach-assigned programs)
  */
 router.post(
   '/sessions',
   authenticateSupabaseUser,
+  requireSubscription(),
   validateRequest(StartWorkoutSessionSchema),
   startWorkoutSession
 );
