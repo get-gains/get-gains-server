@@ -207,6 +207,7 @@ model User {
   subscribedCoaches     SubscribedCoach[]
   workoutSessions       WorkoutSession[]
   assignedPrograms      AssignedProgram[]
+  customPrograms        Program[]          @relation("CustomPrograms")
   subscriptions         Subscription[]
   paymentHistories      PaymentHistory[]
   promoRedemptions      PromoRedemption[]
@@ -265,6 +266,7 @@ model Coach {
   clientRelations SubscribedCoach[]
   programs        Program[]
   routines        Routine[]
+  exercises       Exercise[]
   exerciseForms   ExerciseForm[]
   settings        CoachSettings?
 }
@@ -307,6 +309,11 @@ model Program {
 
   coachId String
   coach   Coach  @relation(fields: [coachId], references: [id], onDelete: Cascade)
+
+  // When set, this program is a custom one-off for a specific client
+  // (hidden from the coach's reusable program library)
+  customForUserId String?
+  customForUser   User?   @relation("CustomPrograms", fields: [customForUserId], references: [id], onDelete: SetNull)
 
   createdAt        DateTime          @default(now()) @db.Timestamptz
   updatedAt        DateTime          @updatedAt @db.Timestamptz
@@ -375,6 +382,11 @@ model RoutineExercise {
 
 model Exercise {
   id String @id @default(cuid())
+
+  // Coach scoping: null = system/global exercise, set = coach-owned
+  coachId  String?
+  coach    Coach?   @relation(fields: [coachId], references: [id], onDelete: SetNull)
+  isPublic Boolean  @default(true) // false = private to the coach
 
   name               String
   description        String         @db.Text
