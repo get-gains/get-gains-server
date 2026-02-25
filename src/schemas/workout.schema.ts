@@ -26,10 +26,46 @@ export const CreateExerciseSchema = z.object({
     primaryMuscleGroup: z.string().min(1, 'Primary muscle group is required'),
     targetMuscles: z.array(z.string()).optional().default([]),
     equipmentNeeded: z.array(z.string()).optional().default([]),
+    isPublic: z.boolean().optional().default(true),
   }),
 });
 
 export type CreateExerciseInput = z.infer<typeof CreateExerciseSchema>['body'];
+
+/**
+ * Schema for updating an exercise (coach only, must own the exercise)
+ */
+export const UpdateExerciseSchema = z.object({
+  params: z.object({
+    exerciseId: z.string().min(1, 'Exercise ID is required'),
+  }),
+  body: z.object({
+    name: z.string().min(1).max(100).optional(),
+    description: z.string().min(1).max(2000).optional(),
+    primaryMuscleGroup: z.string().min(1).optional(),
+    targetMuscles: z.array(z.string()).optional(),
+    equipmentNeeded: z.array(z.string()).optional(),
+    isPublic: z.boolean().optional(),
+  }),
+});
+
+export type UpdateExerciseParams = z.infer<
+  typeof UpdateExerciseSchema
+>['params'];
+export type UpdateExerciseInput = z.infer<typeof UpdateExerciseSchema>['body'];
+
+/**
+ * Schema for deleting an exercise (coach only, must own the exercise)
+ */
+export const DeleteExerciseSchema = z.object({
+  params: z.object({
+    exerciseId: z.string().min(1, 'Exercise ID is required'),
+  }),
+});
+
+export type DeleteExerciseParams = z.infer<
+  typeof DeleteExerciseSchema
+>['params'];
 
 // ============== Routine Schemas ==============
 
@@ -210,3 +246,17 @@ export const BatchSyncSetsSchema = z.object({
 });
 
 export type BatchSyncSetsInput = z.infer<typeof BatchSyncSetsSchema>['body'];
+
+// ============== Weekly Stats Schema ==============
+
+/**
+ * Schema for getting weekly workout stats
+ */
+export const GetWeeklyStatsSchema = z.object({
+  query: z.object({
+    // ISO date string for which week to query (defaults to current week)
+    weekOf: z.string().datetime().optional(),
+  }),
+});
+
+export type GetWeeklyStatsQuery = z.infer<typeof GetWeeklyStatsSchema>['query'];
