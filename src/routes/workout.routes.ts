@@ -8,6 +8,8 @@ import { requireSubscription } from '../middleware/subscription.middleware';
 import {
   GetExercisesSchema,
   CreateExerciseSchema,
+  UpdateExerciseSchema,
+  DeleteExerciseSchema,
   GetRoutinesSchema,
   GetRoutineByIdSchema,
   GetTodayWorkoutSchema,
@@ -19,10 +21,13 @@ import {
   UpdateSetSchema,
   DeleteSetSchema,
   BatchSyncSetsSchema,
+  GetWeeklyStatsSchema,
 } from '../schemas/workout.schema';
 import {
   getExercises,
   createExercise,
+  updateExercise,
+  deleteExercise,
   getRoutines,
   getRoutineById,
   getTodayWorkout,
@@ -35,6 +40,7 @@ import {
   updateSet,
   deleteSet,
   batchSyncSets,
+  getWeeklyStats,
 } from '../controllers/workout.controller';
 
 const router = Router();
@@ -64,6 +70,32 @@ router.post(
   requireCoach,
   validateRequest(CreateExerciseSchema),
   createExercise
+);
+
+/**
+ * @route   PATCH /workout/exercises/:exerciseId
+ * @desc    Update an exercise (coach only, must own the exercise)
+ * @access  Protected (Coach)
+ */
+router.patch(
+  '/exercises/:exerciseId',
+  authenticateSupabaseUser,
+  requireCoach,
+  validateRequest(UpdateExerciseSchema),
+  updateExercise
+);
+
+/**
+ * @route   DELETE /workout/exercises/:exerciseId
+ * @desc    Delete an exercise (coach only, must own the exercise)
+ * @access  Protected (Coach)
+ */
+router.delete(
+  '/exercises/:exerciseId',
+  authenticateSupabaseUser,
+  requireCoach,
+  validateRequest(DeleteExerciseSchema),
+  deleteExercise
 );
 
 // ============== Routine Routes ==============
@@ -165,6 +197,20 @@ router.post(
   authenticateSupabaseUser,
   validateRequest(CompleteWorkoutSessionSchema),
   completeWorkoutSession
+);
+
+// ============== Weekly Stats Route ==============
+
+/**
+ * @route   GET /workout/stats/weekly
+ * @desc    Get weekly workout stats (workouts, minutes, streak)
+ * @access  Protected
+ */
+router.get(
+  '/stats/weekly',
+  authenticateSupabaseUser,
+  validateRequest(GetWeeklyStatsSchema),
+  getWeeklyStats
 );
 
 // ============== Performed Set Routes ==============

@@ -89,11 +89,27 @@ export const createProgram = async (
       return;
     }
 
-    const { name, description } =
+    const { name, description, customForUserId } =
       req.body as import('../schemas/program.schema').CreateProgramInput;
 
+    // If customForUserId is set, validate the user exists and is in the coach's class
+    if (customForUserId) {
+      const clientRelation = await prisma.subscribedCoach.findFirst({
+        where: { userId: customForUserId, coachId: coach.id, endedAt: null },
+      });
+      if (!clientRelation) {
+        sendSingleError(res, 'Client not found in your class', 404);
+        return;
+      }
+    }
+
     const program = await prisma.program.create({
-      data: { name, description, coachId: coach.id },
+      data: {
+        name,
+        description,
+        coachId: coach.id,
+        ...(customForUserId && { customForUserId }),
+      },
     });
 
     logger.info('Program created', {
@@ -125,15 +141,28 @@ export const getCoachPrograms = async (
     const limit = rawQuery.limit ? Number(rawQuery.limit) : 50;
     const offset = rawQuery.offset ? Number(rawQuery.offset) : 0;
 
+    // Use validated query if available; fall back to raw parsed values
+    const validatedQuery = res.locals.validated?.query as
+      | GetCoachProgramsQuery
+      | undefined;
+    const includeCustom = validatedQuery?.includeCustom ?? false;
+
     logger.debug('Fetching programs for coach', {
       coachId: coach.id,
       limit,
       offset,
+      includeCustom,
     });
+
+    // By default, exclude custom (one-off) programs from the reusable library view
+    const where: Record<string, unknown> = {
+      coachId: coach.id,
+      ...(!includeCustom && { customForUserId: null }),
+    };
 
     const [programs, total] = await Promise.all([
       prisma.program.findMany({
-        where: { coachId: coach.id },
+        where,
         include: {
           _count: { select: { programRoutines: true, assignedPrograms: true } },
         },
@@ -141,7 +170,7 @@ export const getCoachPrograms = async (
         take: limit,
         skip: offset,
       }),
-      prisma.program.count({ where: { coachId: coach.id } }),
+      prisma.program.count({ where }),
     ]);
 
     sendSuccess(res, {
@@ -149,6 +178,7 @@ export const getCoachPrograms = async (
         id: p.id,
         name: p.name,
         description: p.description,
+        customForUserId: p.customForUserId,
         routineCount: p._count.programRoutines,
         assignedClientCount: p._count.assignedPrograms,
         createdAt: p.createdAt,
