@@ -51,7 +51,7 @@ export const createCoachProfile = async (
       return;
     }
 
-    const body = (req.body as CreateCoachProfileInput) ?? {};
+    const body = (res.locals.validated?.body as CreateCoachProfileInput) ?? {};
     const name = body.name ?? appUser.name;
     const email = body.email ?? appUser.email;
 
@@ -118,7 +118,8 @@ export const getClients = async (
       return;
     }
 
-    const { filter, limit, offset } = req.query as unknown as GetClientsQuery;
+    const { filter, limit, offset } = res.locals.validated
+      ?.query as GetClientsQuery;
 
     logger.debug('Fetching coach clients', {
       coachId: coach.id,
@@ -208,7 +209,8 @@ export const getPerformance = async (
       return;
     }
 
-    const { limit, offset } = req.query as unknown as GetPerformanceQuery;
+    const { limit, offset } = res.locals.validated
+      ?.query as GetPerformanceQuery;
 
     logger.debug('Fetching performance report', {
       coachId: coach.id,
@@ -318,8 +320,8 @@ export const assignProgram = async (
       return;
     }
 
-    const { userId, programId, startDate, endDate, notes } =
-      req.body as AssignProgramInput;
+    const { userId, programId, startDate, endDate, notes } = res.locals
+      .validated?.body as AssignProgramInput;
 
     const programRecord = await prisma.program.findUnique({
       where: { id: programId },
