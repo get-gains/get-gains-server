@@ -43,10 +43,14 @@ export const getExercises = async (
     // Resolve coach ID if the requester is a coach (for private exercise visibility)
     const coachId = req.coach?.id;
 
-    // Build visibility filter: public exercises OR exercises owned by this coach
-    const visibilityFilter = coachId
-      ? { OR: [{ isPublic: true }, { coachId }] }
-      : { isPublic: true };
+    // Resolve app user ID for user-owned exercise visibility
+    const appUserId = req.appUser?.id;
+
+    // Build visibility filter: public exercises OR exercises owned by this coach OR user-owned
+    const orFilters: Record<string, unknown>[] = [{ isPublic: true }];
+    if (coachId) orFilters.push({ coachId });
+    if (appUserId) orFilters.push({ userId: appUserId });
+    const visibilityFilter = { OR: orFilters };
 
     const where: Record<string, unknown> = {
       ...visibilityFilter,
