@@ -21,7 +21,7 @@ import type {
 
 const routineShape = (routine: {
   id: string;
-  coachId: string;
+  coachId: string | null;
   name: string;
   description: string;
   estimatedDurationMinutes: number;
