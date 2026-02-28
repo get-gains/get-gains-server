@@ -33,20 +33,21 @@
 
 ## Documentation Structure
 
-| Document                                                       | Purpose                                                  |
-| -------------------------------------------------------------- | -------------------------------------------------------- |
-| [CONTEXT.md](CONTEXT.md)                                       | Core infrastructure, patterns, conventions, utilities    |
-| [FEATURE_INDEX.md](FEATURE_INDEX.md)                           | This file - navigation hub                               |
-| [FEATURE_PROMPT.md](FEATURE_PROMPT.md)                         | Reusable prompt for generating feature docs              |
-| [features/AUTH.md](features/AUTH.md)                           | Authentication & security feature                        |
-| [features/USER.md](features/USER.md)                           | User profile management (GET/PATCH/PUT)                  |
-| [features/USER_PROFILE.md](features/USER_PROFILE.md)           | Extended user profile CRUD (onboarding, fitness stats)   |
-| [features/WORKOUT.md](features/WORKOUT.md)                     | Workout, exercises, routines, sessions, and set logging  |
-| [features/PROGRAM.md](features/PROGRAM.md)                     | Program creation and routine assignment (coach features) |
-| [features/COACH.md](features/COACH.md)                         | Coach dashboard, class management                        |
-| [features/SUBSCRIPTION.md](features/SUBSCRIPTION.md)           | Subscriptions, payments, webhooks, and promo codes       |
-| [features/POSE_DETECTION.md](features/POSE_DETECTION.md)       | Pose detection storage, form analysis, limb isolation    |
-| [features/VERIFY_RESET_FLOW.md](features/VERIFY_RESET_FLOW.md) | Email verification & password reset flows                |
+| Document                                                         | Purpose                                                  |
+| ---------------------------------------------------------------- | -------------------------------------------------------- |
+| [CONTEXT.md](CONTEXT.md)                                         | Core infrastructure, patterns, conventions, utilities    |
+| [FEATURE_INDEX.md](FEATURE_INDEX.md)                             | This file - navigation hub                               |
+| [FEATURE_PROMPT.md](FEATURE_PROMPT.md)                           | Reusable prompt for generating feature docs              |
+| [features/AUTH.md](features/AUTH.md)                             | Authentication & security feature                        |
+| [features/USER.md](features/USER.md)                             | User profile management (GET/PATCH/PUT)                  |
+| [features/USER_PROFILE.md](features/USER_PROFILE.md)             | Extended user profile CRUD (onboarding, fitness stats)   |
+| [features/WORKOUT.md](features/WORKOUT.md)                       | Workout, exercises, routines, sessions, and set logging  |
+| [features/PROGRAM.md](features/PROGRAM.md)                       | Program creation and routine assignment (coach features) |
+| [features/COACH.md](features/COACH.md)                           | Coach dashboard, class management                        |
+| [features/SUBSCRIPTION.md](features/SUBSCRIPTION.md)             | Subscriptions, payments, webhooks, and promo codes       |
+| [features/POSE_DETECTION.md](features/POSE_DETECTION.md)         | Pose detection storage, form analysis, limb isolation    |
+| [features/STANDALONE_WORKOUT.md](features/STANDALONE_WORKOUT.md) | Standalone (subscription-free) workout system            |
+| [features/VERIFY_RESET_FLOW.md](features/VERIFY_RESET_FLOW.md)   | Email verification & password reset flows                |
 
 ---
 
@@ -262,6 +263,29 @@ Backend storage for on-device pose detection analysis:
 - `/src/schemas/pose.schema.ts`
 - `/prisma/schema.prisma` (ExerciseForm, ExercisePoseConfig, FormComparisonResult models)
 
+### Standalone Workout _(Documented in [features/STANDALONE_WORKOUT.md](features/STANDALONE_WORKOUT.md))_
+
+Subscription-free, coach-free workout system for individual users:
+
+| Feature                 | Description                                                   | Status        |
+| ----------------------- | ------------------------------------------------------------- | ------------- |
+| Personal Exercises CRUD | Create, list, update, delete user-owned exercises             | ✅ Documented |
+| Personal Routines CRUD  | Build custom routines with exercise prescriptions             | ✅ Documented |
+| Routine Exercise Mgmt   | Add, update, remove exercises in routines (junction)          | ✅ Documented |
+| Personal Programs CRUD  | Build multi-day training programs                             | ✅ Documented |
+| Program Routine Mgmt    | Assign routines to program day slots (junction)               | ✅ Documented |
+| Self-Assignment         | Activate/deactivate personal programs (one active at a time)  | ✅ Documented |
+| Today's Workout         | Day-cycling routine resolution from active standalone program | ✅ Documented |
+| Standalone Sessions     | Start, track, complete sessions (no subscription required)    | ✅ Documented |
+| Weekly Stats            | Aggregated weekly stats scoped to all user sessions           | ✅ Documented |
+
+**Primary Files:**
+
+- `/src/routes/standalone.routes.ts`
+- `/src/controllers/standalone.controller.ts`
+- `/src/schemas/standalone.schema.ts`
+- `/prisma/schema.prisma` (Exercise, Routine, Program, AssignedProgram, WorkoutSession models)
+
 ### Future Domain Features _(Needs Implementation)_
 
 | Feature           | Description                | Status             | Location |
@@ -381,6 +405,41 @@ The app unwraps `data` and treats non-empty `errors` as failure. 404 and 500 han
 | `DELETE` | `/api/workout/sets/:setId`                  | Delete a set                        | Yes                |
 | `POST`   | `/api/workout/sets/sync`                    | Batch sync offline sets             | Yes                |
 
+### Standalone Workout Endpoints
+
+| Method   | Endpoint                                                           | Description                     | Auth Required |
+| -------- | ------------------------------------------------------------------ | ------------------------------- | ------------- |
+| `POST`   | `/api/standalone/exercises`                                        | Create a personal exercise      | Yes           |
+| `GET`    | `/api/standalone/exercises`                                        | List user's + public exercises  | Yes           |
+| `PATCH`  | `/api/standalone/exercises/:exerciseId`                            | Update own exercise             | Yes           |
+| `DELETE` | `/api/standalone/exercises/:exerciseId`                            | Delete own exercise             | Yes           |
+| `POST`   | `/api/standalone/routines`                                         | Create a personal routine       | Yes           |
+| `GET`    | `/api/standalone/routines`                                         | List user's routines            | Yes           |
+| `GET`    | `/api/standalone/routines/:routineId`                              | Get routine with exercises      | Yes           |
+| `PATCH`  | `/api/standalone/routines/:routineId`                              | Update routine metadata         | Yes           |
+| `DELETE` | `/api/standalone/routines/:routineId`                              | Delete routine                  | Yes           |
+| `POST`   | `/api/standalone/routines/:routineId/exercises`                    | Add exercise to routine         | Yes           |
+| `PATCH`  | `/api/standalone/routines/:routineId/exercises/:routineExerciseId` | Update exercise prescription    | Yes           |
+| `DELETE` | `/api/standalone/routines/:routineId/exercises/:routineExerciseId` | Remove exercise from routine    | Yes           |
+| `POST`   | `/api/standalone/programs`                                         | Create a personal program       | Yes           |
+| `GET`    | `/api/standalone/programs`                                         | List user's programs            | Yes           |
+| `GET`    | `/api/standalone/programs/active`                                  | Get active program assignment   | Yes           |
+| `GET`    | `/api/standalone/programs/:programId`                              | Get program with full tree      | Yes           |
+| `PATCH`  | `/api/standalone/programs/:programId`                              | Update program name/description | Yes           |
+| `DELETE` | `/api/standalone/programs/:programId`                              | Delete program                  | Yes           |
+| `POST`   | `/api/standalone/programs/:programId/routines`                     | Assign routine to program day   | Yes           |
+| `PATCH`  | `/api/standalone/programs/:programId/routines/:programRoutineId`   | Update day number               | Yes           |
+| `DELETE` | `/api/standalone/programs/:programId/routines/:programRoutineId`   | Remove routine from program     | Yes           |
+| `POST`   | `/api/standalone/programs/:programId/activate`                     | Activate a personal program     | Yes           |
+| `POST`   | `/api/standalone/programs/:programId/deactivate`                   | Deactivate a program            | Yes           |
+| `GET`    | `/api/standalone/today`                                            | Get today's scheduled workout   | Yes           |
+| `POST`   | `/api/standalone/sessions`                                         | Start a workout session         | Yes           |
+| `GET`    | `/api/standalone/sessions/active`                                  | Get active session              | Yes           |
+| `GET`    | `/api/standalone/sessions`                                         | List past sessions              | Yes           |
+| `GET`    | `/api/standalone/sessions/:sessionId`                              | Get session detail              | Yes           |
+| `POST`   | `/api/standalone/sessions/:sessionId/complete`                     | Complete a session              | Yes           |
+| `GET`    | `/api/standalone/stats/weekly`                                     | Get weekly workout stats        | Yes           |
+
 ### Subscription Endpoints
 
 | Method | Endpoint                     | Description                      | Auth Required |
@@ -491,6 +550,9 @@ Request → CORS → JSON Parser → Route Matcher → Validation Middleware →
 | Webhooks                     | [features/SUBSCRIPTION.md](features/SUBSCRIPTION.md) → Webhooks         |
 | Pose detection & form data   | [features/POSE_DETECTION.md](features/POSE_DETECTION.md)                |
 | Limb isolation config        | [features/POSE_DETECTION.md](features/POSE_DETECTION.md) → Config       |
+| Standalone workouts          | [features/STANDALONE_WORKOUT.md](features/STANDALONE_WORKOUT.md)        |
+| Personal exercises/routines  | [features/STANDALONE_WORKOUT.md](features/STANDALONE_WORKOUT.md)        |
+| Self-assigned programs       | [features/STANDALONE_WORKOUT.md](features/STANDALONE_WORKOUT.md)        |
 | Environment variables        | [CONTEXT.md](CONTEXT.md) → Environment Variables                        |
 | File naming conventions      | [CONTEXT.md](CONTEXT.md) → Conventions                                  |
 | Generating new feature docs  | [FEATURE_PROMPT.md](FEATURE_PROMPT.md)                                  |
@@ -546,4 +608,4 @@ features/*.md       → Domain-specific feature documentation
 
 ---
 
-_Last updated: February 2026_
+_Last updated: March 2026_
