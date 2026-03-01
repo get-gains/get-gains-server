@@ -151,6 +151,25 @@ User account management endpoints (basic identity):
 | requireAppUser Middleware  | Authenticated user route protection                 | ✅ Documented |
 | requireCoach Middleware    | Coach-only route protection                         | ✅ Documented |
 
+### Coach Client Progress _(Documented in [features/COACH_CLIENT_PROGRESS.md](features/COACH_CLIENT_PROGRESS.md))_
+
+Coach-facing endpoints for viewing client workout data, progress, and form analysis:
+
+| Feature                     | Description                                                | Status         |
+| --------------------------- | ---------------------------------------------------------- | -------------- |
+| Client Session List         | GET /coach/clients/:userId/sessions (paginated)            | ✅ Implemented |
+| Client Session Detail       | GET /coach/clients/:userId/sessions/:sessionId             | ✅ Implemented |
+| Client Weekly Stats         | GET /coach/clients/:userId/stats/weekly (with delta)       | ✅ Implemented |
+| Client Exercise History     | GET /coach/clients/:userId/exercises/:exerciseId/history   | ✅ Implemented |
+| Detailed Performance Report | GET /coach/performance/detailed (volume, adherence, trend) | ✅ Implemented |
+| Client Form Results         | GET /coach/clients/:userId/form-results                    | ✅ Implemented |
+
+**Primary Files:**
+
+- `/src/routes/coach.routes.ts`
+- `/src/controllers/coach.controller.ts`
+- `/src/schemas/coach.schema.ts`
+
 **Primary Files:**
 
 - `/src/routes/user.routes.ts` (client coach selection)
@@ -382,6 +401,17 @@ The app unwraps `data` and treats non-empty `errors` as failure. 404 and 500 han
 | `GET`    | `/api/coach/routines/:routineId`                                       | Get routine with exercises            | Yes (Coach)   |
 | `PATCH`  | `/api/coach/routines/:routineId`                                       | Update routine                        | Yes (Coach)   |
 | `DELETE` | `/api/coach/routines/:routineId`                                       | Delete routine                        | Yes (Coach)   |
+
+### Coach Client Progress Endpoints _(New)_
+
+| Method | Endpoint                                                   | Description                                | Auth Required |
+| ------ | ---------------------------------------------------------- | ------------------------------------------ | ------------- |
+| `GET`  | `/api/coach/clients/:userId/sessions`                      | List client's workout sessions             | Yes (Coach)   |
+| `GET`  | `/api/coach/clients/:userId/sessions/:sessionId`           | Client session detail with performed sets  | Yes (Coach)   |
+| `GET`  | `/api/coach/clients/:userId/stats/weekly`                  | Client weekly stats with delta             | Yes (Coach)   |
+| `GET`  | `/api/coach/clients/:userId/exercises/:exerciseId/history` | Client exercise-level progress over time   | Yes (Coach)   |
+| `GET`  | `/api/coach/performance/detailed`                          | Enhanced performance with volume/adherence | Yes (Coach)   |
+| `GET`  | `/api/coach/clients/:userId/form-results`                  | Client form comparison result history      | Yes (Coach)   |
 
 ### Workout Endpoints
 
