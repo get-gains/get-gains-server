@@ -115,3 +115,107 @@ export const DeleteAssignmentSchema = z.object({
 export type DeleteAssignmentParams = z.infer<
   typeof DeleteAssignmentSchema
 >['params'];
+
+// ============== Client Progress Schemas (GAP 1) ==============
+
+/**
+ * Get a client's workout sessions (coach view)
+ */
+export const GetClientSessionsSchema = z.object({
+  params: z.object({
+    userId: z.string().cuid('Invalid user ID'),
+  }),
+  query: z.object({
+    limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+    offset: z.coerce.number().int().min(0).optional().default(0),
+    status: z
+      .enum(['completed', 'active', 'all'])
+      .optional()
+      .default('completed'),
+    startDate: z.string().datetime().optional(),
+    endDate: z.string().datetime().optional(),
+  }),
+});
+
+export type GetClientSessionsParams = z.infer<
+  typeof GetClientSessionsSchema
+>['params'];
+export type GetClientSessionsQuery = z.infer<
+  typeof GetClientSessionsSchema
+>['query'];
+
+/**
+ * Get a specific client workout session with performed sets (coach view)
+ */
+export const GetClientSessionDetailSchema = z.object({
+  params: z.object({
+    userId: z.string().cuid('Invalid user ID'),
+    sessionId: z.string().cuid('Invalid session ID'),
+  }),
+});
+
+export type GetClientSessionDetailParams = z.infer<
+  typeof GetClientSessionDetailSchema
+>['params'];
+
+/**
+ * Get a client's weekly stats (coach view)
+ */
+export const GetClientWeeklyStatsSchema = z.object({
+  params: z.object({
+    userId: z.string().cuid('Invalid user ID'),
+  }),
+  query: z.object({
+    weekOf: z.string().datetime().optional(),
+  }),
+});
+
+export type GetClientWeeklyStatsParams = z.infer<
+  typeof GetClientWeeklyStatsSchema
+>['params'];
+export type GetClientWeeklyStatsQuery = z.infer<
+  typeof GetClientWeeklyStatsSchema
+>['query'];
+
+/**
+ * Get exercise-level progress for a client over time (coach view)
+ */
+export const GetClientExerciseHistorySchema = z.object({
+  params: z.object({
+    userId: z.string().cuid('Invalid user ID'),
+    exerciseId: z.string().cuid('Invalid exercise ID'),
+  }),
+  query: z.object({
+    limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+  }),
+});
+
+export type GetClientExerciseHistoryParams = z.infer<
+  typeof GetClientExerciseHistorySchema
+>['params'];
+export type GetClientExerciseHistoryQuery = z.infer<
+  typeof GetClientExerciseHistorySchema
+>['query'];
+
+// ============== Client Form Results Schema (GAP 3) ==============
+
+/**
+ * Get a client's form comparison result history (coach view)
+ */
+export const GetClientFormResultsSchema = z.object({
+  params: z.object({
+    userId: z.string().cuid('Invalid user ID'),
+  }),
+  query: z.object({
+    exerciseId: z.string().cuid('Invalid exercise ID').optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+    offset: z.coerce.number().int().min(0).optional().default(0),
+  }),
+});
+
+export type GetClientFormResultsParams = z.infer<
+  typeof GetClientFormResultsSchema
+>['params'];
+export type GetClientFormResultsQuery = z.infer<
+  typeof GetClientFormResultsSchema
+>['query'];
