@@ -6,6 +6,7 @@ export const CreateProgramSchema = z.object({
   body: z.object({
     name: z.string().min(1),
     description: z.string().min(1),
+    customForUserId: z.string().cuid().optional(),
   }),
 });
 
@@ -15,6 +16,8 @@ export const GetCoachProgramsSchema = z.object({
   query: z.object({
     limit: z.coerce.number().int().min(1).max(100).optional().default(50),
     offset: z.coerce.number().int().min(0).optional().default(0),
+    // When true, includes custom (one-off) programs; default false (reusable library only)
+    includeCustom: z.coerce.boolean().optional().default(false),
   }),
 });
 
