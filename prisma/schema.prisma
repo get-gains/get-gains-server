@@ -207,6 +207,10 @@ model User {
   subscribedCoaches     SubscribedCoach[]
   workoutSessions       WorkoutSession[]
   assignedPrograms      AssignedProgram[]
+  customPrograms        Program[]          @relation("CustomPrograms")
+  exercises             Exercise[]         @relation("UserExercises")
+  routines              Routine[]          @relation("UserRoutines")
+  programs              Program[]          @relation("UserPrograms")
   subscriptions         Subscription[]
   paymentHistories      PaymentHistory[]
   promoRedemptions      PromoRedemption[]
@@ -265,6 +269,7 @@ model Coach {
   clientRelations SubscribedCoach[]
   programs        Program[]
   routines        Routine[]
+  exercises       Exercise[]
   exerciseForms   ExerciseForm[]
   settings        CoachSettings?
 }
@@ -305,8 +310,17 @@ model Program {
   name        String
   description String @db.Text
 
-  coachId String
-  coach   Coach  @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  coachId String?
+  coach   Coach?  @relation(fields: [coachId], references: [id], onDelete: Cascade)
+
+  // User scoping: set = personal program owned by this user
+  userId String?
+  user   User?   @relation("UserPrograms", fields: [userId], references: [id], onDelete: Cascade)
+
+  // When set, this program is a custom one-off for a specific client
+  // (hidden from the coach's reusable program library)
+  customForUserId String?
+  customForUser   User?   @relation("CustomPrograms", fields: [customForUserId], references: [id], onDelete: SetNull)
 
   createdAt        DateTime          @default(now()) @db.Timestamptz
   updatedAt        DateTime          @updatedAt @db.Timestamptz
@@ -334,8 +348,12 @@ model ProgramRoutine {
 model Routine {
   id String @id @default(cuid())
 
-  coachId String
-  coach   Coach  @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  coachId String?
+  coach   Coach?  @relation(fields: [coachId], references: [id], onDelete: Cascade)
+
+  // User scoping: set = personal routine owned by this user
+  userId String?
+  user   User?   @relation("UserRoutines", fields: [userId], references: [id], onDelete: Cascade)
 
   name                     String
   description              String        @db.Text
@@ -375,6 +393,16 @@ model RoutineExercise {
 
 model Exercise {
   id String @id @default(cuid())
+
+  // Coach scoping: null = system/global exercise, set = coach-owned
+  coachId  String?
+  coach    Coach?   @relation(fields: [coachId], references: [id], onDelete: SetNull)
+
+  // User scoping: set = personal exercise owned by this user
+  userId String?
+  user   User?   @relation("UserExercises", fields: [userId], references: [id], onDelete: SetNull)
+
+  isPublic Boolean  @default(true) // false = private to the coach or user
 
   name               String
   description        String         @db.Text

@@ -12,6 +12,11 @@ import {
   GetClientProgramsSchema,
   UpdateAssignmentSchema,
   DeleteAssignmentSchema,
+  GetClientSessionsSchema,
+  GetClientSessionDetailSchema,
+  GetClientWeeklyStatsSchema,
+  GetClientExerciseHistorySchema,
+  GetClientFormResultsSchema,
 } from '../schemas/coach.schema';
 import {
   createCoachProfile,
@@ -21,6 +26,12 @@ import {
   getClientPrograms,
   updateAssignment,
   deleteAssignment,
+  getClientSessions,
+  getClientSessionDetail,
+  getClientWeeklyStats,
+  getClientExerciseHistory,
+  getDetailedPerformance,
+  getClientFormResults,
 } from '../controllers/coach.controller';
 import classRoutes from './class.routes';
 import programRoutes from './program.routes';
@@ -122,6 +133,90 @@ router.delete(
   requireCoach,
   validateRequest(DeleteAssignmentSchema),
   deleteAssignment
+);
+
+// ============== Client Progress Routes (GAP 1) ==============
+
+/**
+ * @route   GET /coach/clients/:userId/sessions
+ * @desc    List a client's workout sessions (paginated)
+ * @access  Protected (authenticateSupabaseUser + requireCoach)
+ */
+router.get(
+  '/clients/:userId/sessions',
+  authenticateSupabaseUser,
+  requireCoach,
+  validateRequest(GetClientSessionsSchema),
+  getClientSessions
+);
+
+/**
+ * @route   GET /coach/clients/:userId/sessions/:sessionId
+ * @desc    Get a client's workout session detail with performed sets
+ * @access  Protected (authenticateSupabaseUser + requireCoach)
+ */
+router.get(
+  '/clients/:userId/sessions/:sessionId',
+  authenticateSupabaseUser,
+  requireCoach,
+  validateRequest(GetClientSessionDetailSchema),
+  getClientSessionDetail
+);
+
+/**
+ * @route   GET /coach/clients/:userId/stats/weekly
+ * @desc    Get a client's weekly stats with previous-week delta
+ * @access  Protected (authenticateSupabaseUser + requireCoach)
+ */
+router.get(
+  '/clients/:userId/stats/weekly',
+  authenticateSupabaseUser,
+  requireCoach,
+  validateRequest(GetClientWeeklyStatsSchema),
+  getClientWeeklyStats
+);
+
+/**
+ * @route   GET /coach/clients/:userId/exercises/:exerciseId/history
+ * @desc    Get exercise-level progress over time for a client
+ * @access  Protected (authenticateSupabaseUser + requireCoach)
+ */
+router.get(
+  '/clients/:userId/exercises/:exerciseId/history',
+  authenticateSupabaseUser,
+  requireCoach,
+  validateRequest(GetClientExerciseHistorySchema),
+  getClientExerciseHistory
+);
+
+// ============== Enhanced Performance Route (GAP 2) ==============
+
+/**
+ * @route   GET /coach/performance/detailed
+ * @desc    Enhanced performance report with volume, adherence, trends
+ * @access  Protected (authenticateSupabaseUser + requireCoach)
+ */
+router.get(
+  '/performance/detailed',
+  authenticateSupabaseUser,
+  requireCoach,
+  validateRequest(GetPerformanceSchema),
+  getDetailedPerformance
+);
+
+// ============== Client Form Results Route (GAP 3) ==============
+
+/**
+ * @route   GET /coach/clients/:userId/form-results
+ * @desc    Get a client's form comparison result history
+ * @access  Protected (authenticateSupabaseUser + requireCoach)
+ */
+router.get(
+  '/clients/:userId/form-results',
+  authenticateSupabaseUser,
+  requireCoach,
+  validateRequest(GetClientFormResultsSchema),
+  getClientFormResults
 );
 
 export default router;
