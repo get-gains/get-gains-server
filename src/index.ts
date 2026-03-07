@@ -14,6 +14,7 @@ import userRoutes from './routes/user.routes';
 import profileRoutes from './routes/profile.routes';
 import poseRoutes from './routes/pose.routes';
 import standaloneRoutes from './routes/standalone.routes';
+import notificationRoutes from './routes/notification.routes';
 
 dotenv.config();
 
@@ -52,6 +53,7 @@ const startServer = () => {
   app.use('/api/pose', poseRoutes);
   app.use('/api/standalone', standaloneRoutes);
   app.use('/api/users', userRoutes);
+  app.use('/notifications', notificationRoutes);
 
   // 404 Handler (contract: data + errors envelope)
   app.use((req: Request, res: Response) => {
