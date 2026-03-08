@@ -1189,6 +1189,18 @@ export const getTodayWorkout = async (
 
     const { routine } = todayProgramRoutine;
 
+    // Check if user has already completed a session today
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const completedSession = await prisma.workoutSession.findFirst({
+      where: {
+        userId: user.id,
+        completedAt: { gte: todayStart },
+      },
+      select: { id: true },
+    });
+    const completedToday = completedSession !== null;
+
     sendSuccess(res, {
       today: {
         programRoutineId: todayProgramRoutine.id,
@@ -1221,6 +1233,7 @@ export const getTodayWorkout = async (
         },
       },
       isRestDay: false,
+      completedToday,
     });
   } catch (error) {
     logger.error('Error fetching today workout', error);
