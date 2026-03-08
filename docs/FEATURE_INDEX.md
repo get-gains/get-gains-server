@@ -33,21 +33,22 @@
 
 ## Documentation Structure
 
-| Document                                                         | Purpose                                                  |
-| ---------------------------------------------------------------- | -------------------------------------------------------- |
-| [CONTEXT.md](CONTEXT.md)                                         | Core infrastructure, patterns, conventions, utilities    |
-| [FEATURE_INDEX.md](FEATURE_INDEX.md)                             | This file - navigation hub                               |
-| [FEATURE_PROMPT.md](FEATURE_PROMPT.md)                           | Reusable prompt for generating feature docs              |
-| [features/AUTH.md](features/AUTH.md)                             | Authentication & security feature                        |
-| [features/USER.md](features/USER.md)                             | User profile management (GET/PATCH/PUT)                  |
-| [features/USER_PROFILE.md](features/USER_PROFILE.md)             | Extended user profile CRUD (onboarding, fitness stats)   |
-| [features/WORKOUT.md](features/WORKOUT.md)                       | Workout, exercises, routines, sessions, and set logging  |
-| [features/PROGRAM.md](features/PROGRAM.md)                       | Program creation and routine assignment (coach features) |
-| [features/COACH.md](features/COACH.md)                           | Coach dashboard, class management                        |
-| [features/SUBSCRIPTION.md](features/SUBSCRIPTION.md)             | Subscriptions, payments, webhooks, and promo codes       |
-| [features/POSE_DETECTION.md](features/POSE_DETECTION.md)         | Pose detection storage, form analysis, limb isolation    |
-| [features/STANDALONE_WORKOUT.md](features/STANDALONE_WORKOUT.md) | Standalone (subscription-free) workout system            |
-| [features/VERIFY_RESET_FLOW.md](features/VERIFY_RESET_FLOW.md)   | Email verification & password reset flows                |
+| Document                                                                     | Purpose                                                      |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| [CONTEXT.md](CONTEXT.md)                                                     | Core infrastructure, patterns, conventions, utilities        |
+| [FEATURE_INDEX.md](FEATURE_INDEX.md)                                         | This file - navigation hub                                   |
+| [FEATURE_PROMPT.md](FEATURE_PROMPT.md)                                       | Reusable prompt for generating feature docs                  |
+| [features/AUTH.md](features/AUTH.md)                                         | Authentication & security feature                            |
+| [features/USER.md](features/USER.md)                                         | User profile management (GET/PATCH/PUT)                      |
+| [features/USER_PROFILE.md](features/USER_PROFILE.md)                         | Extended user profile CRUD (onboarding, fitness stats)       |
+| [features/WORKOUT.md](features/WORKOUT.md)                                   | Workout, exercises, routines, sessions, and set logging      |
+| [features/PROGRAM.md](features/PROGRAM.md)                                   | Program creation and routine assignment (coach features)     |
+| [features/COACH.md](features/COACH.md)                                       | Coach dashboard, class management                            |
+| [features/SUBSCRIPTION.md](features/SUBSCRIPTION.md)                         | Subscriptions, payments, webhooks, and promo codes           |
+| [features/POSE_DETECTION.md](features/POSE_DETECTION.md)                     | Pose detection storage, form analysis, limb isolation        |
+| [features/STANDALONE_WORKOUT.md](features/STANDALONE_WORKOUT.md)             | Standalone (subscription-free) workout system                |
+| [features/VERIFY_RESET_FLOW.md](features/VERIFY_RESET_FLOW.md)               | Email verification & password reset flows                    |
+| [features/SUBSCRIPTION_DEFINITIONS.md](features/SUBSCRIPTION_DEFINITIONS.md) | Subscription-aware unified stats & session history endpoints |
 
 ---
 
