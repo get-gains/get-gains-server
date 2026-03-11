@@ -1,7 +1,7 @@
 # Workout Feature
 
 > **Status**: ✅ Documented  
-> **Last Updated**: February 25, 2026  
+> **Last Updated**: March 9, 2026  
 > **Covers**: Exercises (CRUD + Ownership), Routines, Workout Sessions, Performed Sets, Batch Sync, Weekly Stats
 
 ---
@@ -129,13 +129,35 @@ The Workout feature provides the core fitness tracking functionality for the Get
 
 ### Workout Session Endpoints
 
-| Method | Endpoint                                    | Description                 | Auth |
-| ------ | ------------------------------------------- | --------------------------- | ---- |
-| `POST` | `/api/workout/sessions`                     | Start a new workout session | Yes  |
-| `GET`  | `/api/workout/sessions/active`              | Get active session          | Yes  |
-| `GET`  | `/api/workout/sessions`                     | Get session history         | Yes  |
-| `GET`  | `/api/workout/sessions/:sessionId`          | Get session by ID           | Yes  |
-| `POST` | `/api/workout/sessions/:sessionId/complete` | Complete a session          | Yes  |
+| Method | Endpoint                                    | Description                                  | Auth |
+| ------ | ------------------------------------------- | -------------------------------------------- | ---- |
+| `GET`  | `/api/workout/today`                        | Get today's scheduled routine + completedToday | Yes  |
+| `POST` | `/api/workout/sessions`                     | Start a new workout session                  | Yes  |
+| `GET`  | `/api/workout/sessions/active`              | Get active session                           | Yes  |
+| `GET`  | `/api/workout/sessions`                     | Get session history                          | Yes  |
+| `GET`  | `/api/workout/sessions/:sessionId`          | Get session by ID                            | Yes  |
+| `POST` | `/api/workout/sessions/:sessionId/complete` | Complete a session                           | Yes  |
+
+#### `GET /api/workout/today` Response
+
+Returns the user's scheduled routine for today based on their active assigned program. Includes a `completedToday` boolean indicating whether a completed `WorkoutSession` exists with `completedAt >= todayStart` for the scheduled routine.
+
+```json
+{
+  "data": {
+    "today": {
+      "routineId": "clxr123...",
+      "routineName": "Push Day A",
+      "dayNumber": 3,
+      "programName": "Hypertrophy Block 1",
+      "exercises": [...],
+      "estimatedDurationMinutes": 45
+    },
+    "completedToday": true
+  },
+  "errors": []
+}
+```
 
 ### Performed Set Endpoints
 
@@ -227,3 +249,4 @@ Returns success/failure status for each set with server-assigned IDs.
 - [ ] Personal records (PRs) tracking
 - [ ] Progress tracking and detailed analytics
 - [ ] Exercise video/image attachments
+- [ ] Relax `requireSubscription()` on `POST /workout/sessions` to allow offline sync without active subscription
