@@ -394,13 +394,8 @@ export const startWorkoutSession = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.user?.id;
+    const userId = req.appUser!.id;
     const { assignedProgramId } = req.body as StartWorkoutSessionInput;
-
-    if (!userId) {
-      sendSingleError(res, 'Unauthorized', 401);
-      return;
-    }
 
     logger.info('Starting workout session', {
       userId,
@@ -468,12 +463,7 @@ export const getActiveSession = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.user?.id;
-
-    if (!userId) {
-      sendSingleError(res, 'Unauthorized', 401);
-      return;
-    }
+    const userId = req.appUser!.id;
 
     const session = await prisma.workoutSession.findFirst({
       where: {
@@ -537,15 +527,10 @@ export const completeWorkoutSession = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.user?.id;
+    const userId = req.appUser!.id;
     const { sessionId } = res.locals.validated
       ?.params as CompleteWorkoutSessionParams;
     const { notes } = res.locals.validated?.body as CompleteWorkoutSessionInput;
-
-    if (!userId) {
-      sendSingleError(res, 'Unauthorized', 401);
-      return;
-    }
 
     logger.info('Completing workout session', { sessionId, userId });
 
@@ -626,14 +611,9 @@ export const getWorkoutSessions = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.user?.id;
+    const userId = req.appUser!.id;
     const { limit, offset, startDate, endDate } = res.locals.validated
       ?.query as GetWorkoutSessionsQuery;
-
-    if (!userId) {
-      sendSingleError(res, 'Unauthorized', 401);
-      return;
-    }
 
     const where: Record<string, unknown> = {
       userId,
@@ -695,14 +675,9 @@ export const getWorkoutSessionById = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.user?.id;
+    const userId = req.appUser!.id;
     const { sessionId } = res.locals.validated
       ?.params as GetWorkoutSessionByIdParams;
-
-    if (!userId) {
-      sendSingleError(res, 'Unauthorized', 401);
-      return;
-    }
 
     const session = await prisma.workoutSession.findFirst({
       where: {
@@ -769,7 +744,7 @@ export const getWorkoutSessionById = async (
  */
 export const logSet = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = req.user?.id;
+    const userId = req.appUser!.id;
     const {
       workoutSessionId,
       routineExerciseId,
@@ -779,11 +754,6 @@ export const logSet = async (req: Request, res: Response): Promise<void> => {
       rpe,
       notes,
     } = res.locals.validated?.body as LogSetInput;
-
-    if (!userId) {
-      sendSingleError(res, 'Unauthorized', 401);
-      return;
-    }
 
     logger.debug('Logging set', {
       userId,
@@ -878,15 +848,10 @@ export const logSet = async (req: Request, res: Response): Promise<void> => {
  */
 export const updateSet = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = req.user?.id;
+    const userId = req.appUser!.id;
     const { setId } = res.locals.validated?.params as UpdateSetParams;
     const { repsCompleted, weightKg, rpe, notes } = res.locals.validated
       ?.body as UpdateSetInput;
-
-    if (!userId) {
-      sendSingleError(res, 'Unauthorized', 401);
-      return;
-    }
 
     // Verify set belongs to user's session
     const existingSet = await prisma.performedSet.findFirst({
@@ -938,13 +903,8 @@ export const updateSet = async (req: Request, res: Response): Promise<void> => {
  */
 export const deleteSet = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = req.user?.id;
+    const userId = req.appUser!.id;
     const { setId } = res.locals.validated?.params as DeleteSetParams;
-
-    if (!userId) {
-      sendSingleError(res, 'Unauthorized', 401);
-      return;
-    }
 
     // Verify set belongs to user's session
     const existingSet = await prisma.performedSet.findFirst({
@@ -980,13 +940,8 @@ export const batchSyncSets = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.user?.id;
+    const userId = req.appUser!.id;
     const { sets } = res.locals.validated?.body as BatchSyncSetsInput;
-
-    if (!userId) {
-      sendSingleError(res, 'Unauthorized', 401);
-      return;
-    }
 
     logger.info('Batch syncing sets', { userId, count: sets.length });
 

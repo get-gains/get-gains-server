@@ -3,6 +3,7 @@ import { validateRequest } from '../middleware/validate.middleware';
 import {
   authenticateSupabaseUser,
   requireCoach,
+  requireAppUser,
 } from '../middleware/auth.middleware';
 import { requireSubscription } from '../middleware/subscription.middleware';
 import {
@@ -146,12 +147,12 @@ router.get(
 /**
  * @route   POST /workout/sessions
  * @desc    Start a new workout session
- * @access  Protected (requires active subscription for coach-assigned programs)
+ * @access  Protected
  */
 router.post(
   '/sessions',
   authenticateSupabaseUser,
-  requireSubscription(),
+  requireAppUser,
   validateRequest(StartWorkoutSessionSchema),
   startWorkoutSession
 );
@@ -161,7 +162,12 @@ router.post(
  * @desc    Get the user's active workout session
  * @access  Protected
  */
-router.get('/sessions/active', authenticateSupabaseUser, getActiveSession);
+router.get(
+  '/sessions/active',
+  authenticateSupabaseUser,
+  requireAppUser,
+  getActiveSession
+);
 
 /**
  * @route   GET /workout/sessions
@@ -171,6 +177,7 @@ router.get('/sessions/active', authenticateSupabaseUser, getActiveSession);
 router.get(
   '/sessions',
   authenticateSupabaseUser,
+  requireAppUser,
   validateRequest(GetWorkoutSessionsSchema),
   getWorkoutSessions
 );
@@ -183,6 +190,7 @@ router.get(
 router.get(
   '/sessions/:sessionId',
   authenticateSupabaseUser,
+  requireAppUser,
   validateRequest(GetWorkoutSessionByIdSchema),
   getWorkoutSessionById
 );
@@ -195,6 +203,7 @@ router.get(
 router.post(
   '/sessions/:sessionId/complete',
   authenticateSupabaseUser,
+  requireAppUser,
   validateRequest(CompleteWorkoutSessionSchema),
   completeWorkoutSession
 );
@@ -223,6 +232,7 @@ router.get(
 router.post(
   '/sets',
   authenticateSupabaseUser,
+  requireAppUser,
   validateRequest(LogSetSchema),
   logSet
 );
@@ -235,6 +245,7 @@ router.post(
 router.put(
   '/sets/:setId',
   authenticateSupabaseUser,
+  requireAppUser,
   validateRequest(UpdateSetSchema),
   updateSet
 );
@@ -247,6 +258,7 @@ router.put(
 router.delete(
   '/sets/:setId',
   authenticateSupabaseUser,
+  requireAppUser,
   validateRequest(DeleteSetSchema),
   deleteSet
 );
@@ -259,6 +271,7 @@ router.delete(
 router.post(
   '/sets/sync',
   authenticateSupabaseUser,
+  requireAppUser,
   validateRequest(BatchSyncSetsSchema),
   batchSyncSets
 );
