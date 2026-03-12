@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { validateRequest } from '../middleware/validate.middleware';
-import { authenticateSupabaseUser } from '../middleware/auth.middleware';
+import {
+  authenticateSupabaseUser,
+  requireAppUser,
+} from '../middleware/auth.middleware';
 import {
   ShopCatalogQuerySchema,
   PurchaseBodySchema,
@@ -17,6 +20,7 @@ const router = Router();
 router.get(
   '/catalog',
   authenticateSupabaseUser,
+  requireAppUser,
   validateRequest(ShopCatalogQuerySchema),
   getCatalog
 );
@@ -29,6 +33,7 @@ router.get(
 router.post(
   '/purchase',
   authenticateSupabaseUser,
+  requireAppUser,
   validateRequest(PurchaseBodySchema),
   purchaseCosmetic
 );

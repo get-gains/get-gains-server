@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { validateRequest } from '../middleware/validate.middleware';
-import { authenticateSupabaseUser } from '../middleware/auth.middleware';
+import {
+  authenticateSupabaseUser,
+  requireAppUser,
+} from '../middleware/auth.middleware';
 import { CoinHistoryQuerySchema } from '../schemas/coins.schema';
 import { getBalance, getHistory } from '../controllers/coins.controller';
 
@@ -11,7 +14,7 @@ const router = Router();
  * @desc    Get the current user's coin balance
  * @access  Protected
  */
-router.get('/balance', authenticateSupabaseUser, getBalance);
+router.get('/balance', authenticateSupabaseUser, requireAppUser, getBalance);
 
 /**
  * @route   GET /api/coins/history
@@ -21,6 +24,7 @@ router.get('/balance', authenticateSupabaseUser, getBalance);
 router.get(
   '/history',
   authenticateSupabaseUser,
+  requireAppUser,
   validateRequest(CoinHistoryQuerySchema),
   getHistory
 );
