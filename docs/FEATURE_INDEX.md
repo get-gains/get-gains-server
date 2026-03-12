@@ -639,4 +639,16 @@ features/*.md       → Domain-specific feature documentation
 
 ---
 
-_Last updated: March 2026_
+## System Flow Diagrams
+
+Cross-cutting system diagrams covering authentication, coach-client management, workouts, subscriptions, and webhook processing are maintained at the monorepo level:
+
+- **Index**: [`docs/system-diagrams/README.md`](../../docs/system-diagrams/README.md)
+- **Authentication flows**: [`docs/system-diagrams/02-authentication.md`](../../docs/system-diagrams/02-authentication.md)
+- **Coach-client management**: [`docs/system-diagrams/03-coach-client.md`](../../docs/system-diagrams/03-coach-client.md)
+- **Subscriptions & webhooks**: [`docs/system-diagrams/06-subscriptions.md`](../../docs/system-diagrams/06-subscriptions.md)
+- **Programs & routines**: [`docs/system-diagrams/04-programs-routines.md`](../../docs/system-diagrams/04-programs-routines.md)
+
+---
+
+_Last updated: March 11, 2026_
