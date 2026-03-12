@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { validateRequest } from '../middleware/validate.middleware';
-import { authenticateSupabaseUser } from '../middleware/auth.middleware';
+import {
+  authenticateSupabaseUser,
+  requireAppUser,
+} from '../middleware/auth.middleware';
 import { requireSubscription } from '../middleware/subscription.middleware';
 import {
   ClassLeaderboardParamsSchema,
@@ -21,6 +24,7 @@ const router = Router();
 router.get(
   '/class/:coachId',
   authenticateSupabaseUser,
+  requireAppUser,
   requireSubscription(),
   validateRequest(
     ClassLeaderboardParamsSchema.merge(ClassLeaderboardQuerySchema)
@@ -36,6 +40,7 @@ router.get(
 router.get(
   '/my-coaches',
   authenticateSupabaseUser,
+  requireAppUser,
   requireSubscription(),
   getMyCoaches
 );
