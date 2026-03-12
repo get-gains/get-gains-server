@@ -1,45 +1,114 @@
 import { Router } from 'express';
-import {
-  getUser,
-  createUser,
-  updateUser,
-  deleteUser,
-} from '../controllers/user.controller';
 import { validateRequest } from '../middleware/validate.middleware';
 import {
-  GetUserSchema,
-  CreateUserSchema,
-  UpdateUserSchema,
+  authenticateSupabaseUser,
+  requireAppUser,
+} from '../middleware/auth.middleware';
+import { requireSubscription } from '../middleware/subscription.middleware';
+import {
+  DiscoverCoachesSchema,
+  GetCoachProfileSchema,
+  GetSubscribedCoachesSchema,
+  SubscribeCoachSchema,
+  UnsubscribeCoachSchema,
+  UpdateProfileSchema,
 } from '../schemas/user.schema';
+import {
+  discoverCoaches,
+  getCoachProfile,
+  getSubscribedCoaches,
+  subscribeToCoach,
+  unsubscribeFromCoach,
+  getProfile,
+  updateProfile,
+} from '../controllers/user.controller';
 
 const router = Router();
 
 /**
- * @route   GET /users/:id
- * @desc    Get a user by ID
- * @access  Public
+ * @route   GET /user/profile or /users/profile
+ * @desc    Current user profile (Flutter app contract)
+ * @access  Protected
  */
-router.get('/:id', validateRequest(GetUserSchema), getUser);
+router.get('/profile', authenticateSupabaseUser, requireAppUser, getProfile);
 
 /**
- * @route   POST /users
- * @desc    Create a new user
- * @access  Public
+ * @route   PATCH /user/profile or /users/profile
+ * @desc    Update current user profile
+ * @access  Protected
  */
-router.post('/', validateRequest(CreateUserSchema), createUser);
+router.patch(
+  '/profile',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(UpdateProfileSchema),
+  updateProfile
+);
+
+router.put(
+  '/profile',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(UpdateProfileSchema),
+  updateProfile
+);
 
 /**
- * @route   PUT /users/:id
- * @desc    Update a user by ID
- * @access  Public
+ * @route   GET /user/coaches
+ * @desc    Discover/search coaches (public listing)
+ * @access  Public (no auth required)
  */
-router.put('/:id', validateRequest(UpdateUserSchema), updateUser);
+router.get('/coaches', validateRequest(DiscoverCoachesSchema), discoverCoaches);
 
 /**
- * @route   DELETE /users/:id
- * @desc    Delete a user by ID
- * @access  Public
+ * @route   GET /user/coaches/subscribed
+ * @desc    Get user's subscribed coaches
+ * @access  Protected (authenticateSupabaseUser + requireAppUser)
  */
-router.delete('/:id', validateRequest(GetUserSchema), deleteUser);
+router.get(
+  '/coaches/subscribed',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(GetSubscribedCoachesSchema),
+  getSubscribedCoaches
+);
+
+/**
+ * @route   GET /user/coaches/:coachId
+ * @desc    Get a single coach's public profile
+ * @access  Public (no auth required)
+ */
+router.get(
+  '/coaches/:coachId',
+  validateRequest(GetCoachProfileSchema),
+  getCoachProfile
+);
+
+/**
+ * @route   POST /user/coaches/:coachId
+ * @desc    Subscribe to a coach (requires active platform subscription)
+ * @access  Protected (authenticateSupabaseUser + requireAppUser + requireSubscription)
+ */
+router.post(
+  '/coaches/:coachId',
+  authenticateSupabaseUser,
+  requireAppUser,
+  requireSubscription(),
+  validateRequest(SubscribeCoachSchema),
+  subscribeToCoach
+);
+
+/**
+ * @route   DELETE /user/coaches/:coachId
+ * @desc    Unsubscribe from a coach
+ * @access  Protected (authenticateSupabaseUser + requireAppUser)
+ */
+router.delete(
+  '/coaches/:coachId',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(UnsubscribeCoachSchema),
+  unsubscribeFromCoach
+);
 
 export default router;

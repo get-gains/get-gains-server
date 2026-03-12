@@ -24,10 +24,17 @@ src/
 │   └── *.middleware.ts
 ├── schemas/              # Zod validation schemas
 │   └── *.schema.ts
+├── services/             # Business logic services
+│   └── *.service.ts
+├── providers/            # External service integrations
+│   └── payment/          # Payment provider implementations
 └── utils/                # Utility functions
     ├── logger.ts         # Logging utility (USE THIS)
     ├── response.ts       # API response builder (USE THIS)
     └── console-message.ts
+
+scripts/
+├── sync-plans.ts         # Sync subscription plans from providers
 ```
 
 ---
@@ -274,7 +281,47 @@ try {
 
 1. Define schema in `/schemas`
 2. Use `validateRequest` middleware in routes
-3. Access validated data in controller via `req.body`, `req.params`, `req.query`
+3. Access **coerced/defaulted** validated data in controllers via `res.locals.validated`
+
+> **Critical — Express 5 compatibility**: `req.query` and `req.params` are
+> read-only getters in Express 5. The `validateRequest` middleware stores the
+> fully-parsed Zod output (with all `z.coerce.*` transforms and `.default()`
+> values applied) in `res.locals.validated`. Controllers **must** read from
+> `res.locals.validated` — never from `req.query as unknown as T` — to receive
+> correct types.
+
+```typescript
+// ✅ CORRECT — reads coerced values from validated middleware output
+import type { GetThingsQuery } from '../schemas/thing.schema';
+
+export const getThings = async (req: Request, res: Response) => {
+  const { limit, offset, includeInactive } =
+    res.locals.validated?.query as GetThingsQuery;
+  // limit/offset are numbers (not strings), includeInactive is a boolean
+};
+
+// ❌ WRONG — bypasses Zod coercion; limit is a string, booleans are always truthy
+export const getThings = async (req: Request, res: Response) => {
+  const { limit, offset } = req.query as unknown as GetThingsQuery;
+};
+```
+
+**Rules:**
+- `res.locals.validated?.query` → for query-param coercion (`z.coerce.number()`, `z.coerce.boolean()`, `z.coerce.date()`, `.default()`)
+- `res.locals.validated?.body` → **always required** for `multipart/form-data` request bodies (multer delivers every text field as a string; the schema's `z.preprocess(toNumber, …)` coerces them — but only the `res.locals.validated` copy is coerced)
+- `res.locals.validated?.params` → for route params (coerced where needed)
+- **Never** use `req.body` directly for multipart endpoints that coerce numeric fields — Prisma will throw `PrismaClientValidationError` ("Expected Float, provided String")
+- **Never** use `req.query as unknown as T` — query strings are always raw `string | string[]` at runtime
+
+**Multipart numeric field convention**: Mobile clients (Flutter) send numeric values
+(`heightCm`, `weightKg`, integer counts, etc.) as **plain strings** inside
+`multipart/form-data` — this is standard HTTP behaviour and avoids floating-point
+precision loss. All multipart schemas **must** use `z.preprocess(toNumber, z.number())`
+(or `z.preprocess(toNumber, z.number().int())` for integers) for these fields.
+Controllers **must** read `res.locals.validated?.body` to receive the Prisma-compatible
+numbers.
+
+**Type augmentation** is declared in `src/types/express.d.ts` — no import needed.
 
 ---
 
@@ -293,7 +340,212 @@ try {
 
 ## Environment Variables
 
-| Variable    | Description                               | Default |
-| ----------- | ----------------------------------------- | ------- |
-| `PORT`      | Server port                               | `3000`  |
-| `LOG_LEVEL` | Logging verbosity (DEBUG/INFO/WARN/ERROR) | `DEBUG` |
+| Variable                         | Description                               | Default                     |
+| -------------------------------- | ----------------------------------------- | --------------------------- |
+| `PORT`                           | Server port                               | `3000`                      |
+| `LOG_LEVEL`                      | Logging verbosity (DEBUG/INFO/WARN/ERROR) | `DEBUG`                     |
+| `DATABASE_URL`                   | PostgreSQL connection string              | Required                    |
+| `JWT_SECRET`                     | Secret key for signing JWTs               | Required                    |
+| `JWT_EXPIRATION`                 | JWT token expiration (e.g., "7d", "24h")  | `7d`                        |
+| `GOOGLE_CLIENT_ID`               | Google OAuth client ID                    | Optional                    |
+| `GOOGLE_CLIENT_SECRET`           | Google OAuth client secret                | Optional                    |
+| `GOOGLE_CALLBACK_URL`            | Google OAuth callback URL                 | `/api/auth/google/callback` |
+| `GOOGLE_PLAY_PACKAGE_NAME`       | Android app package name                  | Required for subscriptions  |
+| `GOOGLE_SERVICE_ACCOUNT_KEY_PATH`| Path to Google service account JSON       | `google-services.json`      |
+| `S3_ENDPOINT`                    | S3-compatible storage endpoint (Railway Buckets) | Required for file uploads |
+| `S3_REGION`                      | S3 region                                 | `us-east-1`                 |
+| `S3_ACCESS_KEY_ID`               | S3 access key ID                          | Required for file uploads   |
+| `S3_SECRET_ACCESS_KEY`           | S3 secret access key                      | Required for file uploads   |
+| `S3_BUCKET_NAME`                 | S3 bucket name for avatar storage         | Required for file uploads   |
+
+---
+
+## Authentication
+
+This server uses PassportJS for authentication with support for:
+
+- **Local Strategy**: Email/password authentication
+- **Google OAuth**: Sign in with Google
+- **JWT**: Bearer token authentication for protected routes
+
+### Authentication Files
+
+```
+src/
+├── config/
+│   ├── database.ts       # Prisma client singleton
+│   └── passport.ts       # Passport strategies configuration
+├── middleware/
+│   └── auth.middleware.ts  # Authentication middlewares
+├── schemas/
+│   └── auth.schema.ts    # Login/register validation schemas
+└── utils/
+    ├── jwt.ts            # JWT generation/verification
+    └── password.ts       # Password hashing utilities
+```
+
+### Protecting Routes
+
+Use the `authenticateSupabaseUser` middleware to protect routes:
+
+```typescript
+import { Router } from "express";
+import { authenticateSupabaseUser } from "../middleware/auth.middleware";
+import { getProfile } from "../controllers/user.controller";
+
+const router = Router();
+
+// Protected route - requires Bearer token
+router.get("/profile", authenticateSupabaseUser, getProfile);
+
+export default router;
+```
+
+After authentication, the user is available on `req.user` with subscription data:
+
+```typescript
+import { Request, Response } from "express";
+import { sendSuccess } from "../utils/response";
+import type { AuthenticatedUser } from "../middleware/auth.middleware";
+
+export const getProfile = async (req: Request, res: Response) => {
+  const user = req.user as AuthenticatedUser;
+  
+  // User subscription data is automatically attached
+  const { subscription } = user;
+  
+  sendSuccess(res, {
+    user: { 
+      id: user.id, 
+      email: user.email,
+      subscription: {
+        isSubscribed: subscription?.isSubscribed || false,
+        tierLevel: subscription?.tierLevel || 0,
+      }
+    },
+  });
+};
+```
+
+#### User Subscription Data
+
+Every authenticated request automatically includes subscription information in `req.user.subscription`:
+
+```typescript
+interface AuthenticatedUser extends SupabaseUser {
+  subscription?: {
+    isSubscribed: boolean;      // Whether user has active subscription
+    tierLevel: number;           // 0=Free, 1=Basic, 2=Premium, 3=Pro, etc.
+    subscriptionId?: string;     // Subscription ID (if subscribed)
+    planId?: string;            // Plan ID (if subscribed)
+    status?: SubscriptionStatus; // Subscription status (if subscribed)
+    currentPeriodEnd?: Date;    // Period end date (if subscribed)
+  };
+}
+```
+
+This allows you to implement tiered features without additional middleware:
+
+```typescript
+export const getAnalytics = async (req: Request, res: Response) => {
+  const user = req.user as AuthenticatedUser;
+  
+  // Check tier level directly
+  if (user.subscription.tierLevel >= 2) {
+    // Return advanced analytics for Premium+ users
+    return sendSuccess(res, { analytics: getAdvancedAnalytics() });
+  }
+  
+  // Return basic analytics for Free/Basic users
+  return sendSuccess(res, { analytics: getBasicAnalytics() });
+};
+```
+
+### Optional Authentication
+
+For routes that work for both authenticated and unauthenticated users:
+
+```typescript
+import { optionalAuth } from "../middleware/auth.middleware";
+
+router.get("/public", optionalAuth, (req, res) => {
+  if (req.user) {
+    // User is authenticated
+  } else {
+    // User is a guest
+  }
+});
+```
+
+### Local Authentication (Login)
+
+Use the `authenticateLocal` middleware for login routes:
+
+```typescript
+import { authenticateLocal } from "../middleware/auth.middleware";
+import { generateToken } from "../utils/jwt";
+
+router.post(
+  "/login",
+  validateRequest(LoginSchema),
+  authenticateLocal,
+  (req, res) => {
+    const user = req.user!;
+    const token = generateToken({ userId: user.id, email: user.email });
+    sendSuccess(res, {
+      token,
+      user: { id: user.id, email: user.email, name: user.name },
+    });
+  },
+);
+```
+
+### User Registration
+
+Use the password utility to hash passwords:
+
+```typescript
+import { hashPassword } from "../utils/password";
+import prisma from "../config/database";
+import { generateToken } from "../utils/jwt";
+
+export const register = async (req: Request, res: Response) => {
+  const { email, password, name, nickname } = req.body;
+
+  // Hash password before storing
+  const hashedPassword = await hashPassword(password);
+
+  const user = await prisma.user.create({
+    data: {
+      email: email.toLowerCase(),
+      password: hashedPassword,
+      name,
+      nickname,
+    },
+  });
+
+  const token = generateToken({ userId: user.id, email: user.email });
+  sendSuccess(
+    res,
+    { token, user: { id: user.id, email: user.email, name: user.name } },
+    201,
+  );
+};
+```
+
+### Auth Schemas
+
+Available schemas in `/schemas/auth.schema.ts`:
+
+```typescript
+import {
+  RegisterSchema,
+  LoginSchema,
+  RegisterInput,
+  LoginInput,
+} from "../schemas/auth.schema";
+
+// Use with validateRequest middleware
+router.post("/register", validateRequest(RegisterSchema), registerController);
+router.post("/login", validateRequest(LoginSchema), loginController);
+```
