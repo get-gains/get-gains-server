@@ -18,6 +18,7 @@ import statsRoutes from './routes/stats.routes';
 import sessionsRoutes from './routes/sessions.routes';
 import coinsRoutes from './routes/coins.routes';
 import shopRoutes from './routes/shop.routes';
+import cosmeticsRoutes from './routes/cosmetics.routes';
 
 dotenv.config();
 
@@ -59,6 +60,7 @@ const startServer = () => {
   app.use('/api/sessions', sessionsRoutes);
   app.use('/api/coins', coinsRoutes);
   app.use('/api/shop', shopRoutes);
+  app.use('/api/cosmetics', cosmeticsRoutes);
   app.use('/api/users', userRoutes);
 
   // 404 Handler (contract: data + errors envelope)
