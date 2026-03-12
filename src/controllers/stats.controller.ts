@@ -3,6 +3,7 @@ import prisma from '../config/database';
 import { logger } from '../utils/logger';
 import { sendSuccess, sendSingleError } from '../utils/response';
 import { WeeklyStatsQuery, SourceStats } from '../schemas/stats.schema';
+import { calculateStreaksBySource } from '../utils/streak';
 
 // ============== Unified Weekly Stats ==============
 
@@ -103,58 +104,10 @@ export const getWeeklyStats = async (
     const coachWorkouts = coachSessions.length;
     const coachMinutes = computeMinutes(coachSessions);
 
-    // ── Streak Calculation (90-day lookback) ──
+    // ── Streak Calculation (shared utility) ──
 
-    const today = new Date();
-    today.setUTCHours(23, 59, 59, 999);
-    const lookbackStart = new Date(today);
-    lookbackStart.setUTCDate(today.getUTCDate() - 90);
-    lookbackStart.setUTCHours(0, 0, 0, 0);
-
-    const recentSessions = await prisma.workoutSession.findMany({
-      where: {
-        userId: user.id,
-        completedAt: { not: null },
-        startedAt: { gte: lookbackStart, lte: today },
-      },
-      select: {
-        startedAt: true,
-        assignedProgramId: true,
-      },
-      orderBy: { startedAt: 'desc' },
-    });
-
-    // Build date sets for streak calculation
-    const allDates = new Set<string>();
-    const standaloneDates = new Set<string>();
-    const coachDates = new Set<string>();
-
-    for (const s of recentSessions) {
-      const dateStr = s.startedAt.toISOString().slice(0, 10);
-      allDates.add(dateStr);
-      if (s.assignedProgramId === null) {
-        standaloneDates.add(dateStr);
-      } else {
-        coachDates.add(dateStr);
-      }
-    }
-
-    // Helper: count streak backwards from today
-    const countStreak = (dates: Set<string>): number => {
-      let streak = 0;
-      const checkDate = new Date(today);
-      checkDate.setUTCHours(0, 0, 0, 0);
-
-      while (dates.has(checkDate.toISOString().slice(0, 10))) {
-        streak++;
-        checkDate.setUTCDate(checkDate.getUTCDate() - 1);
-      }
-      return streak;
-    };
-
-    const combinedStreak = countStreak(allDates);
-    const standaloneStreak = countStreak(standaloneDates);
-    const coachStreak = countStreak(coachDates);
+    const { combinedStreak, standaloneStreak, coachStreak } =
+      await calculateStreaksBySource(user.id, new Date(), prisma);
 
     // Get most recently active coach program name (if subscribed)
     let coachProgramName: string | null = null;

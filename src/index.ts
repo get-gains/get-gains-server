@@ -16,6 +16,10 @@ import poseRoutes from './routes/pose.routes';
 import standaloneRoutes from './routes/standalone.routes';
 import statsRoutes from './routes/stats.routes';
 import sessionsRoutes from './routes/sessions.routes';
+import coinsRoutes from './routes/coins.routes';
+import shopRoutes from './routes/shop.routes';
+import cosmeticsRoutes from './routes/cosmetics.routes';
+import leaderboardRoutes from './routes/leaderboard.routes';
 
 dotenv.config();
 
@@ -55,6 +59,10 @@ const startServer = () => {
   app.use('/api/standalone', standaloneRoutes);
   app.use('/api/stats', statsRoutes);
   app.use('/api/sessions', sessionsRoutes);
+  app.use('/api/coins', coinsRoutes);
+  app.use('/api/shop', shopRoutes);
+  app.use('/api/cosmetics', cosmeticsRoutes);
+  app.use('/api/leaderboard', leaderboardRoutes);
   app.use('/api/users', userRoutes);
 
   // 404 Handler (contract: data + errors envelope)

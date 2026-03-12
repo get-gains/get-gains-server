@@ -23,6 +23,8 @@ import {
   GetWeeklyStatsQuery,
 } from '../schemas/workout.schema';
 import { MuscleGroup } from '@prisma/client';
+import { calculateStreak } from '../utils/streak';
+import { calculateSessionCoins } from '../services/coin-calculation.service';
 
 // ============== Exercise Controllers ==============
 
@@ -573,6 +575,19 @@ export const completeWorkoutSession = async (
         updatedSession.startedAt.getTime(),
     });
 
+    // Award coins for the completed session
+    let coinReward = null;
+    try {
+      coinReward = await calculateSessionCoins(userId, sessionId, prisma);
+    } catch (coinError) {
+      // Log but don't fail the session completion if coin award fails
+      logger.error('Failed to award coins for session', {
+        sessionId,
+        userId,
+        error: coinError,
+      });
+    }
+
     sendSuccess(res, {
       session: {
         id: updatedSession.id,
@@ -596,6 +611,7 @@ export const completeWorkoutSession = async (
         createdAt: updatedSession.createdAt,
         updatedAt: updatedSession.updatedAt,
       },
+      ...(coinReward ? { coinReward } : {}),
     });
   } catch (error) {
     logger.error('Error completing workout session', error);
@@ -1441,38 +1457,8 @@ export const getWeeklyStats = async (
       return sum;
     }, 0);
 
-    // Streak: count consecutive days (up to today) that have at least one completed session
-    // Look back up to 90 days to find the streak
-    const today = new Date();
-    today.setUTCHours(23, 59, 59, 999);
-    const lookbackStart = new Date(today);
-    lookbackStart.setUTCDate(today.getUTCDate() - 90);
-    lookbackStart.setUTCHours(0, 0, 0, 0);
-
-    const recentSessions = await prisma.workoutSession.findMany({
-      where: {
-        userId: user.id,
-        completedAt: { not: null },
-        startedAt: { gte: lookbackStart, lte: today },
-      },
-      select: { startedAt: true },
-      orderBy: { startedAt: 'desc' },
-    });
-
-    // Build a set of unique workout dates (YYYY-MM-DD in UTC)
-    const workoutDates = new Set(
-      recentSessions.map((s) => s.startedAt.toISOString().slice(0, 10))
-    );
-
-    // Count streak backwards from today
-    let streakDays = 0;
-    const checkDate = new Date(today);
-    checkDate.setUTCHours(0, 0, 0, 0);
-
-    while (workoutDates.has(checkDate.toISOString().slice(0, 10))) {
-      streakDays++;
-      checkDate.setUTCDate(checkDate.getUTCDate() - 1);
-    }
+    // Streak (shared utility)
+    const streakDays = await calculateStreak(user.id, new Date(), prisma);
 
     sendSuccess(res, {
       stats: {
