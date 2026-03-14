@@ -726,6 +726,11 @@ model ExerciseForm {
   version  Int     @default(1)
   isActive Boolean @default(true) // Only one active form per exercise per angle
 
+  // Auto-detected relevant joint angles (vertex-dilution fix).
+  // Only these angles are used for DTW comparison, filtering out static joints.
+  // JSON array of angle name strings, e.g. ["leftKneeFlexion", "leftHipFlexion"]
+  relevantAngles Json?
+
   // Quality metadata from the app's recording validation
   avgLandmarkConfidence Float?
   recordingQuality      String? // "good", "acceptable", "poor"
