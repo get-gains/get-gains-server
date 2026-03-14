@@ -139,7 +139,7 @@ export const AddExerciseToRoutineSchema = z.object({
     repsMax: z.number().int().min(1),
     restSeconds: z.number().int().min(0),
     orderInRoutine: z.number().int().min(1),
-    notes: z.string().optional(),
+    notes: z.string().nullable().optional(),
   }),
 });
 
