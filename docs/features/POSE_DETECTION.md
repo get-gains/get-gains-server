@@ -1,7 +1,7 @@
 # Pose Detection - Backend Implementation Plan
 
 > **Status**: ✅ Implemented (Coach Flow, Client Results, Download — pending migration)  
-> **Last Updated**: February 11, 2026  
+> **Last Updated**: March 13, 2026  
 > **Covers**: Exercise Form Storage, Pose Landmark Data, Comparison Results, Limb Isolation Config  
 > **Depends On**: [WORKOUT.md](WORKOUT.md), [COACH.md](COACH.md), [PROGRAM.md](PROGRAM.md)
 
@@ -35,6 +35,8 @@ The Pose Detection backend provides **storage, retrieval, and record-keeping** f
 | Historical Record Queries | ✅ | ❌ |
 
 > **Key Principle**: All ML processing is on-device (edge). The server is a data store and API layer only.
+
+**App alignment (March 2026):** The Flutter app uses **capture-only recording** (no live MLKit or rep counter during recording). After the user stops, it runs batch pose detection, normalization with torso alignment, temporal best-offset alignment, and DTW comparison. Submitted results use the same `segmentScores` / `corrections` schema; the app does not send a rep count. The `frameRate` and `totalFrames` in both coach form upload and client result submission refer to **pose/vertex data rate** (landmark frames per second), not camera video FPS. The server enforces a minimum of 30 FPS for pose data in validation.
 
 ### Scope
 
@@ -423,6 +425,8 @@ model RoutineExercise {
 **Notes**:
 - If another active form exists for the same exercise + angle, the previous one is auto-deactivated (`isActive = false`).
 - The version auto-increments based on existing forms for the exercise.
+- `frameRate` and `totalFrames` are the **pose/vertex data rate** (landmark frames per second), not camera video FPS. Minimum 30 FPS is enforced.
+- Optional `relevantAngles` (string array) is used by the app for hybrid angle selection and consistent DTW comparison; when present, the app compares only those angles.
 
 ---
 
@@ -485,6 +489,10 @@ model RoutineExercise {
   "errors": []
 }
 ```
+
+**Notes**:
+- `frameRate` and `totalFrames` are the **pose data rate** (landmark frames per second) after the app’s post-processing; minimum 30 FPS is enforced.
+- The app does not send a rep count (client recording is capture-only; comparison is based on segment scores and corrections only).
 
 ---
 
@@ -958,4 +966,4 @@ app.use("/api/pose", poseRoutes);
 
 ---
 
-*Last updated: February 6, 2026*
+*Last updated: March 13, 2026*

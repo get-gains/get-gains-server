@@ -50,6 +50,14 @@
 | [features/VERIFY_RESET_FLOW.md](features/VERIFY_RESET_FLOW.md)               | Email verification & password reset flows                    |
 | [features/SUBSCRIPTION_DEFINITIONS.md](features/SUBSCRIPTION_DEFINITIONS.md) | Subscription-aware unified stats & session history endpoints |
 
+### Recent Changes (app form comparison & pose pipeline alignment — March 2026)
+
+| Change | Description |
+| --- | --- |
+| Pose FPS validation | `frameRate` in coach form upload and client result submission is the **pose/vertex data rate** (landmark frames per second), not video FPS. Minimum 30 FPS enforced in `pose.schema.ts` for both flows. |
+| Coach form: `relevantAngles` | Coach upload/update accepts optional `relevantAngles` (string array); used by the app for hybrid angle selection (auto-detect + coach override) and consistent DTW comparison. |
+| Client result submission | App no longer sends a rep count (client recording is capture-only; rep counter removed for performance). Result payload is unchanged; `segmentScores` and `corrections` remain the primary comparison output. |
+
 ---
 
 ## Feature Categories
@@ -639,4 +647,4 @@ features/*.md       → Domain-specific feature documentation
 
 ---
 
-_Last updated: March 2026_
+_Last updated: March 13, 2026_

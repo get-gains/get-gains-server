@@ -46,6 +46,7 @@ export const uploadCoachForm = async (
       landmarkFrames,
       featureFrames,
       normalizedFrames,
+      relevantAngles,
       avgLandmarkConfidence,
       recordingQuality,
     } = res.locals.validated?.body as UploadFormInput;
@@ -91,6 +92,7 @@ export const uploadCoachForm = async (
         landmarkFrames,
         featureFrames,
         normalizedFrames: normalizedFrames ?? undefined,
+        relevantAngles: relevantAngles ?? undefined,
         version: nextVersion,
         isActive: true,
         avgLandmarkConfidence,
@@ -119,6 +121,7 @@ export const uploadCoachForm = async (
           totalFrames: form.totalFrames,
           durationMs: form.durationMs,
           frameRate: form.frameRate,
+          relevantAngles: form.relevantAngles,
           avgLandmarkConfidence: form.avgLandmarkConfidence,
           recordingQuality: form.recordingQuality,
           createdAt: form.createdAt,
@@ -222,6 +225,7 @@ export const getExerciseForms = async (
         durationMs: true,
         frameRate: true,
         totalFrames: true,
+        relevantAngles: true,
         version: true,
         isActive: true,
         avgLandmarkConfidence: true,
@@ -317,6 +321,12 @@ export const updateForm = async (
               ? Prisma.JsonNull
               : updateData.normalizedFrames,
         }),
+        ...(updateData.relevantAngles !== undefined && {
+          relevantAngles:
+            updateData.relevantAngles === null
+              ? Prisma.JsonNull
+              : (updateData.relevantAngles as Prisma.InputJsonValue),
+        }),
         ...(updateData.avgLandmarkConfidence !== undefined && {
           avgLandmarkConfidence: updateData.avgLandmarkConfidence,
         }),
@@ -339,6 +349,7 @@ export const updateForm = async (
         totalFrames: updatedForm.totalFrames,
         durationMs: updatedForm.durationMs,
         frameRate: updatedForm.frameRate,
+        relevantAngles: updatedForm.relevantAngles,
         avgLandmarkConfidence: updatedForm.avgLandmarkConfidence,
         recordingQuality: updatedForm.recordingQuality,
         updatedAt: updatedForm.updatedAt,
@@ -1001,6 +1012,7 @@ export const bulkDownloadProgramForms = async (
           landmarkFrames: f.landmarkFrames,
           featureFrames: f.featureFrames,
           normalizedFrames: f.normalizedFrames,
+          relevantAngles: f.relevantAngles,
           version: f.version,
           coachName: f.coach?.name,
         })),
@@ -1084,6 +1096,7 @@ export const downloadExerciseForm = async (
         landmarkFrames: f.landmarkFrames,
         featureFrames: f.featureFrames,
         normalizedFrames: f.normalizedFrames,
+        relevantAngles: f.relevantAngles,
         version: f.version,
         coachName: f.coach?.name,
       })),

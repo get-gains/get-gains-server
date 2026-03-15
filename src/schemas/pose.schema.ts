@@ -77,11 +77,16 @@ export const UploadFormSchema = z.object({
     exerciseId: z.string().min(1, 'Exercise ID is required'),
     cameraAngle: CameraAngleEnum,
     durationMs: z.number().int().positive(),
-    frameRate: z.number().int().min(1).max(60),
+    frameRate: z
+      .number()
+      .int()
+      .min(30, 'Minimum 30 FPS required for accurate DTW analysis')
+      .max(60),
     totalFrames: z.number().int().positive(),
     landmarkFrames: z.array(LandmarkFrameSchema).min(1),
     featureFrames: z.array(FeatureFrameSchema).min(1),
     normalizedFrames: z.array(NormalizedLandmarkFrameSchema).nullish(),
+    relevantAngles: z.array(z.string().min(1)).nullish(),
     avgLandmarkConfidence: z.number().min(0).max(1).optional(),
     recordingQuality: z.enum(['good', 'acceptable', 'poor']).optional(),
   }),
@@ -95,11 +100,17 @@ export const UpdateFormSchema = z.object({
   body: z.object({
     cameraAngle: CameraAngleEnum.optional(),
     durationMs: z.number().int().positive().optional(),
-    frameRate: z.number().int().min(1).max(60).optional(),
+    frameRate: z
+      .number()
+      .int()
+      .min(30, 'Minimum 30 FPS required for accurate DTW analysis')
+      .max(60)
+      .optional(),
     totalFrames: z.number().int().positive().optional(),
     landmarkFrames: z.array(LandmarkFrameSchema).min(1).optional(),
     featureFrames: z.array(FeatureFrameSchema).min(1).optional(),
     normalizedFrames: z.array(NormalizedLandmarkFrameSchema).nullish(),
+    relevantAngles: z.array(z.string().min(1)).nullish(),
     avgLandmarkConfidence: z.number().min(0).max(1).optional(),
     recordingQuality: z.enum(['good', 'acceptable', 'poor']).optional(),
   }),
@@ -178,7 +189,11 @@ export const SubmitResultSchema = z.object({
     corrections: z.array(CorrectionSchema),
     cameraAngle: CameraAngleEnum,
     durationMs: z.number().int().positive(),
-    frameRate: z.number().int().min(1).max(60),
+    frameRate: z
+      .number()
+      .int()
+      .min(30, 'Minimum 30 FPS required for accurate DTW analysis')
+      .max(60),
     totalFrames: z.number().int().positive(),
     avgLandmarkConfidence: z.number().min(0).max(1).optional(),
     clientLandmarkFrames: z.array(LandmarkFrameSchema).nullish(),
