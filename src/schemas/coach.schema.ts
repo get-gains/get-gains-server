@@ -59,8 +59,8 @@ export const AssignProgramSchema = z.object({
     userId: z.string().cuid('Invalid user ID'),
     programId: z.string().cuid('Invalid program ID'),
     startDate: z.string().datetime('Invalid start date'),
-    endDate: z.string().datetime('Invalid end date').nullable().optional(),
-    notes: z.string().max(1000).nullable().optional(),
+    endDate: z.string().datetime('Invalid end date').optional(),
+    notes: z.string().max(1000).optional(),
   }),
 });
 

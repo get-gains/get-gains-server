@@ -23,6 +23,8 @@ import {
   GetWeeklyStatsQuery,
 } from '../schemas/workout.schema';
 import { MuscleGroup } from '@prisma/client';
+import { calculateStreak } from '../utils/streak';
+import { calculateSessionCoins } from '../services/coin-calculation.service';
 
 // ============== Exercise Controllers ==============
 
@@ -394,13 +396,8 @@ export const startWorkoutSession = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.user?.id;
+    const userId = req.appUser!.id;
     const { assignedProgramId } = req.body as StartWorkoutSessionInput;
-
-    if (!userId) {
-      sendSingleError(res, 'Unauthorized', 401);
-      return;
-    }
 
     logger.info('Starting workout session', {
       userId,
@@ -468,12 +465,7 @@ export const getActiveSession = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.user?.id;
-
-    if (!userId) {
-      sendSingleError(res, 'Unauthorized', 401);
-      return;
-    }
+    const userId = req.appUser!.id;
 
     const session = await prisma.workoutSession.findFirst({
       where: {
@@ -537,15 +529,10 @@ export const completeWorkoutSession = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.user?.id;
+    const userId = req.appUser!.id;
     const { sessionId } = res.locals.validated
       ?.params as CompleteWorkoutSessionParams;
     const { notes } = res.locals.validated?.body as CompleteWorkoutSessionInput;
-
-    if (!userId) {
-      sendSingleError(res, 'Unauthorized', 401);
-      return;
-    }
 
     logger.info('Completing workout session', { sessionId, userId });
 
@@ -588,6 +575,19 @@ export const completeWorkoutSession = async (
         updatedSession.startedAt.getTime(),
     });
 
+    // Award coins for the completed session
+    let coinReward = null;
+    try {
+      coinReward = await calculateSessionCoins(userId, sessionId, prisma);
+    } catch (coinError) {
+      // Log but don't fail the session completion if coin award fails
+      logger.error('Failed to award coins for session', {
+        sessionId,
+        userId,
+        error: coinError,
+      });
+    }
+
     sendSuccess(res, {
       session: {
         id: updatedSession.id,
@@ -611,6 +611,7 @@ export const completeWorkoutSession = async (
         createdAt: updatedSession.createdAt,
         updatedAt: updatedSession.updatedAt,
       },
+      ...(coinReward ? { coinReward } : {}),
     });
   } catch (error) {
     logger.error('Error completing workout session', error);
@@ -626,14 +627,9 @@ export const getWorkoutSessions = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.user?.id;
+    const userId = req.appUser!.id;
     const { limit, offset, startDate, endDate } = res.locals.validated
       ?.query as GetWorkoutSessionsQuery;
-
-    if (!userId) {
-      sendSingleError(res, 'Unauthorized', 401);
-      return;
-    }
 
     const where: Record<string, unknown> = {
       userId,
@@ -695,14 +691,9 @@ export const getWorkoutSessionById = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.user?.id;
+    const userId = req.appUser!.id;
     const { sessionId } = res.locals.validated
       ?.params as GetWorkoutSessionByIdParams;
-
-    if (!userId) {
-      sendSingleError(res, 'Unauthorized', 401);
-      return;
-    }
 
     const session = await prisma.workoutSession.findFirst({
       where: {
@@ -769,7 +760,7 @@ export const getWorkoutSessionById = async (
  */
 export const logSet = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = req.user?.id;
+    const userId = req.appUser!.id;
     const {
       workoutSessionId,
       routineExerciseId,
@@ -779,11 +770,6 @@ export const logSet = async (req: Request, res: Response): Promise<void> => {
       rpe,
       notes,
     } = res.locals.validated?.body as LogSetInput;
-
-    if (!userId) {
-      sendSingleError(res, 'Unauthorized', 401);
-      return;
-    }
 
     logger.debug('Logging set', {
       userId,
@@ -878,15 +864,10 @@ export const logSet = async (req: Request, res: Response): Promise<void> => {
  */
 export const updateSet = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = req.user?.id;
+    const userId = req.appUser!.id;
     const { setId } = res.locals.validated?.params as UpdateSetParams;
     const { repsCompleted, weightKg, rpe, notes } = res.locals.validated
       ?.body as UpdateSetInput;
-
-    if (!userId) {
-      sendSingleError(res, 'Unauthorized', 401);
-      return;
-    }
 
     // Verify set belongs to user's session
     const existingSet = await prisma.performedSet.findFirst({
@@ -938,13 +919,8 @@ export const updateSet = async (req: Request, res: Response): Promise<void> => {
  */
 export const deleteSet = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = req.user?.id;
+    const userId = req.appUser!.id;
     const { setId } = res.locals.validated?.params as DeleteSetParams;
-
-    if (!userId) {
-      sendSingleError(res, 'Unauthorized', 401);
-      return;
-    }
 
     // Verify set belongs to user's session
     const existingSet = await prisma.performedSet.findFirst({
@@ -980,13 +956,8 @@ export const batchSyncSets = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.user?.id;
+    const userId = req.appUser!.id;
     const { sets } = res.locals.validated?.body as BatchSyncSetsInput;
-
-    if (!userId) {
-      sendSingleError(res, 'Unauthorized', 401);
-      return;
-    }
 
     logger.info('Batch syncing sets', { userId, count: sets.length });
 
@@ -1189,6 +1160,18 @@ export const getTodayWorkout = async (
 
     const { routine } = todayProgramRoutine;
 
+    // Check if user has already completed a session today
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const completedSession = await prisma.workoutSession.findFirst({
+      where: {
+        userId: user.id,
+        completedAt: { gte: todayStart },
+      },
+      select: { id: true },
+    });
+    const completedToday = completedSession !== null;
+
     sendSuccess(res, {
       today: {
         programRoutineId: todayProgramRoutine.id,
@@ -1221,6 +1204,7 @@ export const getTodayWorkout = async (
         },
       },
       isRestDay: false,
+      completedToday,
     });
   } catch (error) {
     logger.error('Error fetching today workout', error);
@@ -1473,38 +1457,8 @@ export const getWeeklyStats = async (
       return sum;
     }, 0);
 
-    // Streak: count consecutive days (up to today) that have at least one completed session
-    // Look back up to 90 days to find the streak
-    const today = new Date();
-    today.setUTCHours(23, 59, 59, 999);
-    const lookbackStart = new Date(today);
-    lookbackStart.setUTCDate(today.getUTCDate() - 90);
-    lookbackStart.setUTCHours(0, 0, 0, 0);
-
-    const recentSessions = await prisma.workoutSession.findMany({
-      where: {
-        userId: user.id,
-        completedAt: { not: null },
-        startedAt: { gte: lookbackStart, lte: today },
-      },
-      select: { startedAt: true },
-      orderBy: { startedAt: 'desc' },
-    });
-
-    // Build a set of unique workout dates (YYYY-MM-DD in UTC)
-    const workoutDates = new Set(
-      recentSessions.map((s) => s.startedAt.toISOString().slice(0, 10))
-    );
-
-    // Count streak backwards from today
-    let streakDays = 0;
-    const checkDate = new Date(today);
-    checkDate.setUTCHours(0, 0, 0, 0);
-
-    while (workoutDates.has(checkDate.toISOString().slice(0, 10))) {
-      streakDays++;
-      checkDate.setUTCDate(checkDate.getUTCDate() - 1);
-    }
+    // Streak (shared utility)
+    const streakDays = await calculateStreak(user.id, new Date(), prisma);
 
     sendSuccess(res, {
       stats: {
