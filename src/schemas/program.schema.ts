@@ -166,9 +166,16 @@ export const addRoutineExerciseSchema = z.object({
     repsMax: z.number().int().min(1),
     restSeconds: z.number().int().min(0),
     orderInRoutine: z.number().int().min(1),
-    notes: z.string().optional(),
+    notes: z.string().nullable().optional(),
   }),
 });
+
+export type AddRoutineExerciseParams = z.infer<
+  typeof addRoutineExerciseSchema
+>['params'];
+export type AddRoutineExerciseInput = z.infer<
+  typeof addRoutineExerciseSchema
+>['body'];
 
 export const UpdateRoutineExerciseSchema = z.object({
   params: z.object({
