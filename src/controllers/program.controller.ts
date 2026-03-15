@@ -10,6 +10,8 @@ import type {
   UpdateProgramInput,
   UpdateRoutineInput,
   UpdateProgramRoutineInput,
+  AddRoutineExerciseParams,
+  AddRoutineExerciseInput,
   UpdateRoutineExerciseInput,
   UpdateProgramRoutineParams,
   RemoveProgramRoutineParams,
@@ -744,8 +746,17 @@ export const addExerciseToRoutine = async (
       return;
     }
 
-    const { routineId } = req.params as Record<string, string>;
-    const data = req.body;
+    const { routineId } = res.locals.validated
+      ?.params as AddRoutineExerciseParams;
+    const {
+      exerciseId,
+      sets,
+      repsMin,
+      repsMax,
+      restSeconds,
+      orderInRoutine,
+      notes,
+    } = res.locals.validated?.body as AddRoutineExerciseInput;
 
     const routine = await prisma.routine.findUnique({
       where: { id: routineId },
@@ -762,12 +773,21 @@ export const addExerciseToRoutine = async (
     }
 
     const routineExercise = await prisma.routineExercise.create({
-      data: { routineId, ...data },
+      data: {
+        routineId,
+        exerciseId,
+        sets,
+        repsMin,
+        repsMax,
+        restSeconds,
+        orderInRoutine,
+        notes: notes ?? null,
+      },
     });
 
     logger.info('Exercise added to routine', {
       routineId,
-      exerciseId: data.exerciseId,
+      exerciseId,
       coachId: coach.id,
     });
     sendSuccess(res, { routineExercise }, 201);
@@ -795,10 +815,10 @@ export const updateRoutineExercise = async (
       return;
     }
 
-    const { routineId, routineExerciseId } =
-      req.params as UpdateRoutineExerciseParams;
-    const { sets, repsMin, repsMax, restSeconds, orderInRoutine, notes } =
-      req.body as UpdateRoutineExerciseInput;
+    const { routineId, routineExerciseId } = res.locals.validated
+      ?.params as UpdateRoutineExerciseParams;
+    const { sets, repsMin, repsMax, restSeconds, orderInRoutine, notes } = res
+      .locals.validated?.body as UpdateRoutineExerciseInput;
 
     if (
       sets === undefined &&
@@ -862,8 +882,8 @@ export const removeRoutineExercise = async (
       return;
     }
 
-    const { routineId, routineExerciseId } =
-      req.params as RemoveRoutineExerciseParams;
+    const { routineId, routineExerciseId } = res.locals.validated
+      ?.params as RemoveRoutineExerciseParams;
 
     const routine = await prisma.routine.findUnique({
       where: { id: routineId },
