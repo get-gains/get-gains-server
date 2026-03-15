@@ -321,12 +321,11 @@ export const updateForm = async (
               ? Prisma.JsonNull
               : updateData.normalizedFrames,
         }),
-        ...((updateData as Record<string, unknown>).relevantAngles !==
-          undefined && {
+        ...(updateData.relevantAngles !== undefined && {
           relevantAngles:
-            (updateData as Record<string, unknown>).relevantAngles === null
+            updateData.relevantAngles === null
               ? Prisma.JsonNull
-              : (updateData as Record<string, unknown>).relevantAngles,
+              : (updateData.relevantAngles as Prisma.InputJsonValue),
         }),
         ...(updateData.avgLandmarkConfidence !== undefined && {
           avgLandmarkConfidence: updateData.avgLandmarkConfidence,
