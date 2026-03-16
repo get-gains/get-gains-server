@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
 import { sendSuccess, sendSingleError } from '../utils/response';
+import { notDeleted, stripDeletedAt } from '../utils/query-helpers';
 import type {
   UploadFormInput,
   UpdateFormInput,
@@ -169,7 +170,7 @@ export const getFormById = async (
       return;
     }
 
-    sendSuccess(res, { form });
+    sendSuccess(res, { form: stripDeletedAt(form) });
   } catch (error) {
     logger.error('Error fetching form', error);
     sendSingleError(res, 'Failed to fetch form', 500);
@@ -525,7 +526,7 @@ export const upsertPoseConfig = async (
 
     logger.info('Pose config upserted', { configId: config.id, exerciseId });
 
-    sendSuccess(res, { config });
+    sendSuccess(res, { config: stripDeletedAt(config) });
   } catch (error) {
     logger.error('Error upserting pose config', error);
     sendSingleError(res, 'Failed to save pose config', 500);
@@ -559,7 +560,7 @@ export const getPoseConfig = async (
       return;
     }
 
-    sendSuccess(res, { config });
+    sendSuccess(res, { config: stripDeletedAt(config) });
   } catch (error) {
     logger.error('Error fetching pose config', error);
     sendSingleError(res, 'Failed to fetch pose config', 500);
@@ -782,7 +783,7 @@ export const getResultById = async (
       return;
     }
 
-    sendSuccess(res, { result });
+    sendSuccess(res, { result: stripDeletedAt(result) });
   } catch (error) {
     logger.error('Error fetching result', error);
     sendSingleError(res, 'Failed to fetch result', 500);
@@ -877,7 +878,11 @@ export const getResultsBySession = async (
       },
     });
 
-    sendSuccess(res, { sessionId, results, total: results.length });
+    sendSuccess(res, {
+      sessionId,
+      results: stripDeletedAt(results),
+      total: results.length,
+    });
   } catch (error) {
     logger.error('Error fetching results by session', error);
     sendSingleError(res, 'Failed to fetch session results', 500);
@@ -911,10 +916,12 @@ export const bulkDownloadProgramForms = async (
             id: true,
             name: true,
             programRoutines: {
+              ...notDeleted,
               include: {
                 routine: {
                   include: {
                     routineExercises: {
+                      ...notDeleted,
                       include: {
                         exercise: {
                           select: { id: true, name: true },

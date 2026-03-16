@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
 import { sendSuccess, sendSingleError } from '../utils/response';
+import { notDeleted, stripDeletedAt } from '../utils/query-helpers';
 import { MuscleGroup } from '@prisma/client';
 import type {
   CreateRoutineInput,
@@ -118,7 +119,7 @@ export const createProgram = async (
       programId: program.id,
       coachId: coach.id,
     });
-    sendSuccess(res, { program }, 201);
+    sendSuccess(res, { program: stripDeletedAt(program) }, 201);
   } catch (error) {
     logger.error('Error creating program', error);
     sendSingleError(res, 'Failed to create program', 500);
@@ -166,7 +167,12 @@ export const getCoachPrograms = async (
       prisma.program.findMany({
         where,
         include: {
-          _count: { select: { programRoutines: true, assignedPrograms: true } },
+          _count: {
+            select: {
+              programRoutines: notDeleted,
+              assignedPrograms: notDeleted,
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
         take: limit,
@@ -219,10 +225,12 @@ export const getCoachProgramById = async (
       where: { id: programId },
       include: {
         programRoutines: {
+          ...notDeleted,
           include: {
             routine: {
               include: {
                 routineExercises: {
+                  ...notDeleted,
                   include: { exercise: true },
                   orderBy: { orderInRoutine: 'asc' },
                 },
@@ -306,7 +314,7 @@ export const updateProgram = async (
     });
 
     logger.info('Program updated', { programId, coachId: coach.id });
-    sendSuccess(res, { program });
+    sendSuccess(res, { program: stripDeletedAt(program) });
   } catch (error) {
     logger.error('Error updating program', error);
     sendSingleError(res, 'Failed to update program', 500);
@@ -413,7 +421,12 @@ export const getCoachRoutines = async (
       prisma.routine.findMany({
         where: { coachId: coach.id },
         include: {
-          _count: { select: { routineExercises: true, programRoutines: true } },
+          _count: {
+            select: {
+              routineExercises: notDeleted,
+              programRoutines: notDeleted,
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
         take: limit,
@@ -461,6 +474,7 @@ export const getCoachRoutineById = async (
       where: { id: routineId },
       include: {
         routineExercises: {
+          ...notDeleted,
           include: { exercise: true },
           orderBy: { orderInRoutine: 'asc' },
         },
@@ -624,7 +638,7 @@ export const assignRoutineToProgram = async (
       routineId,
       dayNumber,
     });
-    sendSuccess(res, { assignment }, 201);
+    sendSuccess(res, { assignment: stripDeletedAt(assignment) }, 201);
   } catch (error) {
     if ((error as { code?: string }).code === 'P2002') {
       sendSingleError(
@@ -679,7 +693,7 @@ export const updateProgramRoutine = async (
     });
 
     logger.info('ProgramRoutine day updated', { programRoutineId, dayNumber });
-    sendSuccess(res, { programRoutine: updated });
+    sendSuccess(res, { programRoutine: stripDeletedAt(updated) });
   } catch (error) {
     logger.error('Error updating program routine', error);
     sendSingleError(res, 'Failed to update program routine', 500);
@@ -790,7 +804,7 @@ export const addExerciseToRoutine = async (
       exerciseId,
       coachId: coach.id,
     });
-    sendSuccess(res, { routineExercise }, 201);
+    sendSuccess(res, { routineExercise: stripDeletedAt(routineExercise) }, 201);
   } catch (error) {
     if ((error as { code?: string }).code === 'P2002') {
       sendSingleError(res, 'This exercise is already in the routine', 409);
@@ -861,7 +875,7 @@ export const updateRoutineExercise = async (
     });
 
     logger.info('RoutineExercise updated', { routineExerciseId, routineId });
-    sendSuccess(res, { routineExercise: updated });
+    sendSuccess(res, { routineExercise: stripDeletedAt(updated) });
   } catch (error) {
     logger.error('Error updating routine exercise', error);
     sendSingleError(res, 'Failed to update routine exercise', 500);

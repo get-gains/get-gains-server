@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
 import { sendSuccess, sendSingleError } from '../utils/response';
+import { notDeleted, stripDeletedAt } from '../utils/query-helpers';
 import { MuscleGroup } from '@prisma/client';
 import { calculateStreak } from '../utils/streak';
 import { calculateSessionCoins } from '../services/coin-calculation.service';
@@ -439,7 +440,12 @@ export const getPersonalRoutines = async (
       prisma.routine.findMany({
         where: { userId: appUser.id },
         include: {
-          _count: { select: { routineExercises: true, programRoutines: true } },
+          _count: {
+            select: {
+              routineExercises: notDeleted,
+              programRoutines: notDeleted,
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
         take: limit,
@@ -495,6 +501,7 @@ export const getPersonalRoutineById = async (
       where: { id: routineId },
       include: {
         routineExercises: {
+          ...notDeleted,
           include: { exercise: true },
           orderBy: { orderInRoutine: 'asc' },
         },
@@ -717,7 +724,7 @@ export const addExerciseToRoutine = async (
       exerciseId: data.exerciseId,
       userId: appUser.id,
     });
-    sendSuccess(res, { routineExercise }, 201);
+    sendSuccess(res, { routineExercise: stripDeletedAt(routineExercise) }, 201);
   } catch (error) {
     if ((error as { code?: string }).code === 'P2002') {
       sendSingleError(res, 'This exercise is already in the routine', 409);
@@ -793,7 +800,7 @@ export const updateRoutineExercise = async (
       routineId,
       userId: appUser.id,
     });
-    sendSuccess(res, { routineExercise: updated });
+    sendSuccess(res, { routineExercise: stripDeletedAt(updated) });
   } catch (error) {
     logger.error('Error updating routine exercise', error);
     sendSingleError(res, 'Failed to update routine exercise', 500);
@@ -879,7 +886,7 @@ export const createPersonalProgram = async (
       programId: program.id,
       userId: appUser.id,
     });
-    sendSuccess(res, { program }, 201);
+    sendSuccess(res, { program: stripDeletedAt(program) }, 201);
   } catch (error) {
     logger.error('Error creating personal program', error);
     sendSingleError(res, 'Failed to create program', 500);
@@ -907,7 +914,12 @@ export const getPersonalPrograms = async (
       prisma.program.findMany({
         where: { userId: appUser.id },
         include: {
-          _count: { select: { programRoutines: true, assignedPrograms: true } },
+          _count: {
+            select: {
+              programRoutines: notDeleted,
+              assignedPrograms: notDeleted,
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
         take: limit,
@@ -961,10 +973,12 @@ export const getPersonalProgramById = async (
       where: { id: programId },
       include: {
         programRoutines: {
+          ...notDeleted,
           include: {
             routine: {
               include: {
                 routineExercises: {
+                  ...notDeleted,
                   include: { exercise: true },
                   orderBy: { orderInRoutine: 'asc' },
                 },
@@ -1075,7 +1089,7 @@ export const updatePersonalProgram = async (
       programId,
       userId: appUser.id,
     });
-    sendSuccess(res, { program });
+    sendSuccess(res, { program: stripDeletedAt(program) });
   } catch (error) {
     logger.error('Error updating personal program', error);
     sendSingleError(res, 'Failed to update program', 500);
@@ -1164,7 +1178,7 @@ export const assignRoutineToProgram = async (
       dayNumber,
       userId: appUser.id,
     });
-    sendSuccess(res, { assignment }, 201);
+    sendSuccess(res, { assignment: stripDeletedAt(assignment) }, 201);
   } catch (error) {
     if ((error as { code?: string }).code === 'P2002') {
       sendSingleError(
@@ -1224,7 +1238,7 @@ export const updateProgramRoutine = async (
       dayNumber,
       userId: appUser.id,
     });
-    sendSuccess(res, { programRoutine: updated });
+    sendSuccess(res, { programRoutine: stripDeletedAt(updated) });
   } catch (error) {
     logger.error('Error updating program routine', error);
     sendSingleError(res, 'Failed to update program routine', 500);
@@ -1363,7 +1377,7 @@ export const activateProgram = async (
       userId: appUser.id,
     });
 
-    sendSuccess(res, { assignment }, 201);
+    sendSuccess(res, { assignment: stripDeletedAt(assignment) }, 201);
   } catch (error) {
     logger.error('Error activating standalone program', error);
     sendSingleError(res, 'Failed to activate program', 500);
@@ -1419,7 +1433,7 @@ export const deactivateProgram = async (
       userId: appUser.id,
     });
 
-    sendSuccess(res, { assignment: updated });
+    sendSuccess(res, { assignment: stripDeletedAt(updated) });
   } catch (error) {
     logger.error('Error deactivating standalone program', error);
     sendSingleError(res, 'Failed to deactivate program', 500);
@@ -1450,6 +1464,7 @@ export const getActiveProgram = async (
         program: {
           include: {
             programRoutines: {
+              ...notDeleted,
               include: {
                 routine: true,
               },
@@ -1461,7 +1476,7 @@ export const getActiveProgram = async (
       orderBy: { startDate: 'desc' },
     });
 
-    sendSuccess(res, { assignment });
+    sendSuccess(res, { assignment: stripDeletedAt(assignment) });
   } catch (error) {
     logger.error('Error fetching active standalone program', error);
     sendSingleError(res, 'Failed to fetch active program', 500);
@@ -1500,10 +1515,12 @@ export const getStandaloneToday = async (
         program: {
           include: {
             programRoutines: {
+              ...notDeleted,
               include: {
                 routine: {
                   include: {
                     routineExercises: {
+                      ...notDeleted,
                       include: { exercise: true },
                       orderBy: { orderInRoutine: 'asc' },
                     },
@@ -1741,6 +1758,7 @@ export const getStandaloneActiveSession = async (
       },
       include: {
         performedSets: {
+          ...notDeleted,
           include: {
             routineExercise: {
               include: {
@@ -1832,6 +1850,7 @@ export const completeStandaloneSession = async (
       },
       include: {
         performedSets: {
+          ...notDeleted,
           orderBy: [{ routineExerciseId: 'asc' }, { setNumber: 'asc' }],
         },
       },
@@ -1920,6 +1939,7 @@ export const getStandaloneSessions = async (
         where,
         include: {
           performedSets: {
+            ...notDeleted,
             orderBy: [{ routineExerciseId: 'asc' }, { setNumber: 'asc' }],
           },
         },
@@ -1979,6 +1999,7 @@ export const getStandaloneSessionById = async (
       },
       include: {
         performedSets: {
+          ...notDeleted,
           include: {
             routineExercise: {
               include: {

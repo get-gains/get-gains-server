@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
 import { sendSuccess, sendSingleError } from '../utils/response';
+import { notDeleted } from '../utils/query-helpers';
 import {
   GetExercisesQuery,
   GetRoutinesQuery,
@@ -251,10 +252,12 @@ export const getRoutines = async (
         program: {
           include: {
             programRoutines: {
+              ...notDeleted,
               include: {
                 routine: {
                   include: {
                     routineExercises: {
+                      ...notDeleted,
                       include: {
                         exercise: true,
                       },
@@ -341,6 +344,7 @@ export const getRoutineById = async (
       where: { id: routineId },
       include: {
         routineExercises: {
+          ...notDeleted,
           include: {
             exercise: true,
           },
@@ -476,6 +480,7 @@ export const getActiveSession = async (
       },
       include: {
         performedSets: {
+          ...notDeleted,
           include: {
             routineExercise: {
               include: {
@@ -564,6 +569,7 @@ export const completeWorkoutSession = async (
       },
       include: {
         performedSets: {
+          ...notDeleted,
           orderBy: [{ routineExerciseId: 'asc' }, { setNumber: 'asc' }],
         },
       },
@@ -650,6 +656,7 @@ export const getWorkoutSessions = async (
         where,
         include: {
           performedSets: {
+            ...notDeleted,
             orderBy: [{ routineExerciseId: 'asc' }, { setNumber: 'asc' }],
           },
         },
@@ -704,6 +711,7 @@ export const getWorkoutSessionById = async (
       },
       include: {
         performedSets: {
+          ...notDeleted,
           include: {
             routineExercise: {
               include: {
@@ -1080,10 +1088,12 @@ export const getTodayWorkout = async (
         program: {
           include: {
             programRoutines: {
+              ...notDeleted,
               include: {
                 routine: {
                   include: {
                     routineExercises: {
+                      ...notDeleted,
                       include: { exercise: true },
                       orderBy: { orderInRoutine: 'asc' },
                     },

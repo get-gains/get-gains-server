@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
 import { sendSuccess, sendSingleError } from '../utils/response';
+import { notDeleted } from '../utils/query-helpers';
 import {
   CreateCoachProfileInput,
   GetClientsQuery,
@@ -150,7 +151,7 @@ export const getClients = async (
             name: true,
             nickname: true,
             assignedPrograms: {
-              where: { isActive: true },
+              where: { isActive: true, deletedAt: null },
               select: { programId: true, program: { select: { name: true } } },
             },
             subscriptions: {
@@ -251,11 +252,11 @@ export const getPerformance = async (
             name: true,
             nickname: true,
             assignedPrograms: {
-              where: { isActive: true },
+              where: { isActive: true, deletedAt: null },
               select: { id: true },
             },
             workoutSessions: {
-              where: { completedAt: { not: null } },
+              where: { completedAt: { not: null }, deletedAt: null },
               select: { completedAt: true },
               orderBy: { completedAt: 'desc' },
               take: 1,
@@ -479,7 +480,7 @@ export const getClientPrograms = async (
       include: {
         program: {
           include: {
-            _count: { select: { programRoutines: true } },
+            _count: { select: { programRoutines: notDeleted } },
           },
         },
       },
@@ -709,6 +710,7 @@ export const getClientSessions = async (
             },
           },
           performedSets: {
+            ...notDeleted,
             select: {
               id: true,
               routineExercise: {
@@ -797,6 +799,7 @@ export const getClientSessionDetail = async (
           },
         },
         performedSets: {
+          ...notDeleted,
           include: {
             routineExercise: {
               include: {
@@ -943,6 +946,7 @@ export const getClientWeeklyStats = async (
         },
         include: {
           performedSets: {
+            ...notDeleted,
             select: { repsCompleted: true, weightKg: true },
           },
         },
@@ -955,6 +959,7 @@ export const getClientWeeklyStats = async (
         },
         include: {
           performedSets: {
+            ...notDeleted,
             select: { repsCompleted: true, weightKg: true },
           },
         },
@@ -1208,12 +1213,12 @@ export const getDetailedPerformance = async (
             name: true,
             nickname: true,
             assignedPrograms: {
-              where: { isActive: true },
+              where: { isActive: true, deletedAt: null },
               include: {
                 program: {
                   select: {
                     name: true,
-                    _count: { select: { programRoutines: true } },
+                    _count: { select: { programRoutines: notDeleted } },
                   },
                 },
               },
@@ -1222,9 +1227,11 @@ export const getDetailedPerformance = async (
               where: {
                 completedAt: { not: null },
                 startedAt: { gte: fourteenDaysAgo },
+                deletedAt: null,
               },
               include: {
                 performedSets: {
+                  ...notDeleted,
                   select: { repsCompleted: true, weightKg: true },
                 },
               },

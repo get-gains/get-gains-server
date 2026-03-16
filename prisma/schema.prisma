@@ -307,6 +307,10 @@ model SubscribedCoach {
   userId    String?
   coachId   String?
   startedAt DateTime  @default(now()) @db.Timestamptz
+  // `endedAt` is a BUSINESS field: records when the coaching subscription
+  // naturally ended or was cancelled. Orthogonal to `deletedAt` — the subscription
+  // can end (endedAt set) while the record remains for historical tracking.
+  // `deletedAt` means the record was soft-deleted (removed from view entirely).
   endedAt   DateTime? @db.Timestamptz
   deletedAt DateTime? @db.Timestamptz
   createdAt DateTime  @default(now()) @db.Timestamptz
@@ -509,6 +513,11 @@ model AssignedProgram {
   programId String?
   startDate DateTime  @db.Timestamptz
   endDate   DateTime? @db.Timestamptz
+  // `isActive` is a BUSINESS field: indicates whether the program assignment is
+  // currently in effect. A coach may deactivate an assignment without deleting it.
+  // Orthogonal to `deletedAt` — a record can be (isActive=false, deletedAt=null)
+  // meaning "paused/completed but not deleted" or (isActive=true, deletedAt=set)
+  // meaning "was active when the parent entity was soft-deleted".
   isActive  Boolean   @default(true)
 
   notes String? @db.Text
@@ -777,6 +786,11 @@ model ExerciseForm {
 
   // Which form version this is (coach can re-record to improve)
   version  Int     @default(1)
+  // `isActive` is a BUSINESS field: indicates which form version is the current
+  // reference for a given exercise+angle combination. Only one form per exercise
+  // per angle should be active at a time. Orthogonal to `deletedAt` — an inactive
+  // form (isActive=false) is still a valid historical version, not deleted.
+  // `deletedAt` means the form was soft-deleted (removed entirely).
   isActive Boolean @default(true) // Only one active form per exercise per angle
 
   // Auto-detected relevant joint angles (vertex-dilution fix).
