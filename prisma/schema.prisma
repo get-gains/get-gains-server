@@ -200,6 +200,7 @@ model User {
   email                 String                 @unique
   name                  String
   nickname              String
+  deletedAt             DateTime?              @db.Timestamptz
   createdAt             DateTime               @default(now()) @db.Timestamptz
   updatedAt             DateTime               @updatedAt @db.Timestamptz
   profile               UserProfile?
@@ -220,6 +221,8 @@ model User {
   coinTransactions      CoinTransaction[]
   userCosmetics         UserCosmetic[]
   equippedCosmetics     EquippedCosmetic[]
+
+  @@index([deletedAt])
 }
 
 model UserProfile {
@@ -266,8 +269,9 @@ model Coach {
   isVerified             Boolean  @default(false)
   socialLinks            String[]
 
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
+  deletedAt DateTime? @db.Timestamptz
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  updatedAt DateTime  @updatedAt @db.Timestamptz
 
   user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId          String            @unique
@@ -277,6 +281,8 @@ model Coach {
   exercises       Exercise[]
   exerciseForms   ExerciseForm[]
   settings        CoachSettings?
+
+  @@index([deletedAt])
 }
 
 model CoachSettings {
@@ -298,16 +304,19 @@ model CoachSettings {
 
 model SubscribedCoach {
   id        String    @id @default(cuid())
-  userId    String
-  coachId   String
+  userId    String?
+  coachId   String?
   startedAt DateTime  @default(now()) @db.Timestamptz
   endedAt   DateTime? @db.Timestamptz
+  deletedAt DateTime? @db.Timestamptz
   createdAt DateTime  @default(now()) @db.Timestamptz
 
-  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  coach Coach @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  user  User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  coach Coach? @relation(fields: [coachId], references: [id], onDelete: SetNull)
 
-  @@unique([userId, coachId])
+  // Partial unique enforced via raw SQL in migration (deletedAt IS NULL)
+  @@index([userId, coachId])
+  @@index([deletedAt])
 }
 
 model Program {
@@ -316,21 +325,26 @@ model Program {
   description String @db.Text
 
   coachId String?
-  coach   Coach?  @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  coach   Coach?  @relation(fields: [coachId], references: [id], onDelete: SetNull)
 
   // User scoping: set = personal program owned by this user
   userId String?
-  user   User?   @relation("UserPrograms", fields: [userId], references: [id], onDelete: Cascade)
+  user   User?   @relation("UserPrograms", fields: [userId], references: [id], onDelete: SetNull)
 
   // When set, this program is a custom one-off for a specific client
   // (hidden from the coach's reusable program library)
   customForUserId String?
   customForUser   User?   @relation("CustomPrograms", fields: [customForUserId], references: [id], onDelete: SetNull)
 
+  deletedAt        DateTime?         @db.Timestamptz
   createdAt        DateTime          @default(now()) @db.Timestamptz
   updatedAt        DateTime          @updatedAt @db.Timestamptz
   programRoutines  ProgramRoutine[]
   assignedPrograms AssignedProgram[]
+
+  @@index([deletedAt])
+  @@index([coachId])
+  @@index([userId])
 }
 
 // Junction: Which routines belong to which program and on what day/order
@@ -344,31 +358,39 @@ model ProgramRoutine {
   program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
   routine Routine @relation(fields: [routineId], references: [id], onDelete: Cascade)
 
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
+  deletedAt DateTime? @db.Timestamptz
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  updatedAt DateTime  @updatedAt @db.Timestamptz
 
-  @@unique([programId, routineId])
+  // Partial unique enforced via raw SQL in migration (deletedAt IS NULL)
+  @@index([programId, routineId])
+  @@index([deletedAt])
 }
 
 model Routine {
   id String @id @default(cuid())
 
   coachId String?
-  coach   Coach?  @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  coach   Coach?  @relation(fields: [coachId], references: [id], onDelete: SetNull)
 
   // User scoping: set = personal routine owned by this user
   userId String?
-  user   User?   @relation("UserRoutines", fields: [userId], references: [id], onDelete: Cascade)
+  user   User?   @relation("UserRoutines", fields: [userId], references: [id], onDelete: SetNull)
 
   name                     String
   description              String        @db.Text
   estimatedDurationMinutes Int
   muscleGroupsTargeted     MuscleGroup[]
 
+  deletedAt        DateTime?         @db.Timestamptz
   createdAt        DateTime          @default(now()) @db.Timestamptz
   updatedAt        DateTime          @updatedAt @db.Timestamptz
   routineExercises RoutineExercise[]
   programRoutines  ProgramRoutine[]
+
+  @@index([deletedAt])
+  @@index([coachId])
+  @@index([userId])
 }
 
 // Junction: Exercises in a routine with coach-prescribed sets/reps (the template)
@@ -388,12 +410,15 @@ model RoutineExercise {
   routine  Routine  @relation(fields: [routineId], references: [id], onDelete: Cascade)
   exercise Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
 
+  deletedAt             DateTime?              @db.Timestamptz
   createdAt             DateTime               @default(now()) @db.Timestamptz
   updatedAt             DateTime               @updatedAt @db.Timestamptz
   performedSets         PerformedSet[]
   formComparisonResults FormComparisonResult[]
 
-  @@unique([routineId, exerciseId])
+  // Partial unique enforced via raw SQL in migration (deletedAt IS NULL)
+  @@index([routineId, exerciseId])
+  @@index([deletedAt])
 }
 
 model Exercise {
@@ -415,31 +440,41 @@ model Exercise {
   equipmentNeeded    String[]
   primaryMuscleGroup MuscleGroup
 
+  deletedAt        DateTime?           @db.Timestamptz
   createdAt        DateTime            @default(now()) @db.Timestamptz
   updatedAt        DateTime            @updatedAt @db.Timestamptz
   routineExercises RoutineExercise[]
   poseConfig       ExercisePoseConfig?
   exerciseForms    ExerciseForm[]
+
+  @@index([deletedAt])
+  @@index([coachId])
+  @@index([userId])
 }
 
 // A single workout session the user performed
 model WorkoutSession {
   id String @id @default(cuid())
 
-  userId            String
+  userId            String?
   assignedProgramId String?
   startedAt         DateTime  @db.Timestamptz
   completedAt       DateTime? @db.Timestamptz
   notes             String?   @db.Text
 
-  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
   assignedProgram AssignedProgram? @relation(fields: [assignedProgramId], references: [id], onDelete: SetNull)
 
+  deletedAt             DateTime?              @db.Timestamptz
   createdAt             DateTime               @default(now()) @db.Timestamptz
   updatedAt             DateTime               @updatedAt @db.Timestamptz
   performedSets         PerformedSet[]
   formComparisonResults FormComparisonResult[]
   coinTransactions      CoinTransaction[]
+
+  @@index([deletedAt])
+  @@index([userId, createdAt])
+  @@index([userId, assignedProgramId])
 }
 
 // Individual set performed by user (the actual work done)
@@ -447,7 +482,7 @@ model PerformedSet {
   id String @id @default(cuid())
 
   workoutSessionId  String
-  routineExerciseId String
+  routineExerciseId String?
   setNumber         Int // Which set (1, 2, 3...)
 
   repsCompleted Int
@@ -455,32 +490,41 @@ model PerformedSet {
   rpe           Int? // Rate of Perceived Exertion (1-10)
   notes         String? @db.Text
 
-  workoutSession  WorkoutSession  @relation(fields: [workoutSessionId], references: [id], onDelete: Cascade)
-  routineExercise RoutineExercise @relation(fields: [routineExerciseId], references: [id], onDelete: Cascade)
+  workoutSession  WorkoutSession   @relation(fields: [workoutSessionId], references: [id], onDelete: Cascade)
+  routineExercise RoutineExercise? @relation(fields: [routineExerciseId], references: [id], onDelete: SetNull)
 
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
+  deletedAt DateTime? @db.Timestamptz
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  updatedAt DateTime  @updatedAt @db.Timestamptz
+
+  @@index([deletedAt])
+  @@index([workoutSessionId])
+  @@index([routineExerciseId])
 }
 
 model AssignedProgram {
   id String @id @default(cuid())
 
-  userId    String
-  programId String
+  userId    String?
+  programId String?
   startDate DateTime  @db.Timestamptz
   endDate   DateTime? @db.Timestamptz
   isActive  Boolean   @default(true)
 
   notes String? @db.Text
 
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  program Program? @relation(fields: [programId], references: [id], onDelete: SetNull)
 
+  deletedAt       DateTime?        @db.Timestamptz
   createdAt       DateTime         @default(now()) @db.Timestamptz
   updatedAt       DateTime         @updatedAt @db.Timestamptz
   workoutSessions WorkoutSession[]
 
-  @@unique([userId, programId])
+  // Partial unique enforced via raw SQL in migration (deletedAt IS NULL)
+  @@index([userId, programId])
+  @@index([deletedAt])
+  @@index([userId, isActive])
 }
 
 model Plan {
@@ -522,7 +566,7 @@ model Plan {
 
 model Subscription {
   id             String             @id @default(cuid())
-  userId         String
+  userId         String?
   planId         String
   subscriptionId String             @unique // External ID
   status         SubscriptionStatus
@@ -552,8 +596,8 @@ model Subscription {
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 
-  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan               Plan                @relation(fields: [planId], references: [id], onDelete: Cascade)
+  user               User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  plan               Plan                @relation(fields: [planId], references: [id], onDelete: Restrict)
   paymentHistories   PaymentHistory[]
   subscriptionEvents SubscriptionEvent[]
   promoRedemptions   PromoRedemption[]
@@ -581,9 +625,9 @@ model PaymentHistory {
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 
-  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan         Plan         @relation(fields: [planId], references: [id], onDelete: Cascade)
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  plan         Plan         @relation(fields: [planId], references: [id], onDelete: Restrict)
 }
 
 // Track all webhook events for debugging and compliance
@@ -625,7 +669,7 @@ model SubscriptionEvent {
 
   createdAt DateTime @default(now()) @db.Timestamptz
 
-  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
 }
 
 // Promo codes / coupons system
@@ -661,12 +705,12 @@ model PromoCode {
 model PromoRedemption {
   id             String   @id @default(cuid())
   promoCodeId    String
-  userId         String
+  userId         String?
   subscriptionId String?
   redeemedAt     DateTime @default(now()) @db.Timestamptz
 
   promoCode    PromoCode     @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
 }
 
@@ -699,16 +743,19 @@ model ExercisePoseConfig {
 
   exercise Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
 
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
+  deletedAt DateTime? @db.Timestamptz
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  updatedAt DateTime  @updatedAt @db.Timestamptz
+
+  @@index([deletedAt])
 }
 
 // A single reference form recording uploaded by a coach for an exercise.
 // Contains the processed pose landmark data (NOT video — video stays on device or is discarded).
 model ExerciseForm {
-  id         String @id @default(cuid())
-  exerciseId String
-  coachId    String
+  id         String  @id @default(cuid())
+  exerciseId String?
+  coachId    String?
 
   // Recording metadata
   cameraAngle CameraAngle
@@ -741,22 +788,24 @@ model ExerciseForm {
   avgLandmarkConfidence Float?
   recordingQuality      String? // "good", "acceptable", "poor"
 
-  exercise Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
-  coach    Coach    @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  exercise Exercise? @relation(fields: [exerciseId], references: [id], onDelete: SetNull)
+  coach    Coach?    @relation(fields: [coachId], references: [id], onDelete: SetNull)
 
+  deletedAt         DateTime?              @db.Timestamptz
   createdAt         DateTime               @default(now()) @db.Timestamptz
   updatedAt         DateTime               @updatedAt @db.Timestamptz
   comparisonResults FormComparisonResult[]
 
   @@index([exerciseId, isActive])
   @@index([coachId])
+  @@index([deletedAt])
 }
 
 // A single form comparison attempt by a client
 // The app performs DTW comparison on-device, then uploads the result here for records
 model FormComparisonResult {
   id                String  @id @default(cuid())
-  userId            String
+  userId            String?
   exerciseFormId    String // Which coach reference form was compared against
   workoutSessionId  String? // Optional link to the workout session this was part of
   routineExerciseId String? // Optional link to the specific routine exercise
@@ -785,16 +834,18 @@ model FormComparisonResult {
   // Optional: client's feature frames
   clientFeatureFrames Json?
 
-  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
   exerciseForm    ExerciseForm     @relation(fields: [exerciseFormId], references: [id], onDelete: Cascade)
   workoutSession  WorkoutSession?  @relation(fields: [workoutSessionId], references: [id], onDelete: SetNull)
   routineExercise RoutineExercise? @relation(fields: [routineExerciseId], references: [id], onDelete: SetNull)
 
-  createdAt DateTime @default(now()) @db.Timestamptz
+  deletedAt DateTime? @db.Timestamptz
+  createdAt DateTime  @default(now()) @db.Timestamptz
 
   @@index([userId, exerciseFormId])
   @@index([userId, createdAt])
   @@index([workoutSessionId])
+  @@index([deletedAt])
 }
 
 // ============== Gains Coins Economy Models ==============
@@ -829,7 +880,7 @@ model CoinBalance {
 
 model CoinTransaction {
   id                 String              @id @default(cuid())
-  userId             String
+  userId             String?
   type               CoinTransactionType
   amount             Int
   balanceAfter       Int
@@ -848,12 +899,15 @@ model CoinTransaction {
   userCosmeticId     String?
   createdAt          DateTime            @default(now()) @db.Timestamptz
 
-  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
   workoutSession WorkoutSession? @relation(fields: [workoutSessionId], references: [id], onDelete: SetNull)
   userCosmetic   UserCosmetic?   @relation(fields: [userCosmeticId], references: [id], onDelete: SetNull)
 
+  deletedAt DateTime? @db.Timestamptz
+
   @@index([userId, createdAt])
   @@index([workoutSessionId])
+  @@index([deletedAt])
 }
 
 model Cosmetic {
@@ -879,30 +933,38 @@ model Cosmetic {
 
 model UserCosmetic {
   id          String   @id @default(cuid())
-  userId      String
+  userId      String?
   cosmeticId  String
   purchasedAt DateTime @default(now()) @db.Timestamptz
 
-  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user             User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
   cosmetic         Cosmetic          @relation(fields: [cosmeticId], references: [id], onDelete: Restrict)
   coinTransactions CoinTransaction[]
 
-  @@unique([userId, cosmeticId])
+  deletedAt DateTime? @db.Timestamptz
+
+  // Partial unique enforced via raw SQL in migration (deletedAt IS NULL)
+  @@index([userId, cosmeticId])
   @@index([userId])
+  @@index([deletedAt])
 }
 
 model EquippedCosmetic {
   id         String           @id @default(cuid())
-  userId     String
+  userId     String?
   cosmeticId String
   category   CosmeticCategory
-  equippedAt DateTime         @default(now()) @db.Timestamptz
 
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   cosmetic Cosmetic @relation(fields: [cosmeticId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, category])
+  deletedAt  DateTime? @db.Timestamptz
+  equippedAt DateTime  @default(now()) @db.Timestamptz
+
+  // Partial unique enforced via raw SQL in migration (deletedAt IS NULL)
+  @@index([userId, category])
   @@index([userId])
+  @@index([deletedAt])
 }
 
 model EconomyConfig {

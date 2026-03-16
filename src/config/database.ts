@@ -1,6 +1,7 @@
 import pg from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
+import { softDeleteExtension } from './soft-delete.js';
 
 // Create PostgreSQL connection pool with proper configuration
 const pool = new pg.Pool({
@@ -15,7 +16,21 @@ const pool = new pg.Pool({
 // Create Prisma adapter
 const adapter = new PrismaPg(pool);
 
-// Singleton Prisma client instance with pg adapter
-const prisma = new PrismaClient({ adapter });
+// Base Prisma client instance (unextended — sees all records including soft-deleted)
+const basePrisma = new PrismaClient({ adapter });
+
+/**
+ * Admin Prisma client — bypasses soft-delete filtering.
+ * Use for admin/restore queries that need access to soft-deleted records.
+ * NOT for general application use.
+ */
+export const adminPrisma = basePrisma;
+
+/**
+ * Default Prisma client with soft-delete extension applied.
+ * - Read operations auto-filter `deletedAt IS NULL` on soft-deletable models
+ * - Delete operations transparently convert to soft-deletes (set `deletedAt`)
+ */
+const prisma = basePrisma.$extends(softDeleteExtension);
 
 export default prisma;
