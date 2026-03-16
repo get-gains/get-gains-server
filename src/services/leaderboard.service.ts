@@ -1,4 +1,8 @@
 import { PrismaClient } from '@prisma/client';
+
+/** Any Prisma-like client (base, extended, or transaction). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type PrismaLike = any;
 import { logger } from '../utils/logger';
 import { calculateStreak } from '../utils/streak';
 
@@ -43,9 +47,7 @@ const DEFAULT_WEIGHTS: LeaderboardWeights = {
  * Falls back to equal weighting (1:1:1) if not configured.
  */
 async function loadLeaderboardWeights(
-  prisma:
-    | PrismaClient
-    | Parameters<Parameters<PrismaClient['$transaction']>[0]>[0]
+  prisma: PrismaLike
 ): Promise<LeaderboardWeights> {
   try {
     const row = await (prisma as PrismaClient).economyConfig.findUnique({
@@ -89,7 +91,7 @@ export async function computeClassLeaderboard(
   requestingUserId: string,
   coachId: string,
   limit: number,
-  prisma: PrismaClient
+  prisma: PrismaLike
 ): Promise<ClassLeaderboardResult> {
   const now = new Date();
 
@@ -103,9 +105,10 @@ export async function computeClassLeaderboard(
   }
 
   // ── Verify requesting user is subscribed to this coach ──
-  const subscription = await prisma.subscribedCoach.findUnique({
+  const subscription = await prisma.subscribedCoach.findFirst({
     where: {
-      userId_coachId: { userId: requestingUserId, coachId },
+      userId: requestingUserId,
+      coachId,
     },
   });
   if (!subscription || subscription.endedAt !== null) {
@@ -116,7 +119,10 @@ export async function computeClassLeaderboard(
   }
 
   // ── Get all active subscribers of this coach ──
-  const activeSubscribers = await prisma.subscribedCoach.findMany({
+  const rawSubscribers: {
+    userId: string | null;
+    user: { id: string; nickname: string | null } | null;
+  }[] = await prisma.subscribedCoach.findMany({
     where: {
       coachId,
       endedAt: null,
@@ -128,6 +134,12 @@ export async function computeClassLeaderboard(
       },
     },
   });
+
+  // Filter out subscribers with null userId or null user (orphaned by SetNull cascade)
+  const activeSubscribers = rawSubscribers.filter(
+    (s): s is typeof s & { userId: string; user: NonNullable<typeof s.user> } =>
+      s.userId !== null && s.user !== null
+  );
 
   if (activeSubscribers.length === 0) {
     return {
@@ -150,7 +162,7 @@ export async function computeClassLeaderboard(
     where: { coachId },
     select: { id: true },
   });
-  const coachProgramIds = coachPrograms.map((p) => p.id);
+  const coachProgramIds = coachPrograms.map((p: { id: string }) => p.id);
 
   // ── Get all assigned program IDs for coach's programs ──
   const assignedPrograms = await prisma.assignedProgram.findMany({
@@ -159,6 +171,7 @@ export async function computeClassLeaderboard(
   });
   const assignedProgramIdsByUser = new Map<string, string[]>();
   for (const ap of assignedPrograms) {
+    if (!ap.userId) continue;
     const existing = assignedProgramIdsByUser.get(ap.userId) ?? [];
     existing.push(ap.id);
     assignedProgramIdsByUser.set(ap.userId, existing);
@@ -168,25 +181,31 @@ export async function computeClassLeaderboard(
   const weights = await loadLeaderboardWeights(prisma);
 
   // ── Compute metrics for each subscriber ──
-  const clientIds = activeSubscribers.map((s) => s.userId);
+  const clientIds = activeSubscribers
+    .map((s: { userId: string }) => s.userId)
+    .filter((id: string): id is string => id !== null);
 
   // Batch query: completed sessions for all clients in the last 90 days under this coach's programs
-  const allAssignedProgramIds = assignedPrograms.map((ap) => ap.id);
+  const allAssignedProgramIds = assignedPrograms.map(
+    (ap: { id: string }) => ap.id
+  );
 
-  const sessions = await prisma.workoutSession.findMany({
-    where: {
-      userId: { in: clientIds },
-      completedAt: { not: null },
-      startedAt: { gte: lookbackStart },
-      assignedProgramId: { in: allAssignedProgramIds },
-    },
-    select: { id: true, userId: true },
-  });
+  const sessions: { id: string; userId: string | null }[] =
+    await prisma.workoutSession.findMany({
+      where: {
+        userId: { in: clientIds },
+        completedAt: { not: null },
+        startedAt: { gte: lookbackStart },
+        assignedProgramId: { in: allAssignedProgramIds },
+      },
+      select: { id: true, userId: true },
+    });
 
   // Count sessions per user
   const sessionCountByUser = new Map<string, number>();
   const sessionIdsByUser = new Map<string, string[]>();
   for (const s of sessions) {
+    if (!s.userId) continue;
     sessionCountByUser.set(
       s.userId,
       (sessionCountByUser.get(s.userId) ?? 0) + 1
@@ -197,7 +216,7 @@ export async function computeClassLeaderboard(
   }
 
   // Batch query: form comparison results for all sessions
-  const allSessionIds = sessions.map((s) => s.id);
+  const allSessionIds = sessions.map((s: { id: string }) => s.id);
   const formResults = await prisma.formComparisonResult.findMany({
     where: {
       workoutSessionId: { in: allSessionIds },
@@ -209,7 +228,7 @@ export async function computeClassLeaderboard(
   const accuracySumByUser = new Map<string, { sum: number; count: number }>();
   const sessionToUser = new Map<string, string>();
   for (const s of sessions) {
-    sessionToUser.set(s.id, s.userId);
+    if (s.userId) sessionToUser.set(s.id, s.userId);
   }
   for (const fr of formResults) {
     if (!fr.workoutSessionId) continue;
@@ -224,11 +243,19 @@ export async function computeClassLeaderboard(
   // ── Compute streaks (must be done per-user; uses existing utility) ──
   const streakByUser = new Map<string, number>();
   await Promise.all(
-    clientIds.map(async (userId) => {
+    clientIds.map(async (userId: string) => {
       const streak = await calculateStreak(userId, now, prisma);
       streakByUser.set(userId, streak);
     })
   );
+
+  const userIdToSessions = new Map<string, string[]>();
+  for (const s of sessions) {
+    if (!s.userId) continue;
+    const ids = userIdToSessions.get(s.userId) ?? [];
+    ids.push(s.id);
+    userIdToSessions.set(s.userId, ids);
+  }
 
   // ── Find max sessions in class for normalization ──
   const maxSessions = Math.max(1, ...Array.from(sessionCountByUser.values()));
@@ -269,7 +296,7 @@ export async function computeClassLeaderboard(
 
     // Privacy: use nickname, fallback to anonymized ID
     const displayName =
-      sub.user.nickname || `Athlete ${userId.substring(0, 6)}`;
+      sub.user?.nickname || `Athlete ${userId.substring(0, 6)}`;
 
     rawEntries.push({
       userId,

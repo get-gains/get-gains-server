@@ -74,20 +74,22 @@ export const getMyCoaches = async (
 
     // For each coach, count active clients
     const coaches = await Promise.all(
-      subscriptions.map(async (sub) => {
-        const clientCount = await prisma.subscribedCoach.count({
-          where: {
-            coachId: sub.coachId,
-            endedAt: null,
-          },
-        });
+      subscriptions
+        .filter((sub) => sub.coach !== null)
+        .map(async (sub) => {
+          const clientCount = await prisma.subscribedCoach.count({
+            where: {
+              coachId: sub.coachId,
+              endedAt: null,
+            },
+          });
 
-        return {
-          coachId: sub.coach.id,
-          coachName: sub.coach.name,
-          clientCount,
-        };
-      })
+          return {
+            coachId: sub.coach!.id,
+            coachName: sub.coach!.name,
+            clientCount,
+          };
+        })
     );
 
     sendSuccess(res, { coaches });

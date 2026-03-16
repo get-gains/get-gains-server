@@ -116,7 +116,7 @@ export const getSessionHistory = async (
 
       return {
         id: s.id,
-        userId: s.userId,
+        userId: s.userId ?? '',
         assignedProgramId: s.assignedProgramId,
         routineId: routine?.id ?? null,
         startedAt: s.startedAt.toISOString(),

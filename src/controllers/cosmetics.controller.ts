@@ -105,10 +105,8 @@ export const equipCosmetic = async (
     }
 
     // 2. Verify user owns this cosmetic
-    const ownership = await prisma.userCosmetic.findUnique({
-      where: {
-        userId_cosmeticId: { userId, cosmeticId },
-      },
+    const ownership = await prisma.userCosmetic.findFirst({
+      where: { userId, cosmeticId },
     });
 
     if (!ownership) {
@@ -117,20 +115,28 @@ export const equipCosmetic = async (
     }
 
     // 3. Upsert EquippedCosmetic for (userId, category)
-    await prisma.equippedCosmetic.upsert({
-      where: {
-        userId_category: { userId, category: cosmetic.category },
-      },
-      update: {
-        cosmeticId,
-        equippedAt: new Date(),
-      },
-      create: {
-        userId,
-        cosmeticId,
-        category: cosmetic.category,
-      },
+    // Compound unique was replaced with partial index — use findFirst + create/update
+    const existingEquipped = await prisma.equippedCosmetic.findFirst({
+      where: { userId, category: cosmetic.category },
     });
+
+    if (existingEquipped) {
+      await prisma.equippedCosmetic.update({
+        where: { id: existingEquipped.id },
+        data: {
+          cosmeticId,
+          equippedAt: new Date(),
+        },
+      });
+    } else {
+      await prisma.equippedCosmetic.create({
+        data: {
+          userId,
+          cosmeticId,
+          category: cosmetic.category,
+        },
+      });
+    }
 
     // 4. Return full equipped state
     const equippedRecords = await prisma.equippedCosmetic.findMany({
@@ -181,12 +187,10 @@ export const unequipCosmetic = async (
     const { category } = res.locals.validated?.body as UnequipBody;
 
     // 1. Check if there is something equipped in the slot
-    const existing = await prisma.equippedCosmetic.findUnique({
+    const existing = await prisma.equippedCosmetic.findFirst({
       where: {
-        userId_category: {
-          userId,
-          category: category as CosmeticCategory,
-        },
+        userId,
+        category: category as CosmeticCategory,
       },
     });
 
@@ -202,12 +206,7 @@ export const unequipCosmetic = async (
 
     // 2. Delete the equipped record
     await prisma.equippedCosmetic.delete({
-      where: {
-        userId_category: {
-          userId,
-          category: category as CosmeticCategory,
-        },
-      },
+      where: { id: existing.id },
     });
 
     // 3. Return full equipped state

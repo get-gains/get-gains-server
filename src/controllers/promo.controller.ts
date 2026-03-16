@@ -162,8 +162,8 @@ export const getPromoCode = async (
         recentRedemptions: promoCode.redemptions.map((r) => ({
           id: r.id,
           userId: r.userId,
-          userEmail: r.user.email,
-          userName: r.user.name,
+          userEmail: r.user?.email ?? null,
+          userName: r.user?.name ?? null,
           redeemedAt: r.redeemedAt,
         })),
         createdAt: promoCode.createdAt,

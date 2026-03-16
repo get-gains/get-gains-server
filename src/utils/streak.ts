@@ -1,5 +1,8 @@
 import { PrismaClient } from '@prisma/client';
 
+/** Any Prisma-like client (base, extended, or transaction). */
+type PrismaLike = { workoutSession: PrismaClient['workoutSession'] };
+
 /**
  * Calculate the current streak of consecutive training days for a user.
  *
@@ -16,9 +19,8 @@ import { PrismaClient } from '@prisma/client';
 export async function calculateStreak(
   userId: string,
   anchorDate: Date,
-  prisma:
-    | PrismaClient
-    | Parameters<Parameters<PrismaClient['$transaction']>[0]>[0]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  prisma: PrismaLike | any
 ): Promise<number> {
   const anchor = new Date(anchorDate);
   anchor.setUTCHours(23, 59, 59, 999);
@@ -67,9 +69,8 @@ export async function calculateStreak(
 export async function calculateStreaksBySource(
   userId: string,
   anchorDate: Date,
-  prisma:
-    | PrismaClient
-    | Parameters<Parameters<PrismaClient['$transaction']>[0]>[0]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  prisma: PrismaLike | any
 ): Promise<{
   combinedStreak: number;
   standaloneStreak: number;

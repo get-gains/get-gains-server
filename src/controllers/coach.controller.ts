@@ -169,16 +169,19 @@ export const getClients = async (
       orderBy: { startedAt: 'desc' },
     });
 
-    let clients = classRelations.map((cr) => ({
-      id: cr.user.id,
-      email: cr.user.email,
-      name: cr.user.name,
-      nickname: cr.user.nickname,
-      subscribedAt: cr.startedAt,
-      subscriptionExpiresAt: cr.user.subscriptions[0]?.currentPeriodEnd ?? null,
-      assignedPrograms: cr.user.assignedPrograms,
-      isAssigned: cr.user.assignedPrograms.length > 0,
-    }));
+    let clients = classRelations
+      .filter((cr) => cr.user !== null)
+      .map((cr) => ({
+        id: cr.user!.id,
+        email: cr.user!.email,
+        name: cr.user!.name,
+        nickname: cr.user!.nickname,
+        subscribedAt: cr.startedAt,
+        subscriptionExpiresAt:
+          cr.user!.subscriptions[0]?.currentPeriodEnd ?? null,
+        assignedPrograms: cr.user!.assignedPrograms,
+        isAssigned: cr.user!.assignedPrograms.length > 0,
+      }));
 
     if (filter === 'assigned') {
       clients = clients.filter((c) => c.isAssigned);
@@ -263,9 +266,10 @@ export const getPerformance = async (
     });
 
     const performanceData = classRelations
-      .filter((cr) => cr.user.assignedPrograms.length > 0)
+      .filter((cr) => cr.user !== null && cr.user!.assignedPrograms.length > 0)
       .map((cr) => {
-        const lastSession = cr.user.workoutSessions[0];
+        const user = cr.user!;
+        const lastSession = user.workoutSessions[0];
         const lastCompletedAt = lastSession?.completedAt
           ? new Date(lastSession.completedAt)
           : null;
@@ -280,10 +284,10 @@ export const getPerformance = async (
         }
 
         return {
-          id: cr.user.id,
-          email: cr.user.email,
-          name: cr.user.name,
-          nickname: cr.user.nickname,
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          nickname: user.nickname,
           status,
           lastCompletedAt: lastCompletedAt?.toISOString() ?? null,
         };
@@ -351,9 +355,10 @@ export const assignProgram = async (
       return;
     }
 
-    const isInClass = await prisma.subscribedCoach.findUnique({
+    const isInClass = await prisma.subscribedCoach.findFirst({
       where: {
-        userId_coachId: { userId, coachId: coach.id },
+        userId,
+        coachId: coach.id,
       },
     });
 
@@ -362,9 +367,10 @@ export const assignProgram = async (
       return;
     }
 
-    const existingAssignment = await prisma.assignedProgram.findUnique({
+    const existingAssignment = await prisma.assignedProgram.findFirst({
       where: {
-        userId_programId: { userId, programId },
+        userId,
+        programId,
       },
     });
 
@@ -378,30 +384,41 @@ export const assignProgram = async (
       return;
     }
 
-    const assignment = await prisma.assignedProgram.upsert({
-      where: {
-        userId_programId: { userId, programId },
-      },
-      create: {
-        userId,
-        programId,
-        startDate: new Date(startDate),
-        endDate: endDate ? new Date(endDate) : null,
-        notes: notes ?? null,
-      },
-      update: {
-        startDate: new Date(startDate),
-        endDate: endDate ? new Date(endDate) : null,
-        notes: notes ?? null,
-        isActive: true,
-      },
-      include: {
-        program: { select: { id: true, name: true, description: true } },
-        user: {
-          select: { id: true, email: true, name: true, nickname: true },
+    // Use findFirst + create/update instead of upsert (compound unique removed)
+    let assignment;
+    if (existingAssignment) {
+      assignment = await prisma.assignedProgram.update({
+        where: { id: existingAssignment.id },
+        data: {
+          startDate: new Date(startDate),
+          endDate: endDate ? new Date(endDate) : null,
+          notes: notes ?? null,
+          isActive: true,
         },
-      },
-    });
+        include: {
+          program: { select: { id: true, name: true, description: true } },
+          user: {
+            select: { id: true, email: true, name: true, nickname: true },
+          },
+        },
+      });
+    } else {
+      assignment = await prisma.assignedProgram.create({
+        data: {
+          userId,
+          programId,
+          startDate: new Date(startDate),
+          endDate: endDate ? new Date(endDate) : null,
+          notes: notes ?? null,
+        },
+        include: {
+          program: { select: { id: true, name: true, description: true } },
+          user: {
+            select: { id: true, email: true, name: true, nickname: true },
+          },
+        },
+      });
+    }
 
     sendSuccess(
       res,
@@ -444,8 +461,8 @@ export const getClientPrograms = async (
     const { userId } = req.params as GetClientProgramsParams;
 
     // Verify the client is currently in this coach's class
-    const isInClass = await prisma.subscribedCoach.findUnique({
-      where: { userId_coachId: { userId, coachId: coach.id } },
+    const isInClass = await prisma.subscribedCoach.findFirst({
+      where: { userId, coachId: coach.id },
     });
 
     if (!isInClass || isInClass.endedAt) {
@@ -470,23 +487,25 @@ export const getClientPrograms = async (
     });
 
     sendSuccess(res, {
-      assignments: assignments.map((a) => ({
-        id: a.id,
-        userId: a.userId,
-        programId: a.programId,
-        startDate: a.startDate,
-        endDate: a.endDate,
-        isActive: a.isActive,
-        notes: a.notes,
-        program: {
-          id: a.program.id,
-          name: a.program.name,
-          description: a.program.description,
-          routineCount: a.program._count.programRoutines,
-        },
-        createdAt: a.createdAt,
-        updatedAt: a.updatedAt,
-      })),
+      assignments: assignments
+        .filter((a) => a.program !== null)
+        .map((a) => ({
+          id: a.id,
+          userId: a.userId,
+          programId: a.programId,
+          startDate: a.startDate,
+          endDate: a.endDate,
+          isActive: a.isActive,
+          notes: a.notes,
+          program: {
+            id: a.program!.id,
+            name: a.program!.name,
+            description: a.program!.description,
+            routineCount: a.program!._count.programRoutines,
+          },
+          createdAt: a.createdAt,
+          updatedAt: a.updatedAt,
+        })),
     });
   } catch (error) {
     logger.error('Error fetching client programs', error);
@@ -528,7 +547,11 @@ export const updateAssignment = async (
       include: { program: { select: { coachId: true } } },
     });
 
-    if (!assignment || assignment.program.coachId !== coach.id) {
+    if (
+      !assignment ||
+      !assignment.program ||
+      assignment.program.coachId !== coach.id
+    ) {
       sendSingleError(res, 'Assignment not found or access denied', 404);
       return;
     }
@@ -592,7 +615,11 @@ export const deleteAssignment = async (
       include: { program: { select: { coachId: true } } },
     });
 
-    if (!assignment || assignment.program.coachId !== coach.id) {
+    if (
+      !assignment ||
+      !assignment.program ||
+      assignment.program.coachId !== coach.id
+    ) {
       sendSingleError(res, 'Assignment not found or access denied', 404);
       return;
     }
@@ -618,8 +645,8 @@ async function verifyCoachClientRelationship(
   userId: string,
   res: Response
 ): Promise<boolean> {
-  const relation = await prisma.subscribedCoach.findUnique({
-    where: { userId_coachId: { userId, coachId } },
+  const relation = await prisma.subscribedCoach.findFirst({
+    where: { userId, coachId },
   });
   if (!relation || relation.endedAt) {
     sendSingleError(res, 'Client not found in class', 404);
@@ -711,7 +738,9 @@ export const getClientSessions = async (
           : null;
 
         const uniqueExercises = new Set(
-          s.performedSets.map((ps) => ps.routineExercise.exerciseId)
+          s.performedSets
+            .filter((ps) => ps.routineExercise !== null)
+            .map((ps) => ps.routineExercise!.exerciseId)
         );
 
         return {
@@ -815,6 +844,7 @@ export const getClientSessionDetail = async (
     >();
 
     for (const ps of session.performedSets) {
+      if (!ps.routineExercise) continue;
       const exId = ps.routineExercise.exercise.id;
       if (!exerciseMap.has(exId)) {
         exerciseMap.set(exId, {
@@ -1206,9 +1236,9 @@ export const getDetailedPerformance = async (
     });
 
     const performanceData = classRelations
-      .filter((cr) => cr.user.assignedPrograms.length > 0)
+      .filter((cr) => cr.user !== null && cr.user!.assignedPrograms.length > 0)
       .map((cr) => {
-        const user = cr.user;
+        const user = cr.user!;
         const allSessions = user.workoutSessions;
         const lastSession = allSessions[0];
         const lastCompletedAt = lastSession?.completedAt

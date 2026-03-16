@@ -354,9 +354,10 @@ export const subscribeToCoach = async (
     }
 
     // Check if already subscribed
-    const existingSubscription = await prisma.subscribedCoach.findUnique({
+    const existingSubscription = await prisma.subscribedCoach.findFirst({
       where: {
-        userId_coachId: { userId: appUser.id, coachId },
+        userId: appUser.id,
+        coachId,
       },
     });
 
@@ -473,9 +474,10 @@ export const unsubscribeFromCoach = async (
 
     const { coachId } = res.locals.validated?.params as UnsubscribeCoachParams;
 
-    const subscription = await prisma.subscribedCoach.findUnique({
+    const subscription = await prisma.subscribedCoach.findFirst({
       where: {
-        userId_coachId: { userId: appUser.id, coachId },
+        userId: appUser.id,
+        coachId,
       },
     });
 

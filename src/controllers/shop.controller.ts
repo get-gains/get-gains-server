@@ -93,10 +93,8 @@ export const purchaseCosmetic = async (
         }
 
         // 2. Verify user doesn't already own it
-        const existingOwnership = await tx.userCosmetic.findUnique({
-          where: {
-            userId_cosmeticId: { userId, cosmeticId },
-          },
+        const existingOwnership = await tx.userCosmetic.findFirst({
+          where: { userId, cosmeticId },
         });
 
         if (existingOwnership) {

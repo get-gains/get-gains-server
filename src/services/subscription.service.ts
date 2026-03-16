@@ -333,13 +333,15 @@ export const processWebhookEvent = async (
 
       // Handle specific events
       if (eventData.eventType === 'SUBSCRIPTION_RENEWED') {
-        await recordPayment(
-          subscription.userId,
-          subscription.id,
-          subscription.planId,
-          subscription.plan.priceCents,
-          subscription.plan.currency
-        );
+        if (subscription.userId) {
+          await recordPayment(
+            subscription.userId,
+            subscription.id,
+            subscription.planId,
+            subscription.plan.priceCents,
+            subscription.plan.currency
+          );
+        }
       }
 
       // Evict from coach rosters on terminal events only.
@@ -349,7 +351,9 @@ export const processWebhookEvent = async (
         eventData.eventType === 'SUBSCRIPTION_EXPIRED' ||
         eventData.eventType === 'SUBSCRIPTION_REVOKED'
       ) {
-        await evictUserFromCoachRosters(subscription.userId);
+        if (subscription.userId) {
+          await evictUserFromCoachRosters(subscription.userId);
+        }
       }
     }
 

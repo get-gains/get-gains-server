@@ -272,38 +272,40 @@ export const getRoutines = async (
       skip: offset,
     });
 
-    const routines = assignedPrograms.flatMap((ap) =>
-      ap.program.programRoutines.map((pr) => ({
-        id: pr.routine.id,
-        name: pr.routine.name,
-        description: pr.routine.description,
-        estimatedDurationMinutes: pr.routine.estimatedDurationMinutes,
-        muscleGroupsTargeted: pr.routine.muscleGroupsTargeted,
-        dayNumber: pr.dayNumber,
-        programId: ap.programId,
-        programName: ap.program.name,
-        exercises: pr.routine.routineExercises.map((re) => ({
-          id: re.id,
-          routineId: re.routineId,
-          exerciseId: re.exerciseId,
-          sets: re.sets,
-          repsMin: re.repsMin,
-          repsMax: re.repsMax,
-          restSeconds: re.restSeconds,
-          orderInRoutine: re.orderInRoutine,
-          notes: re.notes,
-          exercise: {
-            id: re.exercise.id,
-            name: re.exercise.name,
-            description: re.exercise.description,
-            primaryMuscleGroup: re.exercise.primaryMuscleGroup,
-            equipmentNeeded: re.exercise.equipmentNeeded,
-          },
-        })),
-        createdAt: pr.routine.createdAt,
-        updatedAt: pr.routine.updatedAt,
-      }))
-    );
+    const routines = assignedPrograms
+      .filter((ap) => ap.program !== null)
+      .flatMap((ap) =>
+        ap.program!.programRoutines.map((pr) => ({
+          id: pr.routine.id,
+          name: pr.routine.name,
+          description: pr.routine.description,
+          estimatedDurationMinutes: pr.routine.estimatedDurationMinutes,
+          muscleGroupsTargeted: pr.routine.muscleGroupsTargeted,
+          dayNumber: pr.dayNumber,
+          programId: ap.programId,
+          programName: ap.program!.name,
+          exercises: pr.routine.routineExercises.map((re) => ({
+            id: re.id,
+            routineId: re.routineId,
+            exerciseId: re.exerciseId,
+            sets: re.sets,
+            repsMin: re.repsMin,
+            repsMax: re.repsMax,
+            restSeconds: re.restSeconds,
+            orderInRoutine: re.orderInRoutine,
+            notes: re.notes,
+            exercise: {
+              id: re.exercise.id,
+              name: re.exercise.name,
+              description: re.exercise.description,
+              primaryMuscleGroup: re.exercise.primaryMuscleGroup,
+              equipmentNeeded: re.exercise.equipmentNeeded,
+            },
+          })),
+          createdAt: pr.routine.createdAt,
+          updatedAt: pr.routine.updatedAt,
+        }))
+      );
 
     logger.info(`Fetched ${routines.length} routines for user ${userId}`);
 
@@ -736,10 +738,12 @@ export const getWorkoutSessionById = async (
           weightKg: ps.weightKg,
           rpe: ps.rpe,
           notes: ps.notes,
-          exercise: {
-            id: ps.routineExercise.exercise.id,
-            name: ps.routineExercise.exercise.name,
-          },
+          exercise: ps.routineExercise
+            ? {
+                id: ps.routineExercise.exercise.id,
+                name: ps.routineExercise.exercise.name,
+              }
+            : null,
           createdAt: ps.createdAt,
           updatedAt: ps.updatedAt,
         })),
@@ -1096,6 +1100,11 @@ export const getTodayWorkout = async (
 
     if (!assignment) {
       sendSingleError(res, 'No active program assigned', 404);
+      return;
+    }
+
+    if (!assignment.program) {
+      sendSingleError(res, 'Associated program no longer exists', 404);
       return;
     }
 

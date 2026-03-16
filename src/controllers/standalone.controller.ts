@@ -1328,25 +1328,34 @@ export const activateProgram = async (
     }
 
     // Upsert the assignment (user may have previously assigned this program)
-    const assignment = await prisma.assignedProgram.upsert({
+    // Compound unique was replaced with partial index — use findFirst + create/update
+    const existingAssignment = await prisma.assignedProgram.findFirst({
       where: {
-        userId_programId: {
-          userId: appUser.id,
-          programId,
-        },
-      },
-      update: {
-        isActive: true,
-        startDate: startDate ? new Date(startDate) : new Date(),
-        endDate: null,
-      },
-      create: {
         userId: appUser.id,
         programId,
-        startDate: startDate ? new Date(startDate) : new Date(),
-        isActive: true,
       },
     });
+
+    let assignment;
+    if (existingAssignment) {
+      assignment = await prisma.assignedProgram.update({
+        where: { id: existingAssignment.id },
+        data: {
+          isActive: true,
+          startDate: startDate ? new Date(startDate) : new Date(),
+          endDate: null,
+        },
+      });
+    } else {
+      assignment = await prisma.assignedProgram.create({
+        data: {
+          userId: appUser.id,
+          programId,
+          startDate: startDate ? new Date(startDate) : new Date(),
+          isActive: true,
+        },
+      });
+    }
 
     logger.info('Standalone program activated', {
       assignmentId: assignment.id,
@@ -1387,12 +1396,10 @@ export const deactivateProgram = async (
       return;
     }
 
-    const assignment = await prisma.assignedProgram.findUnique({
+    const assignment = await prisma.assignedProgram.findFirst({
       where: {
-        userId_programId: {
-          userId: appUser.id,
-          programId,
-        },
+        userId: appUser.id,
+        programId,
       },
     });
 
@@ -1513,6 +1520,11 @@ export const getStandaloneToday = async (
 
     if (!assignment) {
       sendSingleError(res, 'No active standalone program assigned', 404);
+      return;
+    }
+
+    if (!assignment.program) {
+      sendSingleError(res, 'Associated program no longer exists', 404);
       return;
     }
 
@@ -1644,6 +1656,7 @@ export const startStandaloneSession = async (
       if (
         !assignment ||
         assignment.userId !== appUser.id ||
+        !assignment.program ||
         assignment.program.userId !== appUser.id
       ) {
         sendSingleError(res, 'Assigned program not found', 404);
@@ -2000,10 +2013,12 @@ export const getStandaloneSessionById = async (
           weightKg: ps.weightKg,
           rpe: ps.rpe,
           notes: ps.notes,
-          exercise: {
-            id: ps.routineExercise.exercise.id,
-            name: ps.routineExercise.exercise.name,
-          },
+          exercise: ps.routineExercise
+            ? {
+                id: ps.routineExercise.exercise.id,
+                name: ps.routineExercise.exercise.name,
+              }
+            : null,
           createdAt: ps.createdAt,
           updatedAt: ps.updatedAt,
         })),

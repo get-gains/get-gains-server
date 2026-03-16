@@ -289,9 +289,10 @@ export const getClientProfile = async (
     const { userId } = res.locals.validated?.params as GetClientProfileParams;
 
     // Verify the user is actively subscribed to this coach
-    const subscription = await prisma.subscribedCoach.findUnique({
+    const subscription = await prisma.subscribedCoach.findFirst({
       where: {
-        userId_coachId: { userId, coachId: coach.id },
+        userId,
+        coachId: coach.id,
       },
     });
 

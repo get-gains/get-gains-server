@@ -2,6 +2,10 @@ import { PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
 import { calculateStreak } from '../utils/streak';
 
+/** Any Prisma-like client (base, extended, or transaction). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type PrismaLike = any;
+
 // ── Config types ──
 
 interface DurationBonusTier {
@@ -49,9 +53,7 @@ export interface CoinBreakdown {
  * Falls back to sensible defaults if a key is missing.
  */
 export async function loadEconomyConfig(
-  prisma:
-    | PrismaClient
-    | Parameters<Parameters<PrismaClient['$transaction']>[0]>[0]
+  prisma: PrismaLike
 ): Promise<EconomyConfig> {
   const rows = await (prisma as PrismaClient).economyConfig.findMany();
   const configMap = new Map(rows.map((r) => [r.key, r.value]));
@@ -127,9 +129,9 @@ function resolveDurationBonus(
 export async function calculateSessionCoins(
   userId: string,
   workoutSessionId: string,
-  prisma: PrismaClient
+  prisma: PrismaLike
 ): Promise<CoinBreakdown | null> {
-  return prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx: PrismaLike) => {
     // ── Idempotency check ──
     const existing = await tx.coinTransaction.findFirst({
       where: {
@@ -178,8 +180,10 @@ export async function calculateSessionCoins(
     let avgAccuracy = 0;
     if (comparisonResults.length > 0) {
       avgAccuracy =
-        comparisonResults.reduce((sum, r) => sum + r.overallScore, 0) /
-        comparisonResults.length;
+        comparisonResults.reduce(
+          (sum: number, r: { overallScore: number }) => sum + r.overallScore,
+          0
+        ) / comparisonResults.length;
     }
 
     // ── Resolve accuracy tier ──

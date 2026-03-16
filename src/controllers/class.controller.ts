@@ -67,14 +67,17 @@ export const getClass = async (req: Request, res: Response): Promise<void> => {
       }),
     ]);
 
-    const clients = clientRelations.map((cr) => ({
-      id: cr.user.id,
-      email: cr.user.email,
-      name: cr.user.name,
-      nickname: cr.user.nickname,
-      subscribedAt: cr.startedAt,
-      subscriptionExpiresAt: cr.user.subscriptions[0]?.currentPeriodEnd ?? null,
-    }));
+    const clients = clientRelations
+      .filter((cr) => cr.user !== null)
+      .map((cr) => ({
+        id: cr.user!.id,
+        email: cr.user!.email,
+        name: cr.user!.name,
+        nickname: cr.user!.nickname,
+        subscribedAt: cr.startedAt,
+        subscriptionExpiresAt:
+          cr.user!.subscriptions[0]?.currentPeriodEnd ?? null,
+      }));
 
     sendSuccess(res, {
       clients,
@@ -111,9 +114,10 @@ export const removeClient = async (
 
     const { userId } = res.locals.validated?.params as RemoveClientParams;
 
-    const subscription = await prisma.subscribedCoach.findUnique({
+    const subscription = await prisma.subscribedCoach.findFirst({
       where: {
-        userId_coachId: { userId, coachId: coach.id },
+        userId,
+        coachId: coach.id,
       },
     });
 

@@ -33,4 +33,11 @@ export const adminPrisma = basePrisma;
  */
 const prisma = basePrisma.$extends(softDeleteExtension);
 
+/**
+ * Type alias for the extended Prisma client (with soft-delete extension).
+ * Use this instead of `PrismaClient` in function signatures that receive
+ * the default export from database.ts.
+ */
+export type ExtendedPrismaClient = typeof prisma;
+
 export default prisma;

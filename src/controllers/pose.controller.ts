@@ -940,6 +940,11 @@ export const bulkDownloadProgramForms = async (
       return;
     }
 
+    if (!assignedProgram.program) {
+      sendSingleError(res, 'Associated program no longer exists', 404);
+      return;
+    }
+
     // Collect all unique exercise IDs in the program
     const exerciseIds = new Set<string>();
     for (const pr of assignedProgram.program.programRoutines) {
@@ -976,6 +981,7 @@ export const bulkDownloadProgramForms = async (
     const configMap = new Map(configs.map((c) => [c.exerciseId, c]));
     const formsByExercise = new Map<string, typeof forms>();
     for (const form of forms) {
+      if (!form.exerciseId) continue;
       const existing = formsByExercise.get(form.exerciseId) ?? [];
       existing.push(form);
       formsByExercise.set(form.exerciseId, existing);
@@ -986,8 +992,8 @@ export const bulkDownloadProgramForms = async (
       const config = configMap.get(exId);
       const exerciseName =
         exerciseForms[0]?.exercise?.name ??
-        assignedProgram.program.programRoutines
-          .flatMap((pr) => pr.routine.routineExercises)
+        assignedProgram
+          .program!.programRoutines.flatMap((pr) => pr.routine.routineExercises)
           .find((re) => re.exerciseId === exId)?.exercise?.name ??
         'Unknown';
 
@@ -1031,7 +1037,7 @@ export const bulkDownloadProgramForms = async (
 
     sendSuccess(res, {
       programId,
-      programName: assignedProgram.program.name,
+      programName: assignedProgram.program!.name,
       exercises,
       lastUpdatedAt,
     });
