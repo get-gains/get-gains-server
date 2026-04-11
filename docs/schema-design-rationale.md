@@ -75,7 +75,12 @@ Each level is independently reusable. A coach can include the same routine in mu
 **Single ownership model.** In the proposed schema, `program`, `routine`, and `exercise` each have a single `user_id` FK. The old schema had dual ownership (`coachId` + `userId` + `customForUserId` on Program). This was simplified because:
 - A coach *is* a user. Coach-created content uses the coach's `user_id`.
 - The `customForUserId` concept (a program created by a coach specifically for one client) is handled at the assignment level, not the template level. The template itself remains in the coach's library.
-- The `is_public` flag (old schema) controlled visibility. This is now handled by checking ownership: if `user_id` matches the requesting user or their coach, access is granted.
+
+**`is_public` exists only on `exercise`.** Programs and routines are personal/coach-owned and shared via assignment, never made publicly browseable. Exercises, however, are atomic building blocks that benefit from a global library — users and coaches can discover and reuse exercises authored by others. The `exercise.is_public` flag enables this:
+- `is_public = false` (default): exercise is only visible to its owner (`user_id`).
+- `is_public = true`: exercise appears in the global discovery library, browsable by any user.
+
+This is the only sharing primitive in the training library domain. Programs/routines built by coaches stay private to the coach and are surfaced to clients exclusively through `assigned_program`.
 
 **Exercise form as S3 key reference.** `exercise_form` stores a `recorded_frames_key` pointing to an S3 object rather than inline JSON. The old schema stored `landmarkFrames`, `featureFrames`, and `normalizedFrames` as JSON columns directly in the database. Moving this to object storage:
 - Removes multi-MB JSON blobs from the database, keeping row sizes small and backup/restore fast.
@@ -157,7 +162,24 @@ IF EXISTS (SELECT 1 FROM webhook_event WHERE idempotency_key = ? AND status = 'C
 
 **SCD Type 2 via `subscription_plan_history`.** When a user upgrades from Basic to Premium, the old schema overwrote `planId` on the subscription row, losing history. The `subscription_plan_history` table records every plan change with `effective_from` / `effective_until` temporal boundaries. The current plan has `effective_until = NULL`.
 
-The `subscription.subscription_plan_id` FK still holds the *current* plan for fast reads (the auth middleware needs `tier_level` on every request and should not join through a temporal table). The history table is the audit dimension.
+> **What is SCD Type 2?**
+> "Slowly Changing Dimension Type 2" is a data warehousing pattern from dimensional modeling (Kimball methodology). When a tracked attribute changes, instead of *overwriting* the old value, you *insert a new row* and mark the previous row as no longer current via temporal columns:
+>
+> | id | subscription_id | plan_id | effective_from | effective_until | change_reason |
+> |----|----|----|----|----|----|
+> | h1 | sub_abc | basic | 2025-01-01 | 2025-06-15 | initial |
+> | h2 | sub_abc | premium | 2025-06-15 | 2025-09-01 | upgrade |
+> | h3 | sub_abc | pro | 2025-09-01 | NULL | upgrade |
+>
+> **Other SCD types for context:**
+> - **Type 0**: never changes (immutable).
+> - **Type 1**: overwrite — no history kept (the old schema's approach).
+> - **Type 2**: row versioning with effective dates — full history preserved (the chosen approach).
+> - **Type 3**: limited history via "previous value" columns — only one prior state kept.
+>
+> Type 2 is the right choice here because we need to answer questions like *"what plan was the user on when they performed workout X?"* or *"how many users downgraded from Premium to Basic last quarter?"* — both require the full timeline, not just the current state.
+
+The `subscription.subscription_plan_id` FK still holds the *current* plan for fast reads (the auth middleware needs `tier_level` on every request and should not join through a temporal table). The history table is the audit dimension. This is a classic dimensional modeling separation: the operational table holds the hot/current data, the dimension table holds the historical lineage.
 
 **Discount tracking after PromoCode removal.** Promo codes, coupons, and discounts are managed by the payment providers (Google Play offers, Apple promotional offers). The server does not need to validate or calculate discounts. However, for analytics and customer support, we track whether a subscription was discounted via two lightweight fields:
 - `is_discounted` (boolean) -- was any provider discount applied?
@@ -184,7 +206,56 @@ This replaces the old `PromoCode` + `PromoRedemption` tables.
 
 **Separate coin balance vs. transaction log.** The proposed schema denormalizes `coin_balance` directly onto the `user` table. The `coin_transactions` table is the append-only ledger recording every earn/spend event with full breakdown.
 
-*Why denormalize?* Computing balance from `SUM(value) WHERE user_id = ?` over a growing transaction table degrades over time. The balance is read on every shop interaction and leaderboard render. The denormalized balance is updated atomically within the same database transaction that inserts the `coin_transaction` row, maintaining consistency.
+*Why denormalize?* Computing balance from `SUM(value) WHERE user_id = ?` over a growing transaction table degrades over time. The balance is read on every shop interaction and leaderboard render. The denormalized balance is materialized for read performance.
+
+### Keeping `coin_balance` in Sync with `coin_transactions`
+
+This denormalization is only safe if the cached balance can never drift from the ledger. Four mechanisms enforce this:
+
+**1. Atomic database transactions (primary defense).**
+Every write that touches coins must wrap both operations in a single database transaction:
+```
+BEGIN;
+  INSERT INTO coin_transactions (user_id, transaction_type, value, balance_after) ...;
+  UPDATE user SET coin_balance = coin_balance + ? WHERE supabase_auth_id = ?;
+COMMIT;
+```
+Either both rows persist or neither does. PostgreSQL's MVCC guarantees no other transaction can observe a half-updated state. In Prisma this is `prisma.$transaction([...])`.
+
+**2. `balance_after` column on each transaction (audit trail).**
+Every `coin_transactions` row should record the balance immediately after that transaction was applied. This serves three purposes:
+- **Reconciliation is trivial:** the latest transaction's `balance_after` should equal `user.coin_balance`. A simple query detects drift.
+- **Per-transaction auditing:** support staff can answer "what was the user's balance right after they bought item X?" without replaying history.
+- **Concurrency detection:** if two transactions interleave incorrectly, the `balance_after` values will be inconsistent.
+
+The proposed schema's `coin_transactions` table should add this column:
+```
+balance_after  INT  NOT NULL
+```
+
+**3. Row-level locking to prevent race conditions.**
+When updating the balance, the user row must be locked to prevent two concurrent earn events from reading the same starting balance and double-spending:
+```sql
+SELECT coin_balance FROM user WHERE supabase_auth_id = ? FOR UPDATE;
+```
+This `SELECT ... FOR UPDATE` (or Prisma's interactive transaction with explicit lock) serializes concurrent writes to the same user. Without it, two simultaneous coin grants could both read `balance = 100`, both write `balance = 150`, losing one transaction's worth.
+
+**4. Periodic reconciliation job.**
+A scheduled job (daily or weekly) recomputes `SUM(value)` from `coin_transactions` per user and compares against `user.coin_balance`. Any drift is logged and alerted on. This is the safety net that catches:
+- Bugs that bypass the transaction wrapper.
+- Manual data fixes that miss one of the two tables.
+- Hardware-level corruption.
+
+```sql
+SELECT u.supabase_auth_id, u.coin_balance, COALESCE(SUM(ct.value), 0) AS computed
+FROM user u
+LEFT JOIN coin_transactions ct ON ct.user_id = u.supabase_auth_id
+GROUP BY u.supabase_auth_id, u.coin_balance
+HAVING u.coin_balance != COALESCE(SUM(ct.value), 0);
+```
+
+**Optional: database-level CHECK constraint.**
+Add `CHECK (coin_balance >= 0)` on `user.coin_balance` to make negative balances impossible at the storage layer. This is a last-line defense — application logic should reject overspending before reaching the DB, but the constraint guarantees no bug can ever produce a negative balance.
 
 **`user_cosmetic` as a composite-PK junction.** The `(user_id, cosmetic_id)` composite PK enforces that a user can own each cosmetic at most once. No surrogate key is needed because:
 - The pair is naturally unique.
@@ -283,3 +354,108 @@ CUIDs are preferred over UUIDs for:
 - Lexicographic sortability (roughly time-ordered, beneficial for B-tree index locality)
 - Shorter string representation
 - No dependency on database-level UUID generation
+
+---
+
+## 11. Database Concepts Applied
+
+This appendix catalogs the database engineering and data modeling concepts used throughout the schema, with the specific places they appear. Use this as a reference for "why is X done this way?"
+
+### Normalization & Denormalization
+
+**Third Normal Form (3NF)** is the baseline. Most tables are in 3NF — every non-key attribute depends on the key, the whole key, and nothing but the key.
+
+**Strategic denormalization** is applied where read performance demands it:
+- `user.coin_balance` — materialized aggregate of `coin_transactions.value`. Avoids `SUM()` on every read.
+- `payment_history.subscription_plan_id` — duplicated FK to enable plan filtering without joining through `subscription`.
+- `subscription.subscription_plan_id` — current plan kept on the operational row even though `subscription_plan_history` holds the full lineage.
+
+The trade-off in every case: faster reads, more discipline required on writes (must update both places atomically).
+
+### Slowly Changing Dimensions (SCD)
+
+A data warehousing pattern from Kimball dimensional modeling for handling attribute changes over time. Used in `subscription_plan_history` (Type 2 — full row versioning with effective dates) and conceptually in `subscribed_coach.ended_at` (Type 2 lite — terminating instead of overwriting). See section 7 for the detailed walkthrough.
+
+### Snapshot Pattern (Event Sourcing-Lite)
+
+When a coach assigns a program to a user, the entire program structure is *copied* into `assigned_program_routine` and `assigned_program_routine_exercise` rather than referencing the live template. This is the same pattern used in e-commerce: order line items snapshot product prices at checkout time so future price changes don't rewrite history.
+
+Applied in:
+- Program assignment (training library → assignment tables)
+- `payment_history` snapshots `amount_cents` and `currency` at the time of payment
+- `coin_transactions.balance_after` snapshots the user's balance at transaction time
+
+### Append-Only Ledger / Event Log
+
+Some tables are write-once: rows are inserted but never updated or deleted. This guarantees a tamper-evident history.
+
+- `coin_transactions` — every earn/spend is an immutable row.
+- `subscription_event` — every state transition is logged immutably.
+- `webhook_event` — every inbound webhook is logged before processing.
+- `payment_history` — payment records are never modified (refunds add new fields rather than mutating the original payment row, and even then refund tracking is bolted onto the same row for query simplicity — a stricter interpretation would use a separate `refunds` table).
+
+### Idempotency Keys
+
+A pattern from distributed systems: when an operation might be received multiple times (network retries, message broker redelivery), use a unique key to detect and skip duplicates.
+
+Applied in:
+- `webhook_event.idempotency_key` — Google Pub/Sub `messageId`. Prevents reprocessing the same webhook.
+- `payment_history` composite unique `(subscription_id, provider_order_id)` — prevents recording the same payment twice.
+
+### Optimistic vs. Pessimistic Concurrency
+
+The schema enables both strategies:
+- **Pessimistic locking** (`SELECT ... FOR UPDATE`) is used for coin balance updates where the read-modify-write window must be serialized.
+- **Optimistic locking** could be added via a `version` column on hot rows (not currently used, but the schema doesn't preclude it).
+
+### MVCC (Multi-Version Concurrency Control)
+
+PostgreSQL's MVCC means transactions never read uncommitted data and writers don't block readers. The schema design assumes MVCC semantics for:
+- The atomic balance update + transaction insert pattern.
+- Concurrent webhook processing without explicit locks (idempotency key acts as the deduplication boundary).
+
+### Soft Delete (Tombstoning)
+
+Marking rows as deleted via `deleted_at TIMESTAMPTZ` rather than physically removing them. Preserves referential integrity and audit trail. Applied to user-facing entities (training library, workout records, cosmetics) and avoided for financial records (which use status enums instead — a refunded payment is `status = 'REFUNDED'`, not `deleted_at = ...`).
+
+### Bounded Contexts (Domain-Driven Design)
+
+The schema is organized into bounded domains (Identity, Training Library, Subscription, Gamification, etc.), each with its own tables and minimal cross-domain coupling. Cross-domain references go through stable identity keys (`user_id`), not through deep object graphs. This makes it possible to evolve domains independently and even split them across services later if needed.
+
+### Provider Abstraction (Anti-Corruption Layer)
+
+The subscription domain isolates provider-specific data (Google Play, Apple) in `provider_plan` and `subscription.purchase_token` / `subscription.provider_metadata`. The internal `subscription_plan` and core subscription state are provider-agnostic. This is the database analog of the Anti-Corruption Layer pattern from DDD: external system quirks don't leak into the core domain model.
+
+### Composite Indexes for Hot-Path Queries
+
+Indexes are designed around specific query shapes, not field popularity. The canonical example:
+```
+INDEX subscription(user_id, status, current_period_end)
+```
+This covers `WHERE user_id = ? AND status = 'ACTIVE' AND current_period_end > now()` as an index-only scan because the columns are listed in equality-then-range order. Reordering them would degrade the query.
+
+### Identifying vs. Non-Identifying Relationships
+
+`coach.user_id` is both PK and FK to `user` — an *identifying relationship*. A coach cannot exist without its user; the user's identity *is* the coach's identity.
+
+`workout_session.user_id` is just a FK — a *non-identifying relationship*. A workout session has its own identity (`id`) and merely references the user.
+
+Identifying relationships are used sparingly (only `coach`) because they create tight coupling. Non-identifying is the default.
+
+### Surrogate vs. Natural Keys
+
+- **Surrogate keys** (`cuid()`) are used for most tables. They are stable, opaque, and don't leak business meaning.
+- **Natural keys** are used in two places: `user.supabase_auth_id` (the auth provider already owns identity) and composite keys on junction tables (`user_cosmetic(user_id, cosmetic_id)` where the pair is naturally unique).
+
+### Type Safety via Database Enums
+
+Domain-constrained values (subscription status, billing cycle, body segment) use database enums rather than free-form strings. This pushes validation to the storage layer — invalid values are rejected at INSERT time, not discovered at query time. Provider-specific event types stay as VARCHAR because the set is open-ended (new Google Play notification types appear without warning).
+
+### Financial Audit Compliance
+
+The subscription domain follows financial audit principles:
+- **Immutable payment records** — never deleted, never silently mutated.
+- **Complete trail** — every state change has a `subscription_event` row, every webhook has a `webhook_event` row, and the two are linked via `webhook_event_id`.
+- **Reproducibility** — given the event log, you can replay the entire history of a subscription and arrive at the same current state.
+
+This is the "double-entry bookkeeping" mindset applied to subscription lifecycle: every change is recorded, nothing is overwritten, and the books should always balance.

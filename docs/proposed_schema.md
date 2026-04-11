@@ -54,12 +54,13 @@ routine {
 
 exercise {
     PK      id                          VARCHAR         NOT NULL    DEFAULT cuid()
-    FK      user_id                     VARCHAR         NOT NULL
+    FK      user_id                     VARCHAR         NOT NULL                // Owner (coach or user)
             name                        VARCHAR         NOT NULL
             description                 TEXT            NOT NULL
             target_muscles              VARCHAR[]       NOT NULL
             // merged from tracked_angles, use tracked angles' values
-            active_segments             VARCHAR[]       NOT NULL 
+            active_segments             VARCHAR[]       NOT NULL
+            is_public                   BOOLEAN         NOT NULL    DEFAULT false   // Only exercises support sharing across users
             deleted_at                  TIMESTAMPTZ     NULL
 }
 
