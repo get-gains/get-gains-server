@@ -16,7 +16,6 @@ import {
   GetClientSessionDetailSchema,
   GetClientWeeklyStatsSchema,
   GetClientExerciseHistorySchema,
-  GetClientFormResultsSchema,
 } from '../schemas/coach.schema';
 import {
   createCoachProfile,
@@ -31,7 +30,6 @@ import {
   getClientWeeklyStats,
   getClientExerciseHistory,
   getDetailedPerformance,
-  getClientFormResults,
 } from '../controllers/coach.controller';
 import classRoutes from './class.routes';
 import programRoutes from './program.routes';
@@ -202,21 +200,6 @@ router.get(
   requireCoach,
   validateRequest(GetPerformanceSchema),
   getDetailedPerformance
-);
-
-// ============== Client Form Results Route (GAP 3) ==============
-
-/**
- * @route   GET /coach/clients/:userId/form-results
- * @desc    Get a client's form comparison result history
- * @access  Protected (authenticateSupabaseUser + requireCoach)
- */
-router.get(
-  '/clients/:userId/form-results',
-  authenticateSupabaseUser,
-  requireCoach,
-  validateRequest(GetClientFormResultsSchema),
-  getClientFormResults
 );
 
 export default router;
