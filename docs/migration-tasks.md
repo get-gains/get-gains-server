@@ -116,17 +116,17 @@
 **Goal:** Fix workout execution pipeline and stats aggregations.
 
 ### Workouts (B11)
-- [ ] `src/controllers/workout.controller.ts` — drop `RoutineExercise` template reads, reads from `assigned_program_routine_exercise`; `WorkoutSession.userId` gone
-- [ ] `src/schemas/workout.schema.ts` — drop `primaryMuscleGroup`, `equipmentNeeded` fields
-- [ ] `src/routes/workout.routes.ts` — route updates
+- [x] `src/controllers/workout.controller.ts` — drop `RoutineExercise` template reads, reads from `assigned_program_routine_exercise`; `WorkoutSession.userId` gone
+- [x] `src/schemas/workout.schema.ts` — drop `primaryMuscleGroup`, `equipmentNeeded` fields
+- [x] `src/routes/workout.routes.ts` — route updates
 
 ### Sessions & Stats (B11)
-- [ ] `src/controllers/sessions.controller.ts` — listing by user via relational path through assigned_program_routine → assigned_program
-- [ ] `src/schemas/sessions.schema.ts` — `notes`→`feedback`, `setNumber`→`set_number`, drop `rpe`/`weightKg`→`weight`
-- [ ] `src/routes/sessions.routes.ts`
-- [ ] `src/controllers/stats.controller.ts` — aggregations rewritten for relational path
-- [ ] `src/schemas/stats.schema.ts`
-- [ ] `src/routes/stats.routes.ts`
+- [x] `src/controllers/sessions.controller.ts` — listing by user via relational path through assigned_program_routine → assigned_program
+- [x] `src/schemas/sessions.schema.ts` — `notes`→`feedback`, `setNumber`→`set_number`, drop `rpe`/`weightKg`→`weight`
+- [x] `src/routes/sessions.routes.ts`
+- [x] `src/controllers/stats.controller.ts` — aggregations rewritten for relational path
+- [x] `src/schemas/stats.schema.ts`
+- [x] `src/routes/stats.routes.ts`
 
 ---
 
