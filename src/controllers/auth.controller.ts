@@ -72,18 +72,22 @@ export const registerWithEmailAndPassword = async (
 
     const supabaseId = data.user.id;
 
-    const user = await createUser({ email, name, nickname, supabaseId });
+    const user = await createUser({
+      email,
+      full_name: name,
+      nickname,
+      supabase_auth_id: supabaseId,
+    });
 
     // Always return user data without tokens — email verification is required
     sendSuccess(
       res,
       {
         user: {
-          id: user.id,
+          supabase_auth_id: user.supabase_auth_id,
           email: user.email,
-          name: user.name,
+          full_name: user.full_name,
           nickname: user.nickname,
-          supabaseId: user.supabaseId,
         },
         message:
           'Registration successful. Please check your email to verify your account.',
@@ -190,7 +194,7 @@ export const loginWithEmailAndPassword = async (
     if (error || !data.user) {
       logger.debug('Login failed', {
         email,
-        code: (error as any)?.code,
+        code: (error as { code?: string })?.code,
         message: error?.message,
       });
       if (error) {
@@ -208,22 +212,19 @@ export const loginWithEmailAndPassword = async (
     }
 
     const user = await prisma.user.findUnique({
-      where: { supabaseId: data.user.id },
+      where: { supabase_auth_id: data.user.id },
     });
 
     if (!user) {
       logger.debug('Login failed: User not found in database', {
         email,
-        supabaseId: data.user.id,
+        supabase_auth_id: data.user.id,
       });
       sendSingleError(res, 'User not found', 404);
       return;
     }
 
-    const coach = await prisma.coach.findUnique({
-      where: { userId: user.id },
-    });
-    const isCoach = !!coach;
+    const isCoach = user.is_coach;
 
     const accessToken = data.session?.access_token;
     const refreshToken = data.session?.refresh_token;
@@ -240,11 +241,10 @@ export const loginWithEmailAndPassword = async (
         accessToken,
         refreshToken,
         user: {
-          id: user.id,
+          supabase_auth_id: user.supabase_auth_id,
           email: user.email,
-          name: user.name,
+          full_name: user.full_name,
           nickname: user.nickname,
-          supabaseId: user.supabaseId,
           isCoach,
         },
       },
@@ -322,14 +322,10 @@ export const signInWithGoogleWithUserData = async (
       return;
     }
 
-    const coach = await prisma.coach.findUnique({
-      where: { userId: userData.id },
-    });
-    const isCoach = !!coach;
+    const isCoach = userData.is_coach;
 
     const accessToken = supabaseData.session?.access_token;
     const refreshToken = supabaseData.session?.refresh_token;
-    const supabaseId = supabaseData.user.id;
 
     sendSuccess(
       res,
@@ -337,11 +333,10 @@ export const signInWithGoogleWithUserData = async (
         accessToken,
         refreshToken,
         user: {
-          id: userData.id,
+          supabase_auth_id: userData.supabase_auth_id,
           email: userData.email,
-          name: userData.name,
+          full_name: userData.full_name,
           nickname: userData.nickname,
-          supabaseId,
           isCoach,
         },
       },
@@ -389,10 +384,7 @@ export const refreshTokenWithBody = async (
       return;
     }
 
-    const coach = await prisma.coach.findUnique({
-      where: { userId: appUser.id },
-    });
-    const isCoach = !!coach;
+    const isCoach = appUser.is_coach;
 
     sendSuccess(
       res,
@@ -400,11 +392,10 @@ export const refreshTokenWithBody = async (
         accessToken: data.session.access_token,
         refreshToken: data.session.refresh_token,
         user: {
-          id: appUser.id,
+          supabase_auth_id: appUser.supabase_auth_id,
           email: appUser.email,
-          name: appUser.name,
+          full_name: appUser.full_name,
           nickname: appUser.nickname,
-          supabaseId: appUser.supabaseId,
           isCoach,
         },
       },
@@ -451,10 +442,7 @@ export const refreshToken = async (
       return;
     }
 
-    const coach = await prisma.coach.findUnique({
-      where: { userId: appUser.id },
-    });
-    const isCoach = !!coach;
+    const isCoach = appUser.is_coach;
 
     sendSuccess(
       res,
@@ -462,11 +450,10 @@ export const refreshToken = async (
         accessToken: data.session.access_token,
         refreshToken: data.session.refresh_token,
         user: {
-          id: appUser.id,
+          supabase_auth_id: appUser.supabase_auth_id,
           email: appUser.email,
-          name: appUser.name,
+          full_name: appUser.full_name,
           nickname: appUser.nickname,
-          supabaseId: appUser.supabaseId,
           isCoach,
         },
       },
@@ -491,27 +478,23 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const supabaseId =
-      'supabaseId' in supabaseUser ? supabaseUser.supabaseId : supabaseUser.id;
-    const appUser = await getUserBySupabaseId(supabaseId);
+    const supabaseUserId =
+      'id' in supabaseUser ? supabaseUser.id : supabaseUser.supabase_auth_id;
+    const appUser = await getUserBySupabaseId(supabaseUserId);
 
     if (!appUser) {
       sendSingleError(res, 'User not found', 401);
       return;
     }
 
-    const coach = await prisma.coach.findUnique({
-      where: { userId: appUser.id },
-    });
-    const isCoach = !!coach;
+    const isCoach = appUser.is_coach;
 
     sendSuccess(res, {
       user: {
-        id: appUser.id,
+        supabase_auth_id: appUser.supabase_auth_id,
         email: appUser.email,
-        name: appUser.name,
+        full_name: appUser.full_name,
         nickname: appUser.nickname,
-        supabaseId: appUser.supabaseId,
       },
       isCoach,
     });
@@ -525,12 +508,12 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
 /**
  * Logout (optional, Flutter app contract). Client clears tokens locally.
  */
-export const logout = async (req: Request, res: Response): Promise<void> => {
+export const logout = async (_req: Request, res: Response): Promise<void> => {
   sendSuccess(res, {}, 200);
 };
 
 export const sendRecoveryEmail = async (
-  req: Request,
+  _req: Request,
   res: Response
 ): Promise<void> => {
   try {
@@ -628,7 +611,7 @@ export const resetPassword = async (
  * POST /api/auth/exchange-code
  */
 export const exchangeCodeForSession = async (
-  req: Request,
+  _req: Request,
   res: Response
 ): Promise<void> => {
   try {
@@ -663,7 +646,7 @@ export const exchangeCodeForSession = async (
 
     // Check if this user exists in our database
     const appUser = await prisma.user.findUnique({
-      where: { supabaseId: user.id },
+      where: { supabase_auth_id: user.id },
     });
 
     sendSuccess(res, {
@@ -671,11 +654,10 @@ export const exchangeCodeForSession = async (
       refreshToken: session.refresh_token,
       user: appUser
         ? {
-            id: appUser.id,
+            supabase_auth_id: appUser.supabase_auth_id,
             email: appUser.email,
-            name: appUser.name,
+            full_name: appUser.full_name,
             nickname: appUser.nickname,
-            supabaseId: appUser.supabaseId,
           }
         : null,
     });
@@ -692,7 +674,7 @@ export const exchangeCodeForSession = async (
  * POST /api/auth/check-email-verified
  */
 export const checkEmailVerified = async (
-  req: Request,
+  _req: Request,
   res: Response
 ): Promise<void> => {
   try {
