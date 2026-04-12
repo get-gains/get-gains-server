@@ -6,7 +6,6 @@ export const CreateProgramSchema = z.object({
   body: z.object({
     name: z.string().min(1),
     description: z.string().min(1),
-    customForUserId: z.string().cuid().optional(),
   }),
 });
 
@@ -16,8 +15,6 @@ export const GetCoachProgramsSchema = z.object({
   query: z.object({
     limit: z.coerce.number().int().min(1).max(100).optional().default(50),
     offset: z.coerce.number().int().min(0).optional().default(0),
-    // When true, includes custom (one-off) programs; default false (reusable library only)
-    includeCustom: z.coerce.boolean().optional().default(false),
   }),
 });
 
@@ -62,8 +59,7 @@ export const CreateRoutineSchema = z.object({
   body: z.object({
     name: z.string().min(1),
     description: z.string().min(1),
-    estimatedDurationMinutes: z.number().int().min(1),
-    muscleGroupsTargeted: z.array(z.string()).optional().default([]),
+    estimated_duration_minutes: z.number().int().min(1),
   }),
 });
 
@@ -97,8 +93,7 @@ export const UpdateRoutineSchema = z.object({
   body: z.object({
     name: z.string().min(1).optional(),
     description: z.string().min(1).optional(),
-    estimatedDurationMinutes: z.number().int().min(1).optional(),
-    muscleGroupsTargeted: z.array(z.string()).optional(),
+    estimated_duration_minutes: z.number().int().min(1).optional(),
   }),
 });
 
@@ -113,99 +108,47 @@ export const DeleteRoutineSchema = z.object({
 
 export type DeleteRoutineParams = z.infer<typeof DeleteRoutineSchema>['params'];
 
-// ============== ProgramRoutine Junction Schemas ==============
+// ============== Assignment Schema ==============
 
-export const AssignRoutineSchema = z.object({
+const AssignmentExerciseSchema = z.object({
+  exercise_id: z.string().cuid(),
+  sets: z.number().int().min(1),
+  reps_min: z.number().int().min(1),
+  reps_max: z.number().int().min(1),
+  rest_seconds: z.number().int().min(0),
+  order_in_routine: z.number().int().min(1),
+});
+
+const AssignmentRoutineSchema = z.object({
+  routine_id: z.string().cuid(),
+  days_of_week: z
+    .array(
+      z.enum([
+        'MONDAY',
+        'TUESDAY',
+        'WEDNESDAY',
+        'THURSDAY',
+        'FRIDAY',
+        'SATURDAY',
+        'SUNDAY',
+      ])
+    )
+    .min(1),
+  exercises: z.array(AssignmentExerciseSchema).min(1),
+});
+
+export const AssignProgramSchema = z.object({
   params: z.object({
     programId: z.string().cuid(),
   }),
   body: z.object({
-    routineId: z.string().cuid(),
-    dayNumber: z.number().int().positive(),
+    user_id: z.string(),
+    notes: z.string().optional(),
+    start_date: z.coerce.date().optional(),
+    end_date: z.coerce.date().optional(),
+    routines: z.array(AssignmentRoutineSchema).min(1),
   }),
 });
 
-export const UpdateProgramRoutineSchema = z.object({
-  params: z.object({
-    programId: z.string().cuid(),
-    programRoutineId: z.string().cuid(),
-  }),
-  body: z.object({
-    dayNumber: z.number().int().positive(),
-  }),
-});
-
-export type UpdateProgramRoutineParams = z.infer<
-  typeof UpdateProgramRoutineSchema
->['params'];
-export type UpdateProgramRoutineInput = z.infer<
-  typeof UpdateProgramRoutineSchema
->['body'];
-
-export const RemoveProgramRoutineSchema = z.object({
-  params: z.object({
-    programId: z.string().cuid(),
-    programRoutineId: z.string().cuid(),
-  }),
-});
-
-export type RemoveProgramRoutineParams = z.infer<
-  typeof RemoveProgramRoutineSchema
->['params'];
-
-// ============== RoutineExercise Schemas ==============
-
-export const addRoutineExerciseSchema = z.object({
-  params: z.object({
-    routineId: z.string().cuid(),
-  }),
-  body: z.object({
-    exerciseId: z.string().cuid(),
-    sets: z.number().int().min(1),
-    repsMin: z.number().int().min(1),
-    repsMax: z.number().int().min(1),
-    restSeconds: z.number().int().min(0),
-    orderInRoutine: z.number().int().min(1),
-    notes: z.string().nullable().optional(),
-  }),
-});
-
-export type AddRoutineExerciseParams = z.infer<
-  typeof addRoutineExerciseSchema
->['params'];
-export type AddRoutineExerciseInput = z.infer<
-  typeof addRoutineExerciseSchema
->['body'];
-
-export const UpdateRoutineExerciseSchema = z.object({
-  params: z.object({
-    routineId: z.string().cuid(),
-    routineExerciseId: z.string().cuid(),
-  }),
-  body: z.object({
-    sets: z.number().int().min(1).optional(),
-    repsMin: z.number().int().min(1).optional(),
-    repsMax: z.number().int().min(1).optional(),
-    restSeconds: z.number().int().min(0).optional(),
-    orderInRoutine: z.number().int().min(1).optional(),
-    notes: z.string().nullable().optional(),
-  }),
-});
-
-export type UpdateRoutineExerciseParams = z.infer<
-  typeof UpdateRoutineExerciseSchema
->['params'];
-export type UpdateRoutineExerciseInput = z.infer<
-  typeof UpdateRoutineExerciseSchema
->['body'];
-
-export const RemoveRoutineExerciseSchema = z.object({
-  params: z.object({
-    routineId: z.string().cuid(),
-    routineExerciseId: z.string().cuid(),
-  }),
-});
-
-export type RemoveRoutineExerciseParams = z.infer<
-  typeof RemoveRoutineExerciseSchema
->['params'];
+export type AssignProgramParams = z.infer<typeof AssignProgramSchema>['params'];
+export type AssignProgramInput = z.infer<typeof AssignProgramSchema>['body'];
