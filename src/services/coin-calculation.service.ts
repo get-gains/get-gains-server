@@ -1,28 +1,16 @@
 import { PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
 import { calculateStreak } from '../utils/streak';
-
-// ── Config types ──
-
-interface DurationBonusTier {
-  minMinutes: number;
-  bonus: number;
-}
-
-interface AccuracyTier {
-  min: number;
-  label: string;
-  multiplier: number;
-}
-
-interface EconomyConfig {
-  coinsPerSet: number;
-  completionBonus: number;
-  durationBonuses: DurationBonusTier[];
-  streakBonusPerDay: number;
-  streakBonusCap: number;
-  accuracyTiers: AccuracyTier[];
-}
+import {
+  COINS_PER_SET,
+  COMPLETION_BONUS,
+  DURATION_BONUSES,
+  STREAK_BONUS_PER_DAY,
+  STREAK_BONUS_CAP,
+  ACCURACY_TIERS,
+  DurationBonusTier,
+  AccuracyTier,
+} from '../config/economy';
 
 // ── Coin breakdown result ──
 
@@ -45,48 +33,12 @@ export interface CoinBreakdown {
 }
 
 /**
- * Load all economy config values from the EconomyConfig table.
- * Falls back to sensible defaults if a key is missing.
- */
-export async function loadEconomyConfig(
-  prisma:
-    | PrismaClient
-    | Parameters<Parameters<PrismaClient['$transaction']>[0]>[0]
-): Promise<EconomyConfig> {
-  const rows = await (prisma as PrismaClient).economyConfig.findMany();
-  const configMap = new Map(rows.map((r) => [r.key, r.value]));
-
-  return {
-    coinsPerSet: (configMap.get('COINS_PER_SET') as number) ?? 3,
-    completionBonus: (configMap.get('COMPLETION_BONUS') as number) ?? 10,
-    durationBonuses: (configMap.get(
-      'DURATION_BONUSES'
-    ) as unknown as DurationBonusTier[]) ?? [
-      { minMinutes: 60, bonus: 15 },
-      { minMinutes: 45, bonus: 8 },
-      { minMinutes: 30, bonus: 3 },
-    ],
-    streakBonusPerDay: (configMap.get('STREAK_BONUS_PER_DAY') as number) ?? 2,
-    streakBonusCap: (configMap.get('STREAK_BONUS_CAP') as number) ?? 20,
-    accuracyTiers: (configMap.get(
-      'ACCURACY_TIERS'
-    ) as unknown as AccuracyTier[]) ?? [
-      { min: 0.95, label: 'Perfect', multiplier: 1.7 },
-      { min: 0.85, label: 'Great', multiplier: 1.3 },
-      { min: 0.7, label: 'Good', multiplier: 1.0 },
-      { min: 0.5, label: 'Fair', multiplier: 0.8 },
-      { min: 0.0, label: 'Low', multiplier: 0.5 },
-    ],
-  };
-}
-
-/**
  * Resolve the accuracy tier (multiplier + label) from an average overallScore.
  * Tiers are matched top-down (first qualifying tier wins).
  */
 function resolveAccuracyTier(
   avgAccuracy: number,
-  tiers: AccuracyTier[]
+  tiers: readonly AccuracyTier[]
 ): { multiplier: number; label: string } {
   // Sort descending by min to ensure top-down matching
   const sorted = [...tiers].sort((a, b) => b.min - a.min);
@@ -105,7 +57,7 @@ function resolveAccuracyTier(
  */
 function resolveDurationBonus(
   durationMin: number,
-  tiers: DurationBonusTier[]
+  tiers: readonly DurationBonusTier[]
 ): number {
   // Sort descending by minMinutes
   const sorted = [...tiers].sort((a, b) => b.minMinutes - a.minMinutes);
@@ -131,10 +83,10 @@ export async function calculateSessionCoins(
 ): Promise<CoinBreakdown | null> {
   return prisma.$transaction(async (tx) => {
     // ── Idempotency check ──
-    const existing = await tx.coinTransaction.findFirst({
+    const existing = await tx.coin_transactions.findFirst({
       where: {
-        workoutSessionId,
-        type: 'SESSION_REWARD',
+        workout_session_id: workoutSessionId,
+        transaction_type: 'SESSION_REWARD',
       },
     });
     if (existing) {
@@ -145,98 +97,105 @@ export async function calculateSessionCoins(
     }
 
     // ── Load session ──
-    const session = await tx.workoutSession.findUnique({
+    const session = await tx.workout_session.findUnique({
       where: { id: workoutSessionId },
-      select: { startedAt: true, completedAt: true },
+      select: { started_at: true, completed_at: true },
     });
-    if (!session || !session.completedAt) {
+    if (!session || !session.completed_at || !session.started_at) {
       logger.warn('Session not found or not completed for coin calculation', {
         workoutSessionId,
       });
       return null;
     }
 
-    // ── Load economy config ──
-    const config = await loadEconomyConfig(tx);
-
-    // ── Count performed sets ──
-    const setsCompleted = await tx.performedSet.count({
-      where: { workoutSessionId },
+    // ── Load performed sets ──
+    const performedSets = await tx.performed_set.findMany({
+      where: { workout_session_id: workoutSessionId },
+      select: { overall_score: true },
     });
+
+    const setsCompleted = performedSets.length;
 
     // ── Calculate session duration ──
     const durationMs =
-      session.completedAt.getTime() - session.startedAt.getTime();
+      session.completed_at.getTime() - session.started_at.getTime();
     const sessionDurationMin = Math.floor(durationMs / 60_000);
 
-    // ── Average accuracy (overallScore from FormComparisonResult) ──
-    const comparisonResults = await tx.formComparisonResult.findMany({
-      where: { workoutSessionId },
-      select: { overallScore: true },
-    });
-
+    // ── Average accuracy (overall_score is 0-100 int; tiers use 0.0-1.0 float) ──
     let avgAccuracy = 0;
-    if (comparisonResults.length > 0) {
+    if (performedSets.length > 0) {
       avgAccuracy =
-        comparisonResults.reduce((sum, r) => sum + r.overallScore, 0) /
-        comparisonResults.length;
+        performedSets.reduce((sum, s) => sum + s.overall_score, 0) /
+        performedSets.length /
+        100;
     }
 
     // ── Resolve accuracy tier ──
     const { multiplier: accuracyMultiplier, label: accuracyLabel } =
-      resolveAccuracyTier(avgAccuracy, config.accuracyTiers);
+      resolveAccuracyTier(avgAccuracy, ACCURACY_TIERS);
 
     // ── Calculate streak ──
-    const streakValue = await calculateStreak(userId, session.startedAt, tx);
+    const streakValue = await calculateStreak(userId, session.started_at, tx);
 
     // ── Apply formula ──
     const setCoins = Math.round(
-      setsCompleted * config.coinsPerSet * accuracyMultiplier
+      setsCompleted * COINS_PER_SET * accuracyMultiplier
     );
-    const completionBonus = config.completionBonus;
+    const completionBonus = COMPLETION_BONUS;
     const durationBonus = resolveDurationBonus(
       sessionDurationMin,
-      config.durationBonuses
+      DURATION_BONUSES
     );
     const streakBonus = Math.min(
-      streakValue * config.streakBonusPerDay,
-      config.streakBonusCap
+      streakValue * STREAK_BONUS_PER_DAY,
+      STREAK_BONUS_CAP
     );
     const total = setCoins + completionBonus + durationBonus + streakBonus;
 
-    // ── Upsert CoinBalance ──
-    const balance = await tx.coinBalance.upsert({
-      where: { userId },
-      create: {
+    // ── Lock the user row and read current balance ──
+    const [userRow] = await tx.$queryRaw<Array<{ coin_balance: number }>>`
+      SELECT coin_balance FROM "user" WHERE supabase_auth_id = ${userId} FOR UPDATE
+    `;
+    if (!userRow) {
+      logger.warn('User not found for coin calculation', { userId });
+      return null;
+    }
+
+    // ── Overspend guard (application-level) ──
+    if (total < 0 && userRow.coin_balance + total < 0) {
+      logger.warn('Coin spend would result in negative balance, rejecting', {
         userId,
-        currentBalance: total,
-        lifetimeEarned: total,
-        lifetimeSpent: 0,
-      },
-      update: {
-        currentBalance: { increment: total },
-        lifetimeEarned: { increment: total },
+        total,
+      });
+      return null;
+    }
+
+    const newBalance = userRow.coin_balance + total;
+
+    // ── Create transaction record first (with computed balance_after) ──
+    const transaction = await tx.coin_transactions.create({
+      data: {
+        user_id: userId,
+        transaction_type: 'SESSION_REWARD',
+        value: total,
+        balance_after: newBalance,
+        set_coins: setCoins,
+        accuracy_multiplier: accuracyMultiplier,
+        completion_bonus: completionBonus,
+        duration_bonus: durationBonus,
+        streak_bonus: streakBonus,
+        streak_value: streakValue,
+        sets_completed: setsCompleted,
+        avg_accuracy: avgAccuracy,
+        session_duration_min: sessionDurationMin,
+        workout_session_id: workoutSessionId,
       },
     });
 
-    // ── Create CoinTransaction ──
-    const transaction = await tx.coinTransaction.create({
-      data: {
-        userId,
-        type: 'SESSION_REWARD',
-        amount: total,
-        balanceAfter: balance.currentBalance,
-        setCoins,
-        accuracyMultiplier,
-        completionBonus,
-        durationBonus,
-        streakBonus,
-        streakValue,
-        setsCompleted,
-        avgAccuracy,
-        sessionDurationMin,
-        workoutSessionId,
-      },
+    // ── Update user balance atomically ──
+    await tx.user.update({
+      where: { supabase_auth_id: userId },
+      data: { coin_balance: newBalance },
     });
 
     logger.info('Coins awarded for session', {
@@ -261,7 +220,7 @@ export async function calculateSessionCoins(
         avgAccuracy,
         sessionDurationMin,
       },
-      newBalance: balance.currentBalance,
+      newBalance,
     };
   });
 }
