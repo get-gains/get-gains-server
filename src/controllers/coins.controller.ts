@@ -39,17 +39,8 @@ export const getBalance = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.appUser!.id;
-
-    const balance = await prisma.coinBalance.findUnique({
-      where: { userId },
-    });
-
     sendSuccess(res, {
-      currentBalance: balance?.currentBalance ?? 0,
-      lifetimeEarned: balance?.lifetimeEarned ?? 0,
-      lifetimeSpent: balance?.lifetimeSpent ?? 0,
-      updatedAt: balance?.updatedAt ?? null,
+      currentBalance: req.appUser!.coin_balance,
     });
   } catch (error) {
     logger.error('Error fetching coin balance', error);
@@ -66,43 +57,42 @@ export const getHistory = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.appUser!.id;
+    const userId = req.appUser!.supabase_auth_id;
     const { page, limit, type } = res.locals.validated
       ?.query as CoinHistoryQuery;
 
-    const where: Record<string, unknown> = { userId };
+    const where: Record<string, unknown> = { user_id: userId };
     if (type) {
-      where.type = type;
+      where.transaction_type = type;
     }
 
     const [transactions, total] = await Promise.all([
-      prisma.coinTransaction.findMany({
+      prisma.coin_transactions.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { created_at: 'desc' },
         take: limit,
         skip: (page - 1) * limit,
       }),
-      prisma.coinTransaction.count({ where }),
+      prisma.coin_transactions.count({ where }),
     ]);
 
     sendSuccess(res, {
       transactions: transactions.map((t) => ({
         id: t.id,
-        type: t.type,
-        amount: t.amount,
-        balanceAfter: t.balanceAfter,
-        setCoins: t.setCoins,
-        accuracyMultiplier: t.accuracyMultiplier,
-        completionBonus: t.completionBonus,
-        durationBonus: t.durationBonus,
-        streakBonus: t.streakBonus,
-        streakValue: t.streakValue,
-        setsCompleted: t.setsCompleted,
-        avgAccuracy: t.avgAccuracy,
-        sessionDurationMin: t.sessionDurationMin,
-        workoutSessionId: t.workoutSessionId,
-        userCosmeticId: t.userCosmeticId,
-        createdAt: t.createdAt,
+        type: t.transaction_type,
+        amount: t.value,
+        balanceAfter: t.balance_after,
+        setCoins: t.set_coins,
+        accuracyMultiplier: t.accuracy_multiplier,
+        completionBonus: t.completion_bonus,
+        durationBonus: t.duration_bonus,
+        streakBonus: t.streak_bonus,
+        streakValue: t.streak_value,
+        setsCompleted: t.sets_completed,
+        avgAccuracy: t.avg_accuracy,
+        sessionDurationMin: t.session_duration_min,
+        workoutSessionId: t.workout_session_id,
+        createdAt: t.created_at,
       })),
       pagination: {
         page,
