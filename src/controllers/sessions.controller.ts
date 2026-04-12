@@ -15,11 +15,15 @@ import {
  * Returns paginated sessions with derived `source` field ("standalone" or
  * "coach"), along with `programName` and `coachName` for coach sessions.
  *
+ * Session ownership flows through the relational path:
+ *   workout_session → assigned_program_routine → assigned_program → user_id
+ *
+ * Source distinction:
+ *   standalone: assigned_program.program.user_id == supabaseId (user's own program)
+ *   coach:      assigned_program.program.user_id != supabaseId (coach's program)
+ *
  * All sessions are returned regardless of subscription status — coach
  * session history is never gated (user's own training data, FR-014).
- *
- * Uses `attachSubscription` middleware (non-blocking) — endpoint never
- * returns 403 for subscription reasons.
  *
  * @route GET /api/sessions/history
  */
@@ -28,7 +32,12 @@ export const getSessionHistory = async (
   res: Response
 ): Promise<void> => {
   try {
-    const supabaseId = req.user?.id;
+    const rawUser = req.user;
+    const supabaseId = rawUser
+      ? 'supabase_auth_id' in rawUser
+        ? rawUser.supabase_auth_id
+        : rawUser.id
+      : undefined;
     const { source, limit, offset } = (res.locals.validated
       ?.query as SessionHistoryQuery) || {
       source: 'all',
@@ -41,113 +50,120 @@ export const getSessionHistory = async (
       return;
     }
 
-    // Resolve app user
-    const user = await prisma.user.findUnique({
-      where: { supabaseId },
-    });
-
-    if (!user) {
-      sendSingleError(res, 'User not found', 404);
-      return;
-    }
-
     logger.debug('Fetching unified session history', {
-      userId: user.id,
+      supabaseId,
       source,
       limit,
       offset,
     });
 
-    // Build source filter condition
-    const sourceFilter: Record<string, unknown> = {};
-    if (source === 'standalone') {
-      sourceFilter.assignedProgramId = null;
-    } else if (source === 'coach') {
-      sourceFilter.assignedProgramId = { not: null };
-    }
-
-    const where = {
-      userId: user.id,
-      completedAt: { not: null },
-      ...sourceFilter,
+    // Build source filter condition based on relational path
+    type WhereCondition = {
+      assigned_program_routine: {
+        assigned_program: {
+          user_id: string;
+          program?: { user_id: string | { not: string } };
+        };
+      };
+      completed_at: { not: null };
+      deleted_at: null;
     };
 
-    // Fetch sessions with joins for programName, coachName, and routineName
+    let where: WhereCondition;
+
+    if (source === 'standalone') {
+      where = {
+        assigned_program_routine: {
+          assigned_program: {
+            user_id: supabaseId,
+            program: { user_id: supabaseId },
+          },
+        },
+        completed_at: { not: null },
+        deleted_at: null,
+      };
+    } else if (source === 'coach') {
+      where = {
+        assigned_program_routine: {
+          assigned_program: {
+            user_id: supabaseId,
+            program: { user_id: { not: supabaseId } },
+          },
+        },
+        completed_at: { not: null },
+        deleted_at: null,
+      };
+    } else {
+      where = {
+        assigned_program_routine: {
+          assigned_program: { user_id: supabaseId },
+        },
+        completed_at: { not: null },
+        deleted_at: null,
+      };
+    }
+
+    // Fetch sessions and total count in parallel
     const [sessions, total] = await Promise.all([
-      prisma.workoutSession.findMany({
+      prisma.workout_session.findMany({
         where,
         include: {
-          assignedProgram: {
+          assigned_program_routine: {
             include: {
-              program: {
+              routine: { select: { id: true, name: true } },
+              assigned_program: {
                 include: {
-                  coach: {
-                    select: { name: true },
-                  },
-                },
-              },
-            },
-          },
-          performedSets: {
-            take: 1,
-            orderBy: { setNumber: 'asc' },
-            include: {
-              routineExercise: {
-                include: {
-                  routine: {
-                    select: { id: true, name: true },
+                  program: {
+                    include: {
+                      user: { select: { full_name: true } },
+                    },
                   },
                 },
               },
             },
           },
         },
-        orderBy: { startedAt: 'desc' },
+        orderBy: { started_at: 'desc' },
         take: limit,
         skip: offset,
       }),
-      prisma.workoutSession.count({ where }),
+      prisma.workout_session.count({ where }),
     ]);
 
     // Map to unified response shape
     const mappedSessions: UnifiedSessionSummary[] = sessions.map((s) => {
-      const isCoach = s.assignedProgramId !== null;
-      const routine = s.performedSets[0]?.routineExercise?.routine;
+      const isCoach =
+        s.assigned_program_routine.assigned_program.program.user_id !==
+        supabaseId;
 
       return {
         id: s.id,
-        userId: s.userId,
-        assignedProgramId: s.assignedProgramId,
-        routineId: routine?.id ?? null,
-        startedAt: s.startedAt.toISOString(),
-        completedAt: s.completedAt?.toISOString() ?? null,
-        notes: s.notes,
-        totalSets: s.performedSets.length
-          ? // We fetched only 1 performed set for routine info;
-            // count total sets via a separate approach
-            0
-          : 0,
-        routineName: routine?.name ?? null,
+        routineId: s.assigned_program_routine.routine_id,
+        routineName: s.assigned_program_routine.routine.name,
+        startedAt: s.started_at?.toISOString() ?? null,
+        completedAt: s.completed_at?.toISOString() ?? null,
+        feedback: s.feedback ?? null,
+        totalSets: 0, // filled in below via bulk set count
         source: isCoach ? 'coach' : 'standalone',
-        programName: isCoach
-          ? (s.assignedProgram?.program?.name ?? null)
-          : null,
+        programName:
+          s.assigned_program_routine.assigned_program.program.name ?? null,
         coachName: isCoach
-          ? (s.assignedProgram?.program?.coach?.name ?? null)
+          ? (s.assigned_program_routine.assigned_program.program.user
+              .full_name ?? null)
           : null,
       };
     });
 
-    // We need actual totalSets counts — fetch them in bulk
+    // Bulk-fetch set counts to avoid N+1 queries
     const sessionIds = sessions.map((s) => s.id);
-    const setCounts = await prisma.performedSet.groupBy({
-      by: ['workoutSessionId'],
-      where: { workoutSessionId: { in: sessionIds } },
+    const setCounts = await prisma.performed_set.groupBy({
+      by: ['workout_session_id'],
+      where: { workout_session_id: { in: sessionIds } },
       _count: { id: true },
     });
 
     const setCountMap = new Map(
-      setCounts.map((sc) => [sc.workoutSessionId, sc._count.id])
+      setCounts.map((sc) => [sc.workout_session_id, sc._count.id])
     );
 
     for (const session of mappedSessions) {
