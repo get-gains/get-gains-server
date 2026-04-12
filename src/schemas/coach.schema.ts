@@ -2,21 +2,17 @@ import { z } from 'zod';
 
 /**
  * Schema for creating a coach profile (become a coach).
- * name and email default from User; all fields optional for overrides.
+ * Identity (name, email, avatar, bio) is read from the joined user row.
  */
 export const CreateCoachProfileSchema = z.object({
   body: z
     .object({
-      name: z.string().min(1).optional(),
-      email: z.string().email().optional(),
-      avatarUrl: z.string().url().optional(),
-      bio: z.string().max(2000).optional(),
-      yearsExperience: z.number().int().min(0).optional(),
       certifications: z.array(z.string()).optional(),
-      certificationImageUrls: z.array(z.string().url()).optional(),
-      awards: z.array(z.string()).optional(),
       specialties: z.array(z.string()).optional(),
-      socialLinks: z.array(z.string().url()).optional(),
+      social_links: z.array(z.string().url()).optional(),
+      max_clients: z.number().int().min(1).optional(),
+      accepting_clients: z.boolean().optional(),
+      is_discoverable: z.boolean().optional(),
     })
     .optional()
     .default({}),
@@ -56,7 +52,7 @@ export type GetPerformanceQuery = z.infer<typeof GetPerformanceSchema>['query'];
  */
 export const AssignProgramSchema = z.object({
   body: z.object({
-    userId: z.string().cuid('Invalid user ID'),
+    userId: z.string().min(1, 'Invalid user ID'),
     programId: z.string().cuid('Invalid program ID'),
     startDate: z.string().datetime('Invalid start date'),
     endDate: z.string().datetime('Invalid end date').optional(),
@@ -73,7 +69,7 @@ export type AssignProgramInput = z.infer<typeof AssignProgramSchema>['body'];
  */
 export const GetClientProgramsSchema = z.object({
   params: z.object({
-    userId: z.string().cuid('Invalid user ID'),
+    userId: z.string().min(1, 'Invalid user ID'),
   }),
 });
 
@@ -92,7 +88,6 @@ export const UpdateAssignmentSchema = z.object({
     startDate: z.string().datetime().optional(),
     endDate: z.string().datetime().nullable().optional(),
     notes: z.string().max(1000).nullable().optional(),
-    isActive: z.boolean().optional(),
   }),
 });
 
@@ -123,7 +118,7 @@ export type DeleteAssignmentParams = z.infer<
  */
 export const GetClientSessionsSchema = z.object({
   params: z.object({
-    userId: z.string().cuid('Invalid user ID'),
+    userId: z.string().min(1, 'Invalid user ID'),
   }),
   query: z.object({
     limit: z.coerce.number().int().min(1).max(100).optional().default(20),
@@ -149,7 +144,7 @@ export type GetClientSessionsQuery = z.infer<
  */
 export const GetClientSessionDetailSchema = z.object({
   params: z.object({
-    userId: z.string().cuid('Invalid user ID'),
+    userId: z.string().min(1, 'Invalid user ID'),
     sessionId: z.string().cuid('Invalid session ID'),
   }),
 });
@@ -163,7 +158,7 @@ export type GetClientSessionDetailParams = z.infer<
  */
 export const GetClientWeeklyStatsSchema = z.object({
   params: z.object({
-    userId: z.string().cuid('Invalid user ID'),
+    userId: z.string().min(1, 'Invalid user ID'),
   }),
   query: z.object({
     weekOf: z.string().datetime().optional(),
@@ -182,7 +177,7 @@ export type GetClientWeeklyStatsQuery = z.infer<
  */
 export const GetClientExerciseHistorySchema = z.object({
   params: z.object({
-    userId: z.string().cuid('Invalid user ID'),
+    userId: z.string().min(1, 'Invalid user ID'),
     exerciseId: z.string().cuid('Invalid exercise ID'),
   }),
   query: z.object({
@@ -195,27 +190,4 @@ export type GetClientExerciseHistoryParams = z.infer<
 >['params'];
 export type GetClientExerciseHistoryQuery = z.infer<
   typeof GetClientExerciseHistorySchema
->['query'];
-
-// ============== Client Form Results Schema (GAP 3) ==============
-
-/**
- * Get a client's form comparison result history (coach view)
- */
-export const GetClientFormResultsSchema = z.object({
-  params: z.object({
-    userId: z.string().cuid('Invalid user ID'),
-  }),
-  query: z.object({
-    exerciseId: z.string().cuid('Invalid exercise ID').optional(),
-    limit: z.coerce.number().int().min(1).max(100).optional().default(20),
-    offset: z.coerce.number().int().min(0).optional().default(0),
-  }),
-});
-
-export type GetClientFormResultsParams = z.infer<
-  typeof GetClientFormResultsSchema
->['params'];
-export type GetClientFormResultsQuery = z.infer<
-  typeof GetClientFormResultsSchema
 >['query'];
