@@ -76,21 +76,21 @@
 **Goal:** Fix auth/user/profile/coach controllers.
 
 ### Auth & User (B12)
-- [ ] `src/controllers/auth.controller.ts` — drop UserProfile creation, create flat `user` row
-- [ ] `src/schemas/auth.schema.ts` — Zod shapes mirror flat user
-- [ ] `src/routes/auth.routes.ts` — update if middleware refs changed
-- [ ] `src/controllers/user.controller.ts` — flatten profile operations
-- [ ] `src/schemas/user.schema.ts` — flat user shape
+- [x] `src/controllers/auth.controller.ts` — drop UserProfile creation, create flat `user` row
+- [x] `src/schemas/auth.schema.ts` — Zod shapes mirror flat user
+- [x] `src/routes/auth.routes.ts` — update if middleware refs changed
+- [x] `src/controllers/user.controller.ts` — flatten profile operations
+- [x] `src/schemas/user.schema.ts` — flat user shape
 
 ### Profile
-- [ ] `src/controllers/profile.controller.ts` — flatten reads/writes onto `user` model
-- [ ] `src/schemas/profile.schema.ts` — flat shape
+- [x] `src/controllers/profile.controller.ts` — flatten reads/writes onto `user` model
+- [x] `src/schemas/profile.schema.ts` — flat shape
 
 ### Coach (B10)
-- [ ] `src/controllers/coach.controller.ts` — drop CoachSettings include (settings now on `coach`), add `include: { user: true }` for identity
-- [ ] `src/schemas/coach.schema.ts` — gains `max_clients`, `accepting_clients`, `is_discoverable`; drops `name`, `email` (on user)
-- [ ] `src/controllers/class.controller.ts` — `SubscribedCoach`→`subscribed_coach`, identity through joined user
-- [ ] `src/schemas/class.schema.ts` — renames
+- [x] `src/controllers/coach.controller.ts` — drop CoachSettings include (settings now on `coach`), add `include: { user: true }` for identity
+- [x] `src/schemas/coach.schema.ts` — gains `max_clients`, `accepting_clients`, `is_discoverable`; drops `name`, `email` (on user)
+- [x] `src/controllers/class.controller.ts` — `SubscribedCoach`→`subscribed_coach`, identity through joined user
+- [x] `src/schemas/class.schema.ts` — renames
 
 ---
 
