@@ -135,34 +135,34 @@
 **Goal:** Complete remaining controllers.
 
 ### Pose (B7)
-- [ ] `src/controllers/pose.controller.ts` — S3-key based form upload, delete FormComparisonResult endpoints, active_segments from `exercise.active_segments`
-- [ ] `src/schemas/pose.schema.ts` — drop landmark JSON fields, accept `recorded_frames_key`
-- [ ] `src/routes/pose.routes.ts`
+- [x] `src/controllers/pose.controller.ts` — S3-key based form upload, delete FormComparisonResult endpoints, active_segments from `exercise.active_segments`
+- [x] `src/schemas/pose.schema.ts` — drop landmark JSON fields, accept `recorded_frames_key`
+- [x] `src/routes/pose.routes.ts`
 
 ### Coins & Cosmetics (B2, B8)
-- [ ] `src/controllers/coins.controller.ts` — read `coin_balance` from `user` directly; list from `coin_transactions`
-- [ ] `src/schemas/coins.schema.ts`
-- [ ] `src/controllers/cosmetics.controller.ts` — composite PK `(user_id, cosmetic_id)`, equip/unequip via `equipped_at`, one-per-category in application code
-- [ ] `src/schemas/cosmetics.schema.ts`
-- [ ] `src/controllers/shop.controller.ts` — atomic balance pattern, `Cosmetic`→`cosmetics`, `coinCost`→`price`
-- [ ] `src/schemas/shop.schema.ts`
+- [x] `src/controllers/coins.controller.ts` — read `coin_balance` from `user` directly; list from `coin_transactions`
+- [x] `src/schemas/coins.schema.ts`
+- [x] `src/controllers/cosmetics.controller.ts` — composite PK `(user_id, cosmetic_id)`, equip/unequip via `equipped_at`, one-per-category in application code
+- [x] `src/schemas/cosmetics.schema.ts`
+- [x] `src/controllers/shop.controller.ts` — atomic balance pattern, `Cosmetic`→`cosmetics`, `coinCost`→`price`
+- [x] `src/schemas/shop.schema.ts`
 
 ### Subscription & Webhook
-- [ ] `src/controllers/subscription.controller.ts` — `Plan`→`subscription_plan` + `provider_plan`, drop promo branches, drop `receiptData`
-- [ ] `src/schemas/subscription.schema.ts`
-- [ ] `src/controllers/webhook.controller.ts` — dispatch through new webhook_event flow
+- [x] `src/controllers/subscription.controller.ts` — `Plan`→`subscription_plan` + `provider_plan`, drop promo branches, drop `receiptData`
+- [x] `src/schemas/subscription.schema.ts`
+- [x] `src/controllers/webhook.controller.ts` — dispatch through new webhook_event flow
 
 ### Leaderboard
-- [ ] `src/controllers/leaderboard.controller.ts` — minimal renames
-- [ ] `src/schemas/leaderboard.schema.ts`
+- [x] `src/controllers/leaderboard.controller.ts` — minimal renames
+- [x] `src/schemas/leaderboard.schema.ts`
 
 ### Routes for all above
-- [ ] `src/routes/coins.routes.ts`
-- [ ] `src/routes/cosmetics.routes.ts`
-- [ ] `src/routes/shop.routes.ts`
-- [ ] `src/routes/subscription.routes.ts`
-- [ ] `src/routes/webhook.routes.ts`
-- [ ] `src/routes/leaderboard.routes.ts`
+- [x] `src/routes/coins.routes.ts`
+- [x] `src/routes/cosmetics.routes.ts`
+- [x] `src/routes/shop.routes.ts`
+- [x] `src/routes/subscription.routes.ts`
+- [x] `src/routes/webhook.routes.ts`
+- [x] `src/routes/leaderboard.routes.ts`
 
 ---
 
