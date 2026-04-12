@@ -99,15 +99,15 @@
 **Goal:** Fix program templates and assignment flow.
 
 ### Program Assignment (B9)
-- [ ] `src/controllers/program.controller.ts` — snapshot assignment: create `assigned_program` + `assigned_program_routine` + `assigned_program_routine_exercise` in single transaction
-- [ ] `src/schemas/program.schema.ts` — full prescription tree payload schema
-- [ ] `src/routes/program.routes.ts` — route updates
+- [x] `src/controllers/program.controller.ts` — snapshot assignment: create `assigned_program` + `assigned_program_routine` + `assigned_program_routine_exercise` in single transaction
+- [x] `src/schemas/program.schema.ts` — full prescription tree payload schema
+- [x] `src/routes/program.routes.ts` — route updates
 
 ### Standalone (B9 + B11)
-- [ ] `src/controllers/standalone.controller.ts` — snapshot pattern, every workout must belong to an assigned_program_routine
-- [ ] `src/schemas/standalone.schema.ts` — schema updates
-- [ ] `src/routes/standalone.routes.ts` — route updates
-- [ ] `src/routes/routine.routes.ts` — likely delete or restructure (template-level junctions removed)
+- [x] `src/controllers/standalone.controller.ts` — snapshot pattern, every workout must belong to an assigned_program_routine
+- [x] `src/schemas/standalone.schema.ts` — schema updates
+- [x] `src/routes/standalone.routes.ts` — route updates
+- [x] `src/routes/routine.routes.ts` — likely delete or restructure (template-level junctions removed)
 
 ---
 

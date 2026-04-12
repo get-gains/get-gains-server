@@ -14,25 +14,20 @@ import {
   GetPersonalRoutineByIdSchema,
   UpdatePersonalRoutineSchema,
   DeletePersonalRoutineSchema,
-  AddExerciseToRoutineSchema,
-  UpdateRoutineExerciseSchema,
-  RemoveRoutineExerciseSchema,
   CreatePersonalProgramSchema,
   GetPersonalProgramsSchema,
   GetPersonalProgramByIdSchema,
   UpdatePersonalProgramSchema,
   DeletePersonalProgramSchema,
-  AssignRoutineToProgramSchema,
-  UpdateProgramRoutineSchema,
-  RemoveProgramRoutineSchema,
-  ActivateProgramSchema,
-  DeactivateProgramSchema,
   GetStandaloneTodaySchema,
   StartStandaloneSessionSchema,
   CompleteStandaloneSessionSchema,
   GetStandaloneSessionsSchema,
   GetStandaloneSessionByIdSchema,
   GetStandaloneWeeklyStatsSchema,
+  CreateStandaloneAssignmentSchema,
+  GetStandaloneAssignmentsSchema,
+  GetStandaloneAssignmentByIdSchema,
 } from '../schemas/standalone.schema';
 import {
   createPersonalExercise,
@@ -44,20 +39,14 @@ import {
   getPersonalRoutineById,
   updatePersonalRoutine,
   deletePersonalRoutine,
-  addExerciseToRoutine,
-  updateRoutineExercise,
-  removeRoutineExercise,
   createPersonalProgram,
   getPersonalPrograms,
   getPersonalProgramById,
   updatePersonalProgram,
   deletePersonalProgram,
-  assignRoutineToProgram,
-  updateProgramRoutine,
-  removeProgramRoutine,
-  activateProgram,
-  deactivateProgram,
-  getActiveProgram,
+  createStandaloneAssignment,
+  getStandaloneAssignments,
+  getStandaloneAssignmentById,
   getStandaloneToday,
   startStandaloneSession,
   getStandaloneActiveSession,
@@ -69,15 +58,8 @@ import {
 
 const router = Router();
 
-// All standalone routes require authentication + app user, but NO coach and NO subscription
+// ============== Exercise Routes ==============
 
-// ============== Personal Exercise Routes ==============
-
-/**
- * @route   POST /api/standalone/exercises
- * @desc    Create a personal exercise (userId owned)
- * @access  Protected (user)
- */
 router.post(
   '/exercises',
   authenticateSupabaseUser,
@@ -85,12 +67,6 @@ router.post(
   validateRequest(CreatePersonalExerciseSchema),
   createPersonalExercise
 );
-
-/**
- * @route   GET /api/standalone/exercises
- * @desc    List user's exercises + public exercises
- * @access  Protected (user)
- */
 router.get(
   '/exercises',
   authenticateSupabaseUser,
@@ -98,12 +74,6 @@ router.get(
   validateRequest(GetPersonalExercisesSchema),
   getPersonalExercises
 );
-
-/**
- * @route   PATCH /api/standalone/exercises/:exerciseId
- * @desc    Update own exercise (ownership enforced)
- * @access  Protected (user)
- */
 router.patch(
   '/exercises/:exerciseId',
   authenticateSupabaseUser,
@@ -111,12 +81,6 @@ router.patch(
   validateRequest(UpdatePersonalExerciseSchema),
   updatePersonalExercise
 );
-
-/**
- * @route   DELETE /api/standalone/exercises/:exerciseId
- * @desc    Delete own exercise (ownership enforced)
- * @access  Protected (user)
- */
 router.delete(
   '/exercises/:exerciseId',
   authenticateSupabaseUser,
@@ -125,13 +89,8 @@ router.delete(
   deletePersonalExercise
 );
 
-// ============== Personal Routine Routes ==============
+// ============== Routine Routes ==============
 
-/**
- * @route   POST /api/standalone/routines
- * @desc    Create a personal routine
- * @access  Protected (user)
- */
 router.post(
   '/routines',
   authenticateSupabaseUser,
@@ -139,12 +98,6 @@ router.post(
   validateRequest(CreatePersonalRoutineSchema),
   createPersonalRoutine
 );
-
-/**
- * @route   GET /api/standalone/routines
- * @desc    List user's own routines (paginated)
- * @access  Protected (user)
- */
 router.get(
   '/routines',
   authenticateSupabaseUser,
@@ -152,12 +105,6 @@ router.get(
   validateRequest(GetPersonalRoutinesSchema),
   getPersonalRoutines
 );
-
-/**
- * @route   GET /api/standalone/routines/:routineId
- * @desc    Get single routine with exercises
- * @access  Protected (user)
- */
 router.get(
   '/routines/:routineId',
   authenticateSupabaseUser,
@@ -165,12 +112,6 @@ router.get(
   validateRequest(GetPersonalRoutineByIdSchema),
   getPersonalRoutineById
 );
-
-/**
- * @route   PATCH /api/standalone/routines/:routineId
- * @desc    Update routine metadata
- * @access  Protected (user)
- */
 router.patch(
   '/routines/:routineId',
   authenticateSupabaseUser,
@@ -178,12 +119,6 @@ router.patch(
   validateRequest(UpdatePersonalRoutineSchema),
   updatePersonalRoutine
 );
-
-/**
- * @route   DELETE /api/standalone/routines/:routineId
- * @desc    Delete routine (cascades RoutineExercise)
- * @access  Protected (user)
- */
 router.delete(
   '/routines/:routineId',
   authenticateSupabaseUser,
@@ -192,52 +127,8 @@ router.delete(
   deletePersonalRoutine
 );
 
-/**
- * @route   POST /api/standalone/routines/:routineId/exercises
- * @desc    Add exercise to routine
- * @access  Protected (user)
- */
-router.post(
-  '/routines/:routineId/exercises',
-  authenticateSupabaseUser,
-  requireAppUser,
-  validateRequest(AddExerciseToRoutineSchema),
-  addExerciseToRoutine
-);
+// ============== Program Routes ==============
 
-/**
- * @route   PATCH /api/standalone/routines/:routineId/exercises/:routineExerciseId
- * @desc    Update exercise prescription (sets/reps/rest)
- * @access  Protected (user)
- */
-router.patch(
-  '/routines/:routineId/exercises/:routineExerciseId',
-  authenticateSupabaseUser,
-  requireAppUser,
-  validateRequest(UpdateRoutineExerciseSchema),
-  updateRoutineExercise
-);
-
-/**
- * @route   DELETE /api/standalone/routines/:routineId/exercises/:routineExerciseId
- * @desc    Remove exercise from routine
- * @access  Protected (user)
- */
-router.delete(
-  '/routines/:routineId/exercises/:routineExerciseId',
-  authenticateSupabaseUser,
-  requireAppUser,
-  validateRequest(RemoveRoutineExerciseSchema),
-  removeRoutineExercise
-);
-
-// ============== Personal Program Routes ==============
-
-/**
- * @route   POST /api/standalone/programs
- * @desc    Create a personal program
- * @access  Protected (user)
- */
 router.post(
   '/programs',
   authenticateSupabaseUser,
@@ -245,12 +136,6 @@ router.post(
   validateRequest(CreatePersonalProgramSchema),
   createPersonalProgram
 );
-
-/**
- * @route   GET /api/standalone/programs
- * @desc    List user's own programs (paginated)
- * @access  Protected (user)
- */
 router.get(
   '/programs',
   authenticateSupabaseUser,
@@ -258,24 +143,6 @@ router.get(
   validateRequest(GetPersonalProgramsSchema),
   getPersonalPrograms
 );
-
-/**
- * @route   GET /api/standalone/programs/active
- * @desc    Get current active program assignment
- * @access  Protected (user)
- */
-router.get(
-  '/programs/active',
-  authenticateSupabaseUser,
-  requireAppUser,
-  getActiveProgram
-);
-
-/**
- * @route   GET /api/standalone/programs/:programId
- * @desc    Get program with full routine tree
- * @access  Protected (user)
- */
 router.get(
   '/programs/:programId',
   authenticateSupabaseUser,
@@ -283,12 +150,6 @@ router.get(
   validateRequest(GetPersonalProgramByIdSchema),
   getPersonalProgramById
 );
-
-/**
- * @route   PATCH /api/standalone/programs/:programId
- * @desc    Update program name/description
- * @access  Protected (user)
- */
 router.patch(
   '/programs/:programId',
   authenticateSupabaseUser,
@@ -296,12 +157,6 @@ router.patch(
   validateRequest(UpdatePersonalProgramSchema),
   updatePersonalProgram
 );
-
-/**
- * @route   DELETE /api/standalone/programs/:programId
- * @desc    Delete program (cascades ProgramRoutine)
- * @access  Protected (user)
- */
 router.delete(
   '/programs/:programId',
   authenticateSupabaseUser,
@@ -310,80 +165,32 @@ router.delete(
   deletePersonalProgram
 );
 
-/**
- * @route   POST /api/standalone/programs/:programId/routines
- * @desc    Assign user's routine to program day
- * @access  Protected (user)
- */
+// ============== Assignment Routes ==============
+
 router.post(
-  '/programs/:programId/routines',
+  '/assigned-programs',
   authenticateSupabaseUser,
   requireAppUser,
-  validateRequest(AssignRoutineToProgramSchema),
-  assignRoutineToProgram
+  validateRequest(CreateStandaloneAssignmentSchema),
+  createStandaloneAssignment
 );
-
-/**
- * @route   PATCH /api/standalone/programs/:programId/routines/:programRoutineId
- * @desc    Update day number for program-routine
- * @access  Protected (user)
- */
-router.patch(
-  '/programs/:programId/routines/:programRoutineId',
+router.get(
+  '/assigned-programs',
   authenticateSupabaseUser,
   requireAppUser,
-  validateRequest(UpdateProgramRoutineSchema),
-  updateProgramRoutine
+  validateRequest(GetStandaloneAssignmentsSchema),
+  getStandaloneAssignments
 );
-
-/**
- * @route   DELETE /api/standalone/programs/:programId/routines/:programRoutineId
- * @desc    Remove routine from program
- * @access  Protected (user)
- */
-router.delete(
-  '/programs/:programId/routines/:programRoutineId',
+router.get(
+  '/assigned-programs/:assignedProgramId',
   authenticateSupabaseUser,
   requireAppUser,
-  validateRequest(RemoveProgramRoutineSchema),
-  removeProgramRoutine
+  validateRequest(GetStandaloneAssignmentByIdSchema),
+  getStandaloneAssignmentById
 );
 
-// ============== Self-Assignment Routes ==============
+// ============== Today Route ==============
 
-/**
- * @route   POST /api/standalone/programs/:programId/activate
- * @desc    Self-assign / activate a personal program
- * @access  Protected (user)
- */
-router.post(
-  '/programs/:programId/activate',
-  authenticateSupabaseUser,
-  requireAppUser,
-  validateRequest(ActivateProgramSchema),
-  activateProgram
-);
-
-/**
- * @route   POST /api/standalone/programs/:programId/deactivate
- * @desc    Deactivate (set isActive: false)
- * @access  Protected (user)
- */
-router.post(
-  '/programs/:programId/deactivate',
-  authenticateSupabaseUser,
-  requireAppUser,
-  validateRequest(DeactivateProgramSchema),
-  deactivateProgram
-);
-
-// ============== Today's Workout Route ==============
-
-/**
- * @route   GET /api/standalone/today
- * @desc    Resolve today's routine from active standalone program
- * @access  Protected (user)
- */
 router.get(
   '/today',
   authenticateSupabaseUser,
@@ -392,13 +199,8 @@ router.get(
   getStandaloneToday
 );
 
-// ============== Standalone Session Routes ==============
+// ============== Session Routes ==============
 
-/**
- * @route   POST /api/standalone/sessions
- * @desc    Start a session (no subscription required)
- * @access  Protected (user)
- */
 router.post(
   '/sessions',
   authenticateSupabaseUser,
@@ -406,24 +208,12 @@ router.post(
   validateRequest(StartStandaloneSessionSchema),
   startStandaloneSession
 );
-
-/**
- * @route   GET /api/standalone/sessions/active
- * @desc    Get active session
- * @access  Protected (user)
- */
 router.get(
   '/sessions/active',
   authenticateSupabaseUser,
   requireAppUser,
   getStandaloneActiveSession
 );
-
-/**
- * @route   GET /api/standalone/sessions
- * @desc    List past sessions (paginated)
- * @access  Protected (user)
- */
 router.get(
   '/sessions',
   authenticateSupabaseUser,
@@ -431,12 +221,6 @@ router.get(
   validateRequest(GetStandaloneSessionsSchema),
   getStandaloneSessions
 );
-
-/**
- * @route   GET /api/standalone/sessions/:sessionId
- * @desc    Get session detail with sets
- * @access  Protected (user)
- */
 router.get(
   '/sessions/:sessionId',
   authenticateSupabaseUser,
@@ -444,12 +228,6 @@ router.get(
   validateRequest(GetStandaloneSessionByIdSchema),
   getStandaloneSessionById
 );
-
-/**
- * @route   POST /api/standalone/sessions/:sessionId/complete
- * @desc    Complete session
- * @access  Protected (user)
- */
 router.post(
   '/sessions/:sessionId/complete',
   authenticateSupabaseUser,
@@ -458,13 +236,8 @@ router.post(
   completeStandaloneSession
 );
 
-// ============== Standalone Weekly Stats Route ==============
+// ============== Stats Route ==============
 
-/**
- * @route   GET /api/standalone/stats/weekly
- * @desc    Weekly stats scoped to all user sessions
- * @access  Protected (user)
- */
 router.get(
   '/stats/weekly',
   authenticateSupabaseUser,

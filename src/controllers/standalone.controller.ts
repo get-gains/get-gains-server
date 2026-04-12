@@ -2,9 +2,8 @@ import { Request, Response } from 'express';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
 import { sendSuccess, sendSingleError } from '../utils/response';
-import { MuscleGroup } from '@prisma/client';
-import { calculateStreak } from '../utils/streak';
 import { calculateSessionCoins } from '../services/coin-calculation.service';
+import { createAssignment } from '../services/assignment.service';
 import type {
   CreatePersonalExerciseInput,
   GetPersonalExercisesQuery,
@@ -17,39 +16,24 @@ import type {
   UpdatePersonalRoutineParams,
   UpdatePersonalRoutineInput,
   DeletePersonalRoutineParams,
-  AddExerciseToRoutineParams,
-  AddExerciseToRoutineInput,
-  UpdateRoutineExerciseParams,
-  UpdateRoutineExerciseInput,
-  RemoveRoutineExerciseParams,
   CreatePersonalProgramInput,
   GetPersonalProgramsQuery,
   GetPersonalProgramByIdParams,
   UpdatePersonalProgramParams,
   UpdatePersonalProgramInput,
   DeletePersonalProgramParams,
-  AssignRoutineToProgramParams,
-  AssignRoutineToProgramInput,
-  UpdateProgramRoutineParams,
-  UpdateProgramRoutineInput,
-  RemoveProgramRoutineParams,
-  ActivateProgramParams,
-  ActivateProgramInput,
-  DeactivateProgramParams,
-  GetStandaloneTodayQuery,
   StartStandaloneSessionInput,
   CompleteStandaloneSessionParams,
   CompleteStandaloneSessionInput,
   GetStandaloneSessionsQuery,
   GetStandaloneSessionByIdParams,
-  GetStandaloneWeeklyStatsQuery,
+  CreateStandaloneAssignmentInput,
+  GetStandaloneAssignmentsQuery,
+  GetStandaloneAssignmentByIdParams,
 } from '../schemas/standalone.schema';
 
 // ============== Personal Exercise Controllers ==============
 
-/**
- * Create a personal exercise owned by the authenticated user.
- */
 export const createPersonalExercise = async (
   req: Request,
   res: Response
@@ -61,26 +45,13 @@ export const createPersonalExercise = async (
       return;
     }
 
-    const {
-      name,
-      description,
-      primaryMuscleGroup,
-      targetMuscles,
-      equipmentNeeded,
-      isPublic,
-    } = res.locals.validated?.body as CreatePersonalExerciseInput;
+    const { name, description, target_muscles, is_public } = res.locals
+      .validated?.body as CreatePersonalExerciseInput;
 
-    logger.debug('Creating personal exercise', {
-      name,
-      primaryMuscleGroup,
-      userId: appUser.id,
-    });
-
-    // Check for duplicate name within scope: public exercises OR this user's exercises
     const existing = await prisma.exercise.findFirst({
       where: {
         name: { equals: name, mode: 'insensitive' },
-        OR: [{ isPublic: true }, { userId: appUser.id }],
+        OR: [{ is_public: true }, { user_id: appUser.supabase_auth_id }],
       },
     });
 
@@ -98,46 +69,24 @@ export const createPersonalExercise = async (
       data: {
         name,
         description,
-        primaryMuscleGroup: primaryMuscleGroup as MuscleGroup,
-        targetMuscles: targetMuscles as import('@prisma/client').TargetMuscle[],
-        equipmentNeeded,
-        userId: appUser.id,
-        isPublic: isPublic ?? false,
+        target_muscles: target_muscles ?? [],
+        active_segments: [],
+        user_id: appUser.supabase_auth_id,
+        is_public: is_public ?? false,
       },
     });
 
     logger.info('Personal exercise created', {
       exerciseId: exercise.id,
-      userId: appUser.id,
+      user_id: appUser.supabase_auth_id,
     });
-
-    sendSuccess(
-      res,
-      {
-        exercise: {
-          id: exercise.id,
-          name: exercise.name,
-          description: exercise.description,
-          primaryMuscleGroup: exercise.primaryMuscleGroup,
-          targetMuscles: exercise.targetMuscles,
-          equipmentNeeded: exercise.equipmentNeeded,
-          userId: exercise.userId,
-          isPublic: exercise.isPublic,
-          createdAt: exercise.createdAt,
-          updatedAt: exercise.updatedAt,
-        },
-      },
-      201
-    );
+    sendSuccess(res, { exercise }, 201);
   } catch (error) {
     logger.error('Error creating personal exercise', error);
     sendSingleError(res, 'Failed to create exercise', 500);
   }
 };
 
-/**
- * List user's own exercises + all public exercises.
- */
 export const getPersonalExercises = async (
   req: Request,
   res: Response
@@ -149,29 +98,12 @@ export const getPersonalExercises = async (
       return;
     }
 
-    const { limit, offset, muscleGroup, search } = res.locals.validated
+    const { limit, offset, search } = res.locals.validated
       ?.query as GetPersonalExercisesQuery;
 
-    logger.debug('Fetching personal exercises', {
-      userId: appUser.id,
-      muscleGroup,
-      search,
-      limit,
-      offset,
-    });
-
-    // Public exercises + user's own private exercises
-    const visibilityFilter = {
-      OR: [{ isPublic: true }, { userId: appUser.id }],
-    };
-
     const where: Record<string, unknown> = {
-      ...visibilityFilter,
+      OR: [{ is_public: true }, { user_id: appUser.supabase_auth_id }],
     };
-
-    if (muscleGroup) {
-      where.primaryMuscleGroup = muscleGroup.toUpperCase() as MuscleGroup;
-    }
 
     if (search) {
       where.AND = [
@@ -199,20 +131,18 @@ export const getPersonalExercises = async (
         id: e.id,
         name: e.name,
         description: e.description,
-        primaryMuscleGroup: e.primaryMuscleGroup,
-        targetMuscles: e.targetMuscles,
-        equipmentNeeded: e.equipmentNeeded,
-        userId: e.userId,
-        coachId: e.coachId,
-        isPublic: e.isPublic,
-        createdAt: e.createdAt,
-        updatedAt: e.updatedAt,
+        target_muscles: e.target_muscles,
+        active_segments: e.active_segments,
+        user_id: e.user_id,
+        is_public: e.is_public,
+        created_at: e.created_at,
+        updated_at: e.updated_at,
       })),
       pagination: {
         total,
         limit,
         offset,
-        hasMore: offset! + exercises.length < total,
+        hasMore: offset + exercises.length < total,
       },
     });
   } catch (error) {
@@ -221,9 +151,6 @@ export const getPersonalExercises = async (
   }
 };
 
-/**
- * Update a personal exercise (user must own it).
- */
 export const updatePersonalExercise = async (
   req: Request,
   res: Response
@@ -243,12 +170,11 @@ export const updatePersonalExercise = async (
       where: { id: exerciseId },
     });
 
-    if (!exercise || exercise.userId !== appUser.id) {
+    if (!exercise || exercise.user_id !== appUser.supabase_auth_id) {
       sendSingleError(res, 'Exercise not found', 404);
       return;
     }
 
-    // Check for duplicate name if name is being changed
     if (
       updates.name &&
       updates.name.toLowerCase() !== exercise.name.toLowerCase()
@@ -257,10 +183,9 @@ export const updatePersonalExercise = async (
         where: {
           name: { equals: updates.name, mode: 'insensitive' },
           id: { not: exerciseId },
-          OR: [{ isPublic: true }, { userId: appUser.id }],
+          OR: [{ is_public: true }, { user_id: appUser.supabase_auth_id }],
         },
       });
-
       if (duplicate) {
         sendSingleError(
           res,
@@ -279,48 +204,26 @@ export const updatePersonalExercise = async (
         ...(updates.description !== undefined && {
           description: updates.description,
         }),
-        ...(updates.primaryMuscleGroup !== undefined && {
-          primaryMuscleGroup: updates.primaryMuscleGroup as MuscleGroup,
+        ...(updates.target_muscles !== undefined && {
+          target_muscles: updates.target_muscles,
         }),
-        ...(updates.targetMuscles !== undefined && {
-          targetMuscles:
-            updates.targetMuscles as import('@prisma/client').TargetMuscle[],
+        ...(updates.is_public !== undefined && {
+          is_public: updates.is_public,
         }),
-        ...(updates.equipmentNeeded !== undefined && {
-          equipmentNeeded: updates.equipmentNeeded,
-        }),
-        ...(updates.isPublic !== undefined && { isPublic: updates.isPublic }),
       },
     });
 
     logger.info('Personal exercise updated', {
       exerciseId: updated.id,
-      userId: appUser.id,
+      user_id: appUser.supabase_auth_id,
     });
-
-    sendSuccess(res, {
-      exercise: {
-        id: updated.id,
-        name: updated.name,
-        description: updated.description,
-        primaryMuscleGroup: updated.primaryMuscleGroup,
-        targetMuscles: updated.targetMuscles,
-        equipmentNeeded: updated.equipmentNeeded,
-        userId: updated.userId,
-        isPublic: updated.isPublic,
-        createdAt: updated.createdAt,
-        updatedAt: updated.updatedAt,
-      },
-    });
+    sendSuccess(res, { exercise: updated });
   } catch (error) {
     logger.error('Error updating personal exercise', error);
     sendSingleError(res, 'Failed to update exercise', 500);
   }
 };
 
-/**
- * Delete a personal exercise (user must own it).
- */
 export const deletePersonalExercise = async (
   req: Request,
   res: Response
@@ -338,19 +241,16 @@ export const deletePersonalExercise = async (
     const exercise = await prisma.exercise.findUnique({
       where: { id: exerciseId },
     });
-
-    if (!exercise || exercise.userId !== appUser.id) {
+    if (!exercise || exercise.user_id !== appUser.supabase_auth_id) {
       sendSingleError(res, 'Exercise not found', 404);
       return;
     }
 
     await prisma.exercise.delete({ where: { id: exerciseId } });
-
     logger.info('Personal exercise deleted', {
       exerciseId,
-      userId: appUser.id,
+      user_id: appUser.supabase_auth_id,
     });
-
     sendSuccess(res, { deleted: true });
   } catch (error) {
     logger.error('Error deleting personal exercise', error);
@@ -360,9 +260,6 @@ export const deletePersonalExercise = async (
 
 // ============== Personal Routine Controllers ==============
 
-/**
- * Create a personal routine owned by the authenticated user.
- */
 export const createPersonalRoutine = async (
   req: Request,
   res: Response
@@ -374,53 +271,29 @@ export const createPersonalRoutine = async (
       return;
     }
 
-    const {
-      name,
-      description,
-      estimatedDurationMinutes,
-      muscleGroupsTargeted,
-    } = res.locals.validated?.body as CreatePersonalRoutineInput;
+    const { name, description, estimated_duration_minutes } = res.locals
+      .validated?.body as CreatePersonalRoutineInput;
 
     const routine = await prisma.routine.create({
       data: {
-        userId: appUser.id,
+        user_id: appUser.supabase_auth_id,
         name,
         description,
-        estimatedDurationMinutes,
-        muscleGroupsTargeted: muscleGroupsTargeted as MuscleGroup[],
+        estimated_duration_minutes,
       },
     });
 
     logger.info('Personal routine created', {
       routineId: routine.id,
-      userId: appUser.id,
+      user_id: appUser.supabase_auth_id,
     });
-
-    sendSuccess(
-      res,
-      {
-        routine: {
-          id: routine.id,
-          userId: routine.userId,
-          name: routine.name,
-          description: routine.description,
-          estimatedDurationMinutes: routine.estimatedDurationMinutes,
-          muscleGroupsTargeted: routine.muscleGroupsTargeted,
-          createdAt: routine.createdAt,
-          updatedAt: routine.updatedAt,
-        },
-      },
-      201
-    );
+    sendSuccess(res, { routine }, 201);
   } catch (error) {
     logger.error('Error creating personal routine', error);
     sendSingleError(res, 'Failed to create routine', 500);
   }
 };
 
-/**
- * List all routines owned by the authenticated user.
- */
 export const getPersonalRoutines = async (
   req: Request,
   res: Response
@@ -437,35 +310,21 @@ export const getPersonalRoutines = async (
 
     const [routines, total] = await Promise.all([
       prisma.routine.findMany({
-        where: { userId: appUser.id },
-        include: {
-          _count: { select: { routineExercises: true, programRoutines: true } },
-        },
-        orderBy: { createdAt: 'desc' },
+        where: { user_id: appUser.supabase_auth_id },
+        orderBy: { created_at: 'desc' },
         take: limit,
         skip: offset,
       }),
-      prisma.routine.count({ where: { userId: appUser.id } }),
+      prisma.routine.count({ where: { user_id: appUser.supabase_auth_id } }),
     ]);
 
     sendSuccess(res, {
-      routines: routines.map((r) => ({
-        id: r.id,
-        userId: r.userId,
-        name: r.name,
-        description: r.description,
-        estimatedDurationMinutes: r.estimatedDurationMinutes,
-        muscleGroupsTargeted: r.muscleGroupsTargeted,
-        exerciseCount: r._count.routineExercises,
-        programCount: r._count.programRoutines,
-        createdAt: r.createdAt,
-        updatedAt: r.updatedAt,
-      })),
+      routines,
       pagination: {
         total,
         limit,
         offset,
-        hasMore: offset! + routines.length < total,
+        hasMore: offset + routines.length < total,
       },
     });
   } catch (error) {
@@ -474,9 +333,6 @@ export const getPersonalRoutines = async (
   }
 };
 
-/**
- * Get a single routine with exercises (user must own it).
- */
 export const getPersonalRoutineById = async (
   req: Request,
   res: Response
@@ -493,57 +349,19 @@ export const getPersonalRoutineById = async (
 
     const routine = await prisma.routine.findUnique({
       where: { id: routineId },
-      include: {
-        routineExercises: {
-          include: { exercise: true },
-          orderBy: { orderInRoutine: 'asc' },
-        },
-      },
     });
-
-    if (!routine || routine.userId !== appUser.id) {
+    if (!routine || routine.user_id !== appUser.supabase_auth_id) {
       sendSingleError(res, 'Routine not found', 404);
       return;
     }
 
-    sendSuccess(res, {
-      routine: {
-        id: routine.id,
-        userId: routine.userId,
-        name: routine.name,
-        description: routine.description,
-        estimatedDurationMinutes: routine.estimatedDurationMinutes,
-        muscleGroupsTargeted: routine.muscleGroupsTargeted,
-        exercises: routine.routineExercises.map((re) => ({
-          id: re.id,
-          exerciseId: re.exerciseId,
-          sets: re.sets,
-          repsMin: re.repsMin,
-          repsMax: re.repsMax,
-          restSeconds: re.restSeconds,
-          orderInRoutine: re.orderInRoutine,
-          notes: re.notes,
-          exercise: {
-            id: re.exercise.id,
-            name: re.exercise.name,
-            description: re.exercise.description,
-            primaryMuscleGroup: re.exercise.primaryMuscleGroup,
-            equipmentNeeded: re.exercise.equipmentNeeded,
-          },
-        })),
-        createdAt: routine.createdAt,
-        updatedAt: routine.updatedAt,
-      },
-    });
+    sendSuccess(res, { routine });
   } catch (error) {
     logger.error('Error fetching personal routine', error);
     sendSingleError(res, 'Failed to fetch routine', 500);
   }
 };
 
-/**
- * Update a personal routine (user must own it).
- */
 export const updatePersonalRoutine = async (
   req: Request,
   res: Response
@@ -557,18 +375,13 @@ export const updatePersonalRoutine = async (
 
     const { routineId } = res.locals.validated
       ?.params as UpdatePersonalRoutineParams;
-    const {
-      name,
-      description,
-      estimatedDurationMinutes,
-      muscleGroupsTargeted,
-    } = res.locals.validated?.body as UpdatePersonalRoutineInput;
+    const { name, description, estimated_duration_minutes } = res.locals
+      .validated?.body as UpdatePersonalRoutineInput;
 
     if (
       name === undefined &&
       description === undefined &&
-      estimatedDurationMinutes === undefined &&
-      muscleGroupsTargeted === undefined
+      estimated_duration_minutes === undefined
     ) {
       sendSingleError(res, 'At least one field must be provided', 400);
       return;
@@ -577,7 +390,7 @@ export const updatePersonalRoutine = async (
     const existing = await prisma.routine.findUnique({
       where: { id: routineId },
     });
-    if (!existing || existing.userId !== appUser.id) {
+    if (!existing || existing.user_id !== appUser.supabase_auth_id) {
       sendSingleError(res, 'Routine not found', 404);
       return;
     }
@@ -587,41 +400,23 @@ export const updatePersonalRoutine = async (
       data: {
         ...(name !== undefined && { name }),
         ...(description !== undefined && { description }),
-        ...(estimatedDurationMinutes !== undefined && {
-          estimatedDurationMinutes,
-        }),
-        ...(muscleGroupsTargeted !== undefined && {
-          muscleGroupsTargeted: muscleGroupsTargeted as MuscleGroup[],
+        ...(estimated_duration_minutes !== undefined && {
+          estimated_duration_minutes,
         }),
       },
     });
 
     logger.info('Personal routine updated', {
       routineId,
-      userId: appUser.id,
+      user_id: appUser.supabase_auth_id,
     });
-
-    sendSuccess(res, {
-      routine: {
-        id: routine.id,
-        userId: routine.userId,
-        name: routine.name,
-        description: routine.description,
-        estimatedDurationMinutes: routine.estimatedDurationMinutes,
-        muscleGroupsTargeted: routine.muscleGroupsTargeted,
-        createdAt: routine.createdAt,
-        updatedAt: routine.updatedAt,
-      },
-    });
+    sendSuccess(res, { routine });
   } catch (error) {
     logger.error('Error updating personal routine', error);
     sendSingleError(res, 'Failed to update routine', 500);
   }
 };
 
-/**
- * Delete a personal routine (user must own it). Cascades to RoutineExercise.
- */
 export const deletePersonalRoutine = async (
   req: Request,
   res: Response
@@ -639,220 +434,25 @@ export const deletePersonalRoutine = async (
     const existing = await prisma.routine.findUnique({
       where: { id: routineId },
     });
-    if (!existing || existing.userId !== appUser.id) {
+    if (!existing || existing.user_id !== appUser.supabase_auth_id) {
       sendSingleError(res, 'Routine not found', 404);
       return;
     }
 
     await prisma.routine.delete({ where: { id: routineId } });
-
-    logger.info('Personal routine deleted', { routineId, userId: appUser.id });
-    sendSuccess(res, { message: 'Routine deleted successfully' });
+    logger.info('Personal routine deleted', {
+      routineId,
+      user_id: appUser.supabase_auth_id,
+    });
+    sendSuccess(res, { deleted: true });
   } catch (error) {
     logger.error('Error deleting personal routine', error);
     sendSingleError(res, 'Failed to delete routine', 500);
   }
 };
 
-// ============== Routine Exercise Junction Controllers ==============
-
-/**
- * Add an exercise to a user's routine.
- * Exercise must be public or owned by the user.
- */
-export const addExerciseToRoutine = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  try {
-    const appUser = req.appUser;
-    if (!appUser) {
-      sendSingleError(res, 'User required', 401);
-      return;
-    }
-
-    const { routineId } = res.locals.validated
-      ?.params as AddExerciseToRoutineParams;
-    const data = res.locals.validated?.body as AddExerciseToRoutineInput;
-
-    // Verify routine ownership
-    const routine = await prisma.routine.findUnique({
-      where: { id: routineId },
-    });
-    if (!routine || routine.userId !== appUser.id) {
-      sendSingleError(res, 'Routine not found', 404);
-      return;
-    }
-
-    // Verify exercise is accessible (public or user-owned)
-    const exercise = await prisma.exercise.findUnique({
-      where: { id: data.exerciseId },
-    });
-    if (!exercise) {
-      sendSingleError(res, 'Exercise not found', 404);
-      return;
-    }
-    // User can add public exercises or their own private exercises
-    // Cannot add coach-private exercises (isPublic=false, coachId set, userId null)
-    if (!exercise.isPublic && exercise.userId !== appUser.id) {
-      sendSingleError(res, 'Exercise not found', 404);
-      return;
-    }
-
-    const routineExercise = await prisma.routineExercise.create({
-      data: {
-        routineId,
-        exerciseId: data.exerciseId,
-        sets: data.sets,
-        repsMin: data.repsMin,
-        repsMax: data.repsMax,
-        restSeconds: data.restSeconds,
-        orderInRoutine: data.orderInRoutine,
-        notes: data.notes,
-      },
-    });
-
-    logger.info('Exercise added to personal routine', {
-      routineId,
-      exerciseId: data.exerciseId,
-      userId: appUser.id,
-    });
-    sendSuccess(res, { routineExercise }, 201);
-  } catch (error) {
-    if ((error as { code?: string }).code === 'P2002') {
-      sendSingleError(res, 'This exercise is already in the routine', 409);
-      return;
-    }
-    logger.error('Error adding exercise to routine', error);
-    sendSingleError(res, 'Failed to add exercise to routine', 500);
-  }
-};
-
-/**
- * Update the prescription (sets/reps/rest/order/notes) for an exercise in a routine.
- */
-export const updateRoutineExercise = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  try {
-    const appUser = req.appUser;
-    if (!appUser) {
-      sendSingleError(res, 'User required', 401);
-      return;
-    }
-
-    const { routineId, routineExerciseId } = res.locals.validated
-      ?.params as UpdateRoutineExerciseParams;
-    const { sets, repsMin, repsMax, restSeconds, orderInRoutine, notes } = res
-      .locals.validated?.body as UpdateRoutineExerciseInput;
-
-    if (
-      sets === undefined &&
-      repsMin === undefined &&
-      repsMax === undefined &&
-      restSeconds === undefined &&
-      orderInRoutine === undefined &&
-      notes === undefined
-    ) {
-      sendSingleError(res, 'At least one field must be provided', 400);
-      return;
-    }
-
-    // Verify routine ownership
-    const routine = await prisma.routine.findUnique({
-      where: { id: routineId },
-    });
-    if (!routine || routine.userId !== appUser.id) {
-      sendSingleError(res, 'Routine not found', 404);
-      return;
-    }
-
-    const routineExercise = await prisma.routineExercise.findUnique({
-      where: { id: routineExerciseId },
-    });
-    if (!routineExercise || routineExercise.routineId !== routineId) {
-      sendSingleError(res, 'Routine exercise not found', 404);
-      return;
-    }
-
-    const updated = await prisma.routineExercise.update({
-      where: { id: routineExerciseId },
-      data: {
-        ...(sets !== undefined && { sets }),
-        ...(repsMin !== undefined && { repsMin }),
-        ...(repsMax !== undefined && { repsMax }),
-        ...(restSeconds !== undefined && { restSeconds }),
-        ...(orderInRoutine !== undefined && { orderInRoutine }),
-        ...(notes !== undefined && { notes }),
-      },
-    });
-
-    logger.info('Routine exercise updated', {
-      routineExerciseId,
-      routineId,
-      userId: appUser.id,
-    });
-    sendSuccess(res, { routineExercise: updated });
-  } catch (error) {
-    logger.error('Error updating routine exercise', error);
-    sendSingleError(res, 'Failed to update routine exercise', 500);
-  }
-};
-
-/**
- * Remove an exercise from a routine. Does NOT delete the Exercise.
- */
-export const removeRoutineExercise = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  try {
-    const appUser = req.appUser;
-    if (!appUser) {
-      sendSingleError(res, 'User required', 401);
-      return;
-    }
-
-    const { routineId, routineExerciseId } = res.locals.validated
-      ?.params as RemoveRoutineExerciseParams;
-
-    // Verify routine ownership
-    const routine = await prisma.routine.findUnique({
-      where: { id: routineId },
-    });
-    if (!routine || routine.userId !== appUser.id) {
-      sendSingleError(res, 'Routine not found', 404);
-      return;
-    }
-
-    const routineExercise = await prisma.routineExercise.findUnique({
-      where: { id: routineExerciseId },
-    });
-    if (!routineExercise || routineExercise.routineId !== routineId) {
-      sendSingleError(res, 'Routine exercise not found', 404);
-      return;
-    }
-
-    await prisma.routineExercise.delete({ where: { id: routineExerciseId } });
-
-    logger.info('Routine exercise removed', {
-      routineExerciseId,
-      routineId,
-      userId: appUser.id,
-    });
-    sendSuccess(res, { message: 'Exercise removed from routine successfully' });
-  } catch (error) {
-    logger.error('Error removing routine exercise', error);
-    sendSingleError(res, 'Failed to remove exercise from routine', 500);
-  }
-};
-
 // ============== Personal Program Controllers ==============
 
-/**
- * Create a personal program owned by the authenticated user.
- */
 export const createPersonalProgram = async (
   req: Request,
   res: Response
@@ -868,16 +468,12 @@ export const createPersonalProgram = async (
       ?.body as CreatePersonalProgramInput;
 
     const program = await prisma.program.create({
-      data: {
-        name,
-        description,
-        userId: appUser.id,
-      },
+      data: { user_id: appUser.supabase_auth_id, name, description },
     });
 
     logger.info('Personal program created', {
       programId: program.id,
-      userId: appUser.id,
+      user_id: appUser.supabase_auth_id,
     });
     sendSuccess(res, { program }, 201);
   } catch (error) {
@@ -886,9 +482,6 @@ export const createPersonalProgram = async (
   }
 };
 
-/**
- * List all programs owned by the authenticated user.
- */
 export const getPersonalPrograms = async (
   req: Request,
   res: Response
@@ -905,33 +498,21 @@ export const getPersonalPrograms = async (
 
     const [programs, total] = await Promise.all([
       prisma.program.findMany({
-        where: { userId: appUser.id },
-        include: {
-          _count: { select: { programRoutines: true, assignedPrograms: true } },
-        },
-        orderBy: { createdAt: 'desc' },
+        where: { user_id: appUser.supabase_auth_id },
+        orderBy: { created_at: 'desc' },
         take: limit,
         skip: offset,
       }),
-      prisma.program.count({ where: { userId: appUser.id } }),
+      prisma.program.count({ where: { user_id: appUser.supabase_auth_id } }),
     ]);
 
     sendSuccess(res, {
-      programs: programs.map((p) => ({
-        id: p.id,
-        name: p.name,
-        description: p.description,
-        userId: p.userId,
-        routineCount: p._count.programRoutines,
-        assignedCount: p._count.assignedPrograms,
-        createdAt: p.createdAt,
-        updatedAt: p.updatedAt,
-      })),
+      programs,
       pagination: {
         total,
         limit,
         offset,
-        hasMore: offset! + programs.length < total,
+        hasMore: offset + programs.length < total,
       },
     });
   } catch (error) {
@@ -940,9 +521,6 @@ export const getPersonalPrograms = async (
   }
 };
 
-/**
- * Get a single program with its full routine/exercise tree (user must own it).
- */
 export const getPersonalProgramById = async (
   req: Request,
   res: Response
@@ -959,77 +537,19 @@ export const getPersonalProgramById = async (
 
     const program = await prisma.program.findUnique({
       where: { id: programId },
-      include: {
-        programRoutines: {
-          include: {
-            routine: {
-              include: {
-                routineExercises: {
-                  include: { exercise: true },
-                  orderBy: { orderInRoutine: 'asc' },
-                },
-              },
-            },
-          },
-          orderBy: { dayNumber: 'asc' },
-        },
-      },
     });
-
-    if (!program || program.userId !== appUser.id) {
+    if (!program || program.user_id !== appUser.supabase_auth_id) {
       sendSingleError(res, 'Program not found', 404);
       return;
     }
 
-    sendSuccess(res, {
-      program: {
-        id: program.id,
-        name: program.name,
-        description: program.description,
-        userId: program.userId,
-        createdAt: program.createdAt,
-        updatedAt: program.updatedAt,
-        routines: program.programRoutines.map((pr) => ({
-          id: pr.id,
-          dayNumber: pr.dayNumber,
-          routine: {
-            id: pr.routine.id,
-            name: pr.routine.name,
-            description: pr.routine.description,
-            estimatedDurationMinutes: pr.routine.estimatedDurationMinutes,
-            muscleGroupsTargeted: pr.routine.muscleGroupsTargeted,
-            exercises: pr.routine.routineExercises.map((re) => ({
-              id: re.id,
-              exerciseId: re.exerciseId,
-              sets: re.sets,
-              repsMin: re.repsMin,
-              repsMax: re.repsMax,
-              restSeconds: re.restSeconds,
-              orderInRoutine: re.orderInRoutine,
-              notes: re.notes,
-              exercise: {
-                id: re.exercise.id,
-                name: re.exercise.name,
-                description: re.exercise.description,
-                primaryMuscleGroup: re.exercise.primaryMuscleGroup,
-                equipmentNeeded: re.exercise.equipmentNeeded,
-              },
-            })),
-            createdAt: pr.routine.createdAt,
-            updatedAt: pr.routine.updatedAt,
-          },
-        })),
-      },
-    });
+    sendSuccess(res, { program });
   } catch (error) {
     logger.error('Error fetching personal program', error);
     sendSingleError(res, 'Failed to fetch program', 500);
   }
 };
 
-/**
- * Update a personal program's name or description.
- */
 export const updatePersonalProgram = async (
   req: Request,
   res: Response
@@ -1047,18 +567,14 @@ export const updatePersonalProgram = async (
       ?.body as UpdatePersonalProgramInput;
 
     if (!name && !description) {
-      sendSingleError(
-        res,
-        'At least one field (name, description) must be provided',
-        400
-      );
+      sendSingleError(res, 'At least one field must be provided', 400);
       return;
     }
 
     const existing = await prisma.program.findUnique({
       where: { id: programId },
     });
-    if (!existing || existing.userId !== appUser.id) {
+    if (!existing || existing.user_id !== appUser.supabase_auth_id) {
       sendSingleError(res, 'Program not found', 404);
       return;
     }
@@ -1073,7 +589,7 @@ export const updatePersonalProgram = async (
 
     logger.info('Personal program updated', {
       programId,
-      userId: appUser.id,
+      user_id: appUser.supabase_auth_id,
     });
     sendSuccess(res, { program });
   } catch (error) {
@@ -1082,9 +598,6 @@ export const updatePersonalProgram = async (
   }
 };
 
-/**
- * Delete a personal program (user must own it). Cascades to ProgramRoutine.
- */
 export const deletePersonalProgram = async (
   req: Request,
   res: Response
@@ -1102,28 +615,26 @@ export const deletePersonalProgram = async (
     const existing = await prisma.program.findUnique({
       where: { id: programId },
     });
-    if (!existing || existing.userId !== appUser.id) {
+    if (!existing || existing.user_id !== appUser.supabase_auth_id) {
       sendSingleError(res, 'Program not found', 404);
       return;
     }
 
     await prisma.program.delete({ where: { id: programId } });
-
-    logger.info('Personal program deleted', { programId, userId: appUser.id });
-    sendSuccess(res, { message: 'Program deleted successfully' });
+    logger.info('Personal program deleted', {
+      programId,
+      user_id: appUser.supabase_auth_id,
+    });
+    sendSuccess(res, { deleted: true });
   } catch (error) {
     logger.error('Error deleting personal program', error);
     sendSingleError(res, 'Failed to delete program', 500);
   }
 };
 
-// ============== Program Routine Junction Controllers ==============
+// ============== Standalone Assignment Controllers ==============
 
-/**
- * Assign a user's routine to a program day slot.
- * Both program and routine must belong to the authenticated user.
- */
-export const assignRoutineToProgram = async (
+export const createStandaloneAssignment = async (
   req: Request,
   res: Response
 ): Promise<void> => {
@@ -1134,494 +645,94 @@ export const assignRoutineToProgram = async (
       return;
     }
 
-    const { programId } = res.locals.validated
-      ?.params as AssignRoutineToProgramParams;
-    const { routineId, dayNumber } = res.locals.validated
-      ?.body as AssignRoutineToProgramInput;
+    const { program_id, notes, start_date, end_date, routines } = res.locals
+      .validated?.body as CreateStandaloneAssignmentInput;
 
-    const [program, routine] = await Promise.all([
-      prisma.program.findUnique({ where: { id: programId } }),
-      prisma.routine.findUnique({ where: { id: routineId } }),
+    // Verify user owns the program
+    const program = await prisma.program.findUnique({
+      where: { id: program_id },
+    });
+    if (!program || program.user_id !== appUser.supabase_auth_id) {
+      sendSingleError(res, 'Program not found', 404);
+      return;
+    }
+
+    const assignment = await createAssignment({
+      user_id: appUser.supabase_auth_id,
+      program_id,
+      notes,
+      start_date,
+      end_date,
+      routines,
+    });
+
+    logger.info('Standalone assignment created', {
+      assignmentId: assignment.id,
+      user_id: appUser.supabase_auth_id,
+      program_id,
+    });
+    sendSuccess(res, { assignment }, 201);
+  } catch (error) {
+    logger.error('Error creating standalone assignment', error);
+    sendSingleError(res, 'Failed to create assignment', 500);
+  }
+};
+
+export const getStandaloneAssignments = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const appUser = req.appUser;
+    if (!appUser) {
+      sendSingleError(res, 'User required', 401);
+      return;
+    }
+
+    const { limit, offset } = res.locals.validated
+      ?.query as GetStandaloneAssignmentsQuery;
+
+    const [assignments, total] = await Promise.all([
+      prisma.assigned_program.findMany({
+        where: { user_id: appUser.supabase_auth_id },
+        include: {
+          _count: { select: { assigned_program_routines: true } },
+        },
+        orderBy: { created_at: 'desc' },
+        take: limit,
+        skip: offset,
+      }),
+      prisma.assigned_program.count({
+        where: { user_id: appUser.supabase_auth_id },
+      }),
     ]);
 
-    if (!program || program.userId !== appUser.id) {
-      sendSingleError(res, 'Program not found', 404);
-      return;
-    }
-
-    if (!routine || routine.userId !== appUser.id) {
-      sendSingleError(res, 'Routine not found', 404);
-      return;
-    }
-
-    const assignment = await prisma.programRoutine.create({
-      data: { programId, routineId, dayNumber },
-    });
-
-    logger.info('Routine assigned to personal program', {
-      programId,
-      routineId,
-      dayNumber,
-      userId: appUser.id,
-    });
-    sendSuccess(res, { assignment }, 201);
-  } catch (error) {
-    if ((error as { code?: string }).code === 'P2002') {
-      sendSingleError(
-        res,
-        'This routine is already assigned to this program',
-        409
-      );
-      return;
-    }
-    logger.error('Error assigning routine to program', error);
-    sendSingleError(res, 'Failed to assign routine to program', 500);
-  }
-};
-
-/**
- * Reassign a routine to a different day number within a program.
- */
-export const updateProgramRoutine = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  try {
-    const appUser = req.appUser;
-    if (!appUser) {
-      sendSingleError(res, 'User required', 401);
-      return;
-    }
-
-    const { programId, programRoutineId } = res.locals.validated
-      ?.params as UpdateProgramRoutineParams;
-    const { dayNumber } = res.locals.validated
-      ?.body as UpdateProgramRoutineInput;
-
-    const program = await prisma.program.findUnique({
-      where: { id: programId },
-    });
-    if (!program || program.userId !== appUser.id) {
-      sendSingleError(res, 'Program not found', 404);
-      return;
-    }
-
-    const programRoutine = await prisma.programRoutine.findUnique({
-      where: { id: programRoutineId },
-    });
-    if (!programRoutine || programRoutine.programId !== programId) {
-      sendSingleError(res, 'Program routine not found', 404);
-      return;
-    }
-
-    const updated = await prisma.programRoutine.update({
-      where: { id: programRoutineId },
-      data: { dayNumber },
-    });
-
-    logger.info('Program routine day updated', {
-      programRoutineId,
-      dayNumber,
-      userId: appUser.id,
-    });
-    sendSuccess(res, { programRoutine: updated });
-  } catch (error) {
-    logger.error('Error updating program routine', error);
-    sendSingleError(res, 'Failed to update program routine', 500);
-  }
-};
-
-/**
- * Remove a routine from a program day slot. Does NOT delete the Routine.
- */
-export const removeProgramRoutine = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  try {
-    const appUser = req.appUser;
-    if (!appUser) {
-      sendSingleError(res, 'User required', 401);
-      return;
-    }
-
-    const { programId, programRoutineId } = res.locals.validated
-      ?.params as RemoveProgramRoutineParams;
-
-    const program = await prisma.program.findUnique({
-      where: { id: programId },
-    });
-    if (!program || program.userId !== appUser.id) {
-      sendSingleError(res, 'Program not found', 404);
-      return;
-    }
-
-    const programRoutine = await prisma.programRoutine.findUnique({
-      where: { id: programRoutineId },
-    });
-    if (!programRoutine || programRoutine.programId !== programId) {
-      sendSingleError(res, 'Program routine not found', 404);
-      return;
-    }
-
-    await prisma.programRoutine.delete({ where: { id: programRoutineId } });
-
-    logger.info('Program routine removed', {
-      programRoutineId,
-      programId,
-      userId: appUser.id,
-    });
-    sendSuccess(res, { message: 'Routine removed from program successfully' });
-  } catch (error) {
-    logger.error('Error removing program routine', error);
-    sendSingleError(res, 'Failed to remove routine from program', 500);
-  }
-};
-
-// ============== Self-Assignment Controllers ==============
-
-/**
- * Activate (self-assign) a personal program.
- * Creates an AssignedProgram row with userId = self.
- * Only one active standalone assignment at a time.
- */
-export const activateProgram = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  try {
-    const appUser = req.appUser;
-    if (!appUser) {
-      sendSingleError(res, 'User required', 401);
-      return;
-    }
-
-    const { programId } = res.locals.validated?.params as ActivateProgramParams;
-    const { startDate } = res.locals.validated?.body as ActivateProgramInput;
-
-    // Verify program ownership
-    const program = await prisma.program.findUnique({
-      where: { id: programId },
-    });
-    if (!program || program.userId !== appUser.id) {
-      sendSingleError(res, 'Program not found', 404);
-      return;
-    }
-
-    // Deactivate any currently active standalone program assignments
-    // (only deactivate user-owned programs; leave coach-assigned ones alone)
-    const activeAssignments = await prisma.assignedProgram.findMany({
-      where: {
-        userId: appUser.id,
-        isActive: true,
-        program: { userId: appUser.id },
-      },
-    });
-
-    if (activeAssignments.length > 0) {
-      await prisma.assignedProgram.updateMany({
-        where: {
-          id: { in: activeAssignments.map((a) => a.id) },
-        },
-        data: { isActive: false },
-      });
-    }
-
-    // Upsert the assignment (user may have previously assigned this program)
-    const assignment = await prisma.assignedProgram.upsert({
-      where: {
-        userId_programId: {
-          userId: appUser.id,
-          programId,
-        },
-      },
-      update: {
-        isActive: true,
-        startDate: startDate ? new Date(startDate) : new Date(),
-        endDate: null,
-      },
-      create: {
-        userId: appUser.id,
-        programId,
-        startDate: startDate ? new Date(startDate) : new Date(),
-        isActive: true,
-      },
-    });
-
-    logger.info('Standalone program activated', {
-      assignmentId: assignment.id,
-      programId,
-      userId: appUser.id,
-    });
-
-    sendSuccess(res, { assignment }, 201);
-  } catch (error) {
-    logger.error('Error activating standalone program', error);
-    sendSingleError(res, 'Failed to activate program', 500);
-  }
-};
-
-/**
- * Deactivate a personal program assignment.
- */
-export const deactivateProgram = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  try {
-    const appUser = req.appUser;
-    if (!appUser) {
-      sendSingleError(res, 'User required', 401);
-      return;
-    }
-
-    const { programId } = res.locals.validated
-      ?.params as DeactivateProgramParams;
-
-    // Verify program ownership
-    const program = await prisma.program.findUnique({
-      where: { id: programId },
-    });
-    if (!program || program.userId !== appUser.id) {
-      sendSingleError(res, 'Program not found', 404);
-      return;
-    }
-
-    const assignment = await prisma.assignedProgram.findUnique({
-      where: {
-        userId_programId: {
-          userId: appUser.id,
-          programId,
-        },
-      },
-    });
-
-    if (!assignment || !assignment.isActive) {
-      sendSingleError(res, 'No active assignment found for this program', 404);
-      return;
-    }
-
-    const updated = await prisma.assignedProgram.update({
-      where: { id: assignment.id },
-      data: { isActive: false, endDate: new Date() },
-    });
-
-    logger.info('Standalone program deactivated', {
-      assignmentId: updated.id,
-      programId,
-      userId: appUser.id,
-    });
-
-    sendSuccess(res, { assignment: updated });
-  } catch (error) {
-    logger.error('Error deactivating standalone program', error);
-    sendSingleError(res, 'Failed to deactivate program', 500);
-  }
-};
-
-/**
- * Get the current active standalone program assignment.
- */
-export const getActiveProgram = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  try {
-    const appUser = req.appUser;
-    if (!appUser) {
-      sendSingleError(res, 'User required', 401);
-      return;
-    }
-
-    const assignment = await prisma.assignedProgram.findFirst({
-      where: {
-        userId: appUser.id,
-        isActive: true,
-        program: { userId: appUser.id },
-      },
-      include: {
-        program: {
-          include: {
-            programRoutines: {
-              include: {
-                routine: true,
-              },
-              orderBy: { dayNumber: 'asc' },
-            },
-          },
-        },
-      },
-      orderBy: { startDate: 'desc' },
-    });
-
-    sendSuccess(res, { assignment });
-  } catch (error) {
-    logger.error('Error fetching active standalone program', error);
-    sendSingleError(res, 'Failed to fetch active program', 500);
-  }
-};
-
-// ============== Today's Workout Controller ==============
-
-/**
- * Resolve today's routine from the user's active standalone program.
- * Uses day-cycling logic identical to the coach-assigned version.
- */
-export const getStandaloneToday = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  try {
-    const appUser = req.appUser;
-    if (!appUser) {
-      sendSingleError(res, 'User required', 401);
-      return;
-    }
-
-    const { assignedProgramId: queryProgramId } = res.locals.validated
-      ?.query as GetStandaloneTodayQuery;
-
-    // Find active standalone assignment (only user-owned programs)
-    const assignment = await prisma.assignedProgram.findFirst({
-      where: {
-        userId: appUser.id,
-        isActive: true,
-        program: { userId: appUser.id },
-        ...(queryProgramId && { id: queryProgramId }),
-      },
-      include: {
-        program: {
-          include: {
-            programRoutines: {
-              include: {
-                routine: {
-                  include: {
-                    routineExercises: {
-                      include: { exercise: true },
-                      orderBy: { orderInRoutine: 'asc' },
-                    },
-                  },
-                },
-              },
-              orderBy: { dayNumber: 'asc' },
-            },
-          },
-        },
-      },
-      orderBy: { startDate: 'desc' },
-    });
-
-    if (!assignment) {
-      sendSingleError(res, 'No active standalone program assigned', 404);
-      return;
-    }
-
-    const programRoutines = assignment.program.programRoutines;
-    if (programRoutines.length === 0) {
-      sendSuccess(res, {
-        today: null,
-        isRestDay: true,
-        message: 'Program has no routines scheduled',
-        assignedProgramId: assignment.id,
-        programName: assignment.program.name,
-      });
-      return;
-    }
-
-    const today = new Date();
-    const startDate = assignment.startDate;
-    const msPerDay = 1000 * 60 * 60 * 24;
-    const daysSinceStart = Math.floor(
-      (today.getTime() - startDate.getTime()) / msPerDay
-    );
-
-    // Program hasn't started yet
-    if (daysSinceStart < 0) {
-      sendSuccess(res, {
-        today: null,
-        isRestDay: false,
-        message: 'Program has not started yet',
-        startDate: assignment.startDate,
-        assignedProgramId: assignment.id,
-        programName: assignment.program.name,
-      });
-      return;
-    }
-
-    const totalCycleDays = Math.max(
-      ...programRoutines.map((pr) => pr.dayNumber)
-    );
-    const cycleDayNumber = (daysSinceStart % totalCycleDays) + 1;
-
-    logger.debug('Standalone today workout calculation', {
-      userId: appUser.id,
-      daysSinceStart,
-      totalCycleDays,
-      cycleDayNumber,
-    });
-
-    const todayProgramRoutine = programRoutines.find(
-      (pr) => pr.dayNumber === cycleDayNumber
-    );
-
-    if (!todayProgramRoutine) {
-      sendSuccess(res, {
-        today: null,
-        isRestDay: true,
-        dayNumber: cycleDayNumber,
-        assignedProgramId: assignment.id,
-        programName: assignment.program.name,
-      });
-      return;
-    }
-
-    const { routine } = todayProgramRoutine;
-
     sendSuccess(res, {
-      today: {
-        programRoutineId: todayProgramRoutine.id,
-        dayNumber: todayProgramRoutine.dayNumber,
-        assignedProgramId: assignment.id,
-        programName: assignment.program.name,
-        routine: {
-          id: routine.id,
-          name: routine.name,
-          description: routine.description,
-          estimatedDurationMinutes: routine.estimatedDurationMinutes,
-          muscleGroupsTargeted: routine.muscleGroupsTargeted,
-          exercises: routine.routineExercises.map((re) => ({
-            id: re.id,
-            exerciseId: re.exerciseId,
-            sets: re.sets,
-            repsMin: re.repsMin,
-            repsMax: re.repsMax,
-            restSeconds: re.restSeconds,
-            orderInRoutine: re.orderInRoutine,
-            notes: re.notes,
-            exercise: {
-              id: re.exercise.id,
-              name: re.exercise.name,
-              description: re.exercise.description,
-              primaryMuscleGroup: re.exercise.primaryMuscleGroup,
-              equipmentNeeded: re.exercise.equipmentNeeded,
-            },
-          })),
-        },
+      assignments: assignments.map((a) => ({
+        id: a.id,
+        program_id: a.program_id,
+        user_id: a.user_id,
+        notes: a.notes,
+        start_date: a.start_date,
+        end_date: a.end_date,
+        routine_count: a._count.assigned_program_routines,
+        created_at: a.created_at,
+        updated_at: a.updated_at,
+      })),
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + assignments.length < total,
       },
-      isRestDay: false,
     });
   } catch (error) {
-    logger.error('Error fetching standalone today workout', error);
-    sendSingleError(res, 'Failed to fetch today workout', 500);
+    logger.error('Error fetching standalone assignments', error);
+    sendSingleError(res, 'Failed to fetch assignments', 500);
   }
 };
 
-// ============== Standalone Session Controllers ==============
-
-/**
- * Start a standalone workout session (no subscription required).
- */
-export const startStandaloneSession = async (
+export const getStandaloneAssignmentById = async (
   req: Request,
   res: Response
 ): Promise<void> => {
@@ -1633,83 +744,153 @@ export const startStandaloneSession = async (
     }
 
     const { assignedProgramId } = res.locals.validated
-      ?.body as StartStandaloneSessionInput;
+      ?.params as GetStandaloneAssignmentByIdParams;
 
-    // If assignedProgramId provided, validate it belongs to the user and is user-owned
-    if (assignedProgramId) {
-      const assignment = await prisma.assignedProgram.findUnique({
-        where: { id: assignedProgramId },
-        include: { program: true },
-      });
-      if (
-        !assignment ||
-        assignment.userId !== appUser.id ||
-        assignment.program.userId !== appUser.id
-      ) {
-        sendSingleError(res, 'Assigned program not found', 404);
-        return;
-      }
+    const assignment = await prisma.assigned_program.findUnique({
+      where: { id: assignedProgramId },
+      include: {
+        assigned_program_routines: {
+          include: { assigned_program_routine_exercises: true },
+          orderBy: { created_at: 'asc' },
+        },
+      },
+    });
+
+    if (!assignment || assignment.user_id !== appUser.supabase_auth_id) {
+      sendSingleError(res, 'Assignment not found', 404);
+      return;
     }
 
-    // Check for active session
-    const activeSession = await prisma.workoutSession.findFirst({
+    sendSuccess(res, { assignment });
+  } catch (error) {
+    logger.error('Error fetching standalone assignment', error);
+    sendSingleError(res, 'Failed to fetch assignment', 500);
+  }
+};
+
+// ============== Today's Workout Controller ==============
+
+export const getStandaloneToday = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const appUser = req.appUser;
+    if (!appUser) {
+      sendSingleError(res, 'User required', 401);
+      return;
+    }
+
+    // Latest assignment for user
+    const assignment = await prisma.assigned_program.findFirst({
+      where: { user_id: appUser.supabase_auth_id },
+      orderBy: { created_at: 'desc' },
+      include: {
+        assigned_program_routines: {
+          include: { assigned_program_routine_exercises: true },
+        },
+      },
+    });
+
+    if (!assignment) {
+      sendSingleError(res, 'No program assignment found', 404);
+      return;
+    }
+
+    const TODAY = new Date()
+      .toLocaleDateString('en-US', { weekday: 'long' })
+      .toUpperCase(); // e.g. "MONDAY"
+
+    const todayRoutines = assignment.assigned_program_routines.filter((apr) =>
+      apr.days_of_week.includes(TODAY)
+    );
+
+    if (todayRoutines.length === 0) {
+      sendSuccess(res, {
+        today: null,
+        is_rest_day: true,
+        message: 'Rest day — no routines scheduled for today',
+        assignment_id: assignment.id,
+      });
+      return;
+    }
+
+    sendSuccess(res, {
+      today: todayRoutines,
+      is_rest_day: false,
+      assignment_id: assignment.id,
+    });
+  } catch (error) {
+    logger.error('Error fetching standalone today', error);
+    sendSingleError(res, "Failed to fetch today's workout", 500);
+  }
+};
+
+// ============== Session Controllers ==============
+
+export const startStandaloneSession = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const appUser = req.appUser;
+    if (!appUser) {
+      sendSingleError(res, 'User required', 401);
+      return;
+    }
+
+    const { assigned_program_routine_id } = res.locals.validated
+      ?.body as StartStandaloneSessionInput;
+
+    // Validate ownership via relational path
+    const apr = await prisma.assigned_program_routine.findUnique({
+      where: { id: assigned_program_routine_id },
+      include: { assigned_program: true },
+    });
+
+    if (!apr || apr.assigned_program.user_id !== appUser.supabase_auth_id) {
+      sendSingleError(res, 'Assigned routine not found', 404);
+      return;
+    }
+
+    // Check for already-active session
+    const activeSession = await prisma.workout_session.findFirst({
       where: {
-        userId: appUser.id,
-        completedAt: null,
+        completed_at: null,
+        deleted_at: null,
+        assigned_program_routine: {
+          assigned_program: { user_id: appUser.supabase_auth_id },
+        },
       },
     });
 
     if (activeSession) {
       sendSingleError(
         res,
-        'You already have an active workout session. Please complete or cancel it first.',
+        'You already have an active workout session. Complete it first.',
         409
       );
       return;
     }
 
-    const session = await prisma.workoutSession.create({
+    const session = await prisma.workout_session.create({
       data: {
-        userId: appUser.id,
-        assignedProgramId: assignedProgramId || null,
-        startedAt: new Date(),
-      },
-      include: {
-        performedSets: true,
+        assigned_program_routine_id,
+        started_at: new Date(),
       },
     });
 
     logger.info('Standalone session started', {
       sessionId: session.id,
-      userId: appUser.id,
+      user_id: appUser.supabase_auth_id,
     });
-
-    sendSuccess(
-      res,
-      {
-        session: {
-          id: session.id,
-          userId: session.userId,
-          assignedProgramId: session.assignedProgramId,
-          startedAt: session.startedAt,
-          completedAt: session.completedAt,
-          notes: session.notes,
-          performedSets: [],
-          createdAt: session.createdAt,
-          updatedAt: session.updatedAt,
-        },
-      },
-      201
-    );
+    sendSuccess(res, { session }, 201);
   } catch (error) {
     logger.error('Error starting standalone session', error);
     sendSingleError(res, 'Failed to start workout session', 500);
   }
 };
 
-/**
- * Get the user's active workout session (standalone context).
- */
 export const getStandaloneActiveSession = async (
   req: Request,
   res: Response
@@ -1721,63 +902,23 @@ export const getStandaloneActiveSession = async (
       return;
     }
 
-    const session = await prisma.workoutSession.findFirst({
+    const session = await prisma.workout_session.findFirst({
       where: {
-        userId: appUser.id,
-        completedAt: null,
-      },
-      include: {
-        performedSets: {
-          include: {
-            routineExercise: {
-              include: {
-                exercise: true,
-              },
-            },
-          },
-          orderBy: [{ routineExerciseId: 'asc' }, { setNumber: 'asc' }],
+        completed_at: null,
+        deleted_at: null,
+        assigned_program_routine: {
+          assigned_program: { user_id: appUser.supabase_auth_id },
         },
       },
     });
 
-    if (!session) {
-      sendSuccess(res, { session: null });
-      return;
-    }
-
-    sendSuccess(res, {
-      session: {
-        id: session.id,
-        userId: session.userId,
-        assignedProgramId: session.assignedProgramId,
-        startedAt: session.startedAt,
-        completedAt: session.completedAt,
-        notes: session.notes,
-        performedSets: session.performedSets.map((ps) => ({
-          id: ps.id,
-          workoutSessionId: ps.workoutSessionId,
-          routineExerciseId: ps.routineExerciseId,
-          setNumber: ps.setNumber,
-          repsCompleted: ps.repsCompleted,
-          weightKg: ps.weightKg,
-          rpe: ps.rpe,
-          notes: ps.notes,
-          createdAt: ps.createdAt,
-          updatedAt: ps.updatedAt,
-        })),
-        createdAt: session.createdAt,
-        updatedAt: session.updatedAt,
-      },
-    });
+    sendSuccess(res, { session: session ?? null });
   } catch (error) {
     logger.error('Error fetching standalone active session', error);
     sendSingleError(res, 'Failed to fetch active session', 500);
   }
 };
 
-/**
- * Complete a standalone workout session.
- */
 export const completeStandaloneSession = async (
   req: Request,
   res: Response
@@ -1791,13 +932,15 @@ export const completeStandaloneSession = async (
 
     const { sessionId } = res.locals.validated
       ?.params as CompleteStandaloneSessionParams;
-    const { notes } = res.locals.validated
+    const { feedback } = res.locals.validated
       ?.body as CompleteStandaloneSessionInput;
 
-    const session = await prisma.workoutSession.findFirst({
+    const session = await prisma.workout_session.findFirst({
       where: {
         id: sessionId,
-        userId: appUser.id,
+        assigned_program_routine: {
+          assigned_program: { user_id: appUser.supabase_auth_id },
+        },
       },
     });
 
@@ -1806,65 +949,38 @@ export const completeStandaloneSession = async (
       return;
     }
 
-    if (session.completedAt) {
+    if (session.completed_at) {
       sendSingleError(res, 'Workout session is already completed', 400);
       return;
     }
 
-    const updatedSession = await prisma.workoutSession.update({
+    const updatedSession = await prisma.workout_session.update({
       where: { id: sessionId },
-      data: {
-        completedAt: new Date(),
-        notes,
-      },
-      include: {
-        performedSets: {
-          orderBy: [{ routineExerciseId: 'asc' }, { setNumber: 'asc' }],
-        },
-      },
+      data: { completed_at: new Date(), feedback },
     });
 
     logger.info('Standalone session completed', {
       sessionId,
-      userId: appUser.id,
+      user_id: appUser.supabase_auth_id,
     });
 
-    // Award coins for the completed session
     let coinReward = null;
     try {
-      coinReward = await calculateSessionCoins(appUser.id, sessionId, prisma);
+      coinReward = await calculateSessionCoins(
+        appUser.supabase_auth_id,
+        sessionId,
+        prisma
+      );
     } catch (coinError) {
-      // Log but don't fail the session completion if coin award fails
       logger.error('Failed to award coins for standalone session', {
         sessionId,
-        userId: appUser.id,
+        user_id: appUser.supabase_auth_id,
         error: coinError,
       });
     }
 
     sendSuccess(res, {
-      session: {
-        id: updatedSession.id,
-        userId: updatedSession.userId,
-        assignedProgramId: updatedSession.assignedProgramId,
-        startedAt: updatedSession.startedAt,
-        completedAt: updatedSession.completedAt,
-        notes: updatedSession.notes,
-        performedSets: updatedSession.performedSets.map((ps) => ({
-          id: ps.id,
-          workoutSessionId: ps.workoutSessionId,
-          routineExerciseId: ps.routineExerciseId,
-          setNumber: ps.setNumber,
-          repsCompleted: ps.repsCompleted,
-          weightKg: ps.weightKg,
-          rpe: ps.rpe,
-          notes: ps.notes,
-          createdAt: ps.createdAt,
-          updatedAt: ps.updatedAt,
-        })),
-        createdAt: updatedSession.createdAt,
-        updatedAt: updatedSession.updatedAt,
-      },
+      session: updatedSession,
       ...(coinReward ? { coinReward } : {}),
     });
   } catch (error) {
@@ -1873,9 +989,6 @@ export const completeStandaloneSession = async (
   }
 };
 
-/**
- * Get standalone workout session history (paginated).
- */
 export const getStandaloneSessions = async (
   req: Request,
   res: Response
@@ -1891,60 +1004,44 @@ export const getStandaloneSessions = async (
       ?.query as GetStandaloneSessionsQuery;
 
     const where: Record<string, unknown> = {
-      userId: appUser.id,
-      completedAt: { not: null },
+      completed_at: { not: null },
+      assigned_program_routine: {
+        assigned_program: { user_id: appUser.supabase_auth_id },
+      },
     };
 
     if (startDate || endDate) {
-      where.startedAt = {
+      where.started_at = {
         ...(startDate && { gte: new Date(startDate) }),
         ...(endDate && { lte: new Date(endDate) }),
       };
     }
 
     const [sessions, total] = await Promise.all([
-      prisma.workoutSession.findMany({
+      prisma.workout_session.findMany({
         where,
-        include: {
-          performedSets: {
-            orderBy: [{ routineExerciseId: 'asc' }, { setNumber: 'asc' }],
-          },
-        },
-        orderBy: { startedAt: 'desc' },
+        orderBy: { started_at: 'desc' },
         take: limit,
         skip: offset,
       }),
-      prisma.workoutSession.count({ where }),
+      prisma.workout_session.count({ where }),
     ]);
 
     sendSuccess(res, {
-      sessions: sessions.map((s) => ({
-        id: s.id,
-        userId: s.userId,
-        assignedProgramId: s.assignedProgramId,
-        startedAt: s.startedAt,
-        completedAt: s.completedAt,
-        notes: s.notes,
-        totalSets: s.performedSets.length,
-        createdAt: s.createdAt,
-        updatedAt: s.updatedAt,
-      })),
+      sessions,
       pagination: {
         total,
         limit,
         offset,
-        hasMore: offset! + sessions.length < total,
+        hasMore: offset + sessions.length < total,
       },
     });
   } catch (error) {
     logger.error('Error fetching standalone sessions', error);
-    sendSingleError(res, 'Failed to fetch workout sessions', 500);
+    sendSingleError(res, 'Failed to fetch sessions', 500);
   }
 };
 
-/**
- * Get a single standalone workout session by ID.
- */
 export const getStandaloneSessionById = async (
   req: Request,
   res: Response
@@ -1959,69 +1056,27 @@ export const getStandaloneSessionById = async (
     const { sessionId } = res.locals.validated
       ?.params as GetStandaloneSessionByIdParams;
 
-    const session = await prisma.workoutSession.findFirst({
+    const session = await prisma.workout_session.findFirst({
       where: {
         id: sessionId,
-        userId: appUser.id,
-      },
-      include: {
-        performedSets: {
-          include: {
-            routineExercise: {
-              include: {
-                exercise: true,
-              },
-            },
-          },
-          orderBy: [{ routineExerciseId: 'asc' }, { setNumber: 'asc' }],
+        assigned_program_routine: {
+          assigned_program: { user_id: appUser.supabase_auth_id },
         },
       },
     });
 
     if (!session) {
-      sendSingleError(res, 'Workout session not found', 404);
+      sendSingleError(res, 'Session not found', 404);
       return;
     }
 
-    sendSuccess(res, {
-      session: {
-        id: session.id,
-        userId: session.userId,
-        assignedProgramId: session.assignedProgramId,
-        startedAt: session.startedAt,
-        completedAt: session.completedAt,
-        notes: session.notes,
-        performedSets: session.performedSets.map((ps) => ({
-          id: ps.id,
-          workoutSessionId: ps.workoutSessionId,
-          routineExerciseId: ps.routineExerciseId,
-          setNumber: ps.setNumber,
-          repsCompleted: ps.repsCompleted,
-          weightKg: ps.weightKg,
-          rpe: ps.rpe,
-          notes: ps.notes,
-          exercise: {
-            id: ps.routineExercise.exercise.id,
-            name: ps.routineExercise.exercise.name,
-          },
-          createdAt: ps.createdAt,
-          updatedAt: ps.updatedAt,
-        })),
-        createdAt: session.createdAt,
-        updatedAt: session.updatedAt,
-      },
-    });
+    sendSuccess(res, { session });
   } catch (error) {
     logger.error('Error fetching standalone session', error);
-    sendSingleError(res, 'Failed to fetch workout session', 500);
+    sendSingleError(res, 'Failed to fetch session', 500);
   }
 };
 
-// ============== Standalone Weekly Stats Controller ==============
-
-/**
- * Get weekly workout stats for the authenticated user (standalone context).
- */
 export const getStandaloneWeeklyStats = async (
   req: Request,
   res: Response
@@ -2033,63 +1088,35 @@ export const getStandaloneWeeklyStats = async (
       return;
     }
 
-    const { weekOf } = res.locals.validated
-      ?.query as GetStandaloneWeeklyStatsQuery;
+    // Start of current week (Monday)
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0=Sun
+    const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - daysFromMonday);
+    weekStart.setHours(0, 0, 0, 0);
 
-    // Determine the week window (Monday–Sunday)
-    const referenceDate = weekOf ? new Date(weekOf) : new Date();
-    const dayOfWeek = referenceDate.getUTCDay(); // 0=Sun, 1=Mon...
-    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-
-    const weekStart = new Date(referenceDate);
-    weekStart.setUTCDate(referenceDate.getUTCDate() + mondayOffset);
-    weekStart.setUTCHours(0, 0, 0, 0);
-
-    const weekEnd = new Date(weekStart);
-    weekEnd.setUTCDate(weekStart.getUTCDate() + 7);
-
-    logger.debug('Fetching standalone weekly stats', {
-      userId: appUser.id,
-      weekStart,
-      weekEnd,
-    });
-
-    // Fetch completed sessions for the week
-    const sessions = await prisma.workoutSession.findMany({
+    const sessions = await prisma.workout_session.findMany({
       where: {
-        userId: appUser.id,
-        completedAt: { not: null },
-        startedAt: { gte: weekStart, lt: weekEnd },
+        completed_at: { not: null, gte: weekStart },
+        assigned_program_routine: {
+          assigned_program: { user_id: appUser.supabase_auth_id },
+        },
       },
-      select: {
-        startedAt: true,
-        completedAt: true,
-      },
-      orderBy: { startedAt: 'asc' },
+      select: { id: true, started_at: true, completed_at: true },
     });
 
-    const workoutsCompleted = sessions.length;
-
-    const totalMinutes = sessions.reduce((sum, s) => {
-      if (s.completedAt) {
-        const durationMs =
-          new Date(s.completedAt).getTime() - new Date(s.startedAt).getTime();
-        return sum + Math.round(durationMs / 60000);
+    const totalDurationMs = sessions.reduce((sum, s) => {
+      if (s.started_at && s.completed_at) {
+        return sum + (s.completed_at.getTime() - s.started_at.getTime());
       }
       return sum;
     }, 0);
 
-    // Streak (shared utility)
-    const streakDays = await calculateStreak(appUser.id, new Date(), prisma);
-
     sendSuccess(res, {
-      stats: {
-        weekStart: weekStart.toISOString(),
-        weekEnd: weekEnd.toISOString(),
-        workoutsCompleted,
-        totalMinutes,
-        streakDays,
-      },
+      week_start: weekStart,
+      sessions_completed: sessions.length,
+      total_duration_minutes: Math.round(totalDurationMs / 60000),
     });
   } catch (error) {
     logger.error('Error fetching standalone weekly stats', error);
