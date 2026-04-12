@@ -17,7 +17,7 @@ export type GetClassQuery = z.infer<typeof GetClassSchema>['query'];
  */
 export const RemoveClientSchema = z.object({
   params: z.object({
-    userId: z.string().cuid('Invalid user ID'),
+    userId: z.string().min(1, 'User ID required'),
   }),
 });
 
