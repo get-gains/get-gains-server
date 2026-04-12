@@ -34,7 +34,6 @@ import {
 import classRoutes from './class.routes';
 import programRoutes from './program.routes';
 import routineRoutes from './routine.routes';
-import coachSettingsRoutes from './coach-settings.routes';
 
 const router = Router();
 
@@ -53,7 +52,6 @@ router.post(
 router.use('/class', classRoutes);
 router.use('/programs', programRoutes);
 router.use('/routines', routineRoutes);
-router.use('/settings', coachSettingsRoutes);
 
 /**
  * @route   GET /coach/clients

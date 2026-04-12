@@ -348,7 +348,7 @@ export const getRoutines = async (
     const assignedPrograms = await prisma.assigned_program.findMany({
       where: {
         user_id: supabaseId,
-        is_active: true,
+        OR: [{ end_date: null }, { end_date: { gt: new Date() } }],
         ...(programId && { program_id: programId }),
       },
       include: {
@@ -1222,7 +1222,10 @@ export const getTodayWorkout = async (
 
     // Find active assigned programs, most recent first
     const assignments = await prisma.assigned_program.findMany({
-      where: { user_id: supabaseId, is_active: true },
+      where: {
+        user_id: supabaseId,
+        OR: [{ end_date: null }, { end_date: { gt: new Date() } }],
+      },
       include: {
         program: { select: { name: true } },
         assigned_program_routines: {
