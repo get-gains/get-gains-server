@@ -1,11 +1,7 @@
 import 'dotenv/config';
 import { google, androidpublisher_v3 } from 'googleapis';
 import { logger } from '../../utils/logger';
-import {
-  PaymentProvider,
-  SubscriptionStatus,
-  BillingCycle,
-} from '@prisma/client';
+import { Provider, SubscriptionStatus, BillingCycle } from '@prisma/client';
 import {
   IPaymentProvider,
   NormalizedSubscription,
@@ -49,7 +45,7 @@ const NOTIFICATION_TYPES: Record<number, string> = {
  * Google Play Billing provider implementation
  */
 export class GooglePlayProvider implements IPaymentProvider {
-  public readonly provider = PaymentProvider.GOOGLE_PAY;
+  public readonly provider = Provider.GOOGLE_PLAY;
   private androidPublisher: androidpublisher_v3.Androidpublisher;
   private packageName: string;
 
@@ -406,9 +402,12 @@ export class GooglePlayProvider implements IPaymentProvider {
         NOTIFICATION_TYPES[notificationType] || `UNKNOWN_${notificationType}`;
 
       return {
-        provider: PaymentProvider.GOOGLE_PAY,
+        provider: Provider.GOOGLE_PLAY,
         eventType,
         subscriptionId: null, // Will be resolved by looking up purchaseToken
+        idempotency_key:
+          message.message.messageId ??
+          `google_play_${Date.now()}_${Math.random().toString(36).slice(2)}`,
         rawPayload: payload,
         purchaseToken: subNotification.purchaseToken,
         productId: subNotification.subscriptionId,
