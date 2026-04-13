@@ -13,6 +13,39 @@ import {
   UpdateProfileInput,
 } from '../schemas/user.schema';
 
+// ─── Coach response mapper ────────────────────────────────────────────────────
+// Server returns raw Prisma shape; Flutter models expect flat camelCase.
+
+function mapCoach(
+  coach: {
+    user_id: string;
+    certifications: string[];
+    specialties: string[];
+    social_links?: string[] | null;
+    created_at: Date;
+    user: {
+      full_name: string;
+      email: string;
+      avatar_key: string | null;
+      bio: string | null;
+    };
+  },
+  subscribedAt?: Date | null
+) {
+  return {
+    id: coach.user_id,
+    name: coach.user.full_name,
+    email: coach.user.email,
+    avatarUrl: coach.user.avatar_key ?? null,
+    bio: coach.user.bio ?? null,
+    certifications: coach.certifications,
+    specialties: coach.specialties,
+    socialLinks: coach.social_links ?? [],
+    createdAt: coach.created_at,
+    ...(subscribedAt != null ? { subscribedAt } : {}),
+  };
+}
+
 export const createUser = async (data: CreateUserData) => {
   const { email, full_name, nickname, supabase_auth_id } = data;
   // Create user in database
@@ -41,7 +74,7 @@ export const getUserBySupabaseId = async (supabaseId: string) => {
  * The user has already authenticated with Google and has tokens.
  */
 export const createUserFromGoogle = async (
-  req: Request,
+  _req: Request,
   res: Response
 ): Promise<void> => {
   try {
@@ -119,7 +152,7 @@ export const createUserFromGoogle = async (
  * Discover/search coaches (public listing)
  */
 export const discoverCoaches = async (
-  req: Request,
+  _req: Request,
   res: Response
 ): Promise<void> => {
   try {
@@ -166,6 +199,7 @@ export const discoverCoaches = async (
           user_id: true,
           certifications: true,
           specialties: true,
+          social_links: true,
           created_at: true,
           user: {
             select: {
@@ -184,7 +218,7 @@ export const discoverCoaches = async (
     ]);
 
     sendSuccess(res, {
-      coaches,
+      coaches: coaches.map((c) => mapCoach(c)),
       pagination: {
         total,
         limit: take,
@@ -206,7 +240,7 @@ export const discoverCoaches = async (
  * Get a single coach's public profile
  */
 export const getCoachProfile = async (
-  req: Request,
+  _req: Request,
   res: Response
 ): Promise<void> => {
   try {
@@ -236,7 +270,7 @@ export const getCoachProfile = async (
       return;
     }
 
-    sendSuccess(res, { coach });
+    sendSuccess(res, { coach: mapCoach(coach) });
   } catch (error) {
     const err = error as Error;
     logger.error('Error fetching coach profile', {
@@ -278,6 +312,8 @@ export const getSubscribedCoaches = async (
               user_id: true,
               certifications: true,
               specialties: true,
+              social_links: true,
+              created_at: true,
               user: {
                 select: {
                   full_name: true,
@@ -301,10 +337,9 @@ export const getSubscribedCoaches = async (
       }),
     ]);
 
-    const coaches = subscriptions.map((sub) => ({
-      ...sub.coach,
-      subscribedAt: sub.started_at,
-    }));
+    const coaches = subscriptions.map((sub) =>
+      mapCoach(sub.coach, sub.started_at)
+    );
 
     sendSuccess(res, {
       coaches,
@@ -425,12 +460,7 @@ export const subscribeToCoach = async (
       });
       sendSuccess(
         res,
-        {
-          coach: {
-            ...updated!.coach,
-            subscribedAt: updated!.started_at,
-          },
-        },
+        { coach: mapCoach(updated!.coach, updated!.started_at) },
         200
       );
       return;
@@ -466,12 +496,7 @@ export const subscribeToCoach = async (
 
     sendSuccess(
       res,
-      {
-        coach: {
-          ...subscription.coach,
-          subscribedAt: subscription.started_at,
-        },
-      },
+      { coach: mapCoach(subscription.coach, subscription.started_at) },
       201
     );
   } catch (error) {
