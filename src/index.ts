@@ -38,11 +38,11 @@ const startServer = () => {
   });
 
   // Routes
-  app.get('/', (req: Request, res: Response) => {
+  app.get('/', (_req: Request, res: Response) => {
     res.json({ message: 'Hello from TypeScript Express!' });
   });
 
-  app.get('/health', (req: Request, res: Response) => {
+  app.get('/health', (_req: Request, res: Response) => {
     res.json({ status: 'OK', timestamp: new Date().toISOString() });
   });
 
@@ -75,7 +75,7 @@ const startServer = () => {
   });
 
   // Error Handler (contract: data + errors envelope)
-  app.use((err: Error, req: Request, res: Response) => {
+  app.use((err: Error, _req: Request, res: Response) => {
     logger.error('Unhandled error:', err);
     res.status(500).json({
       data: null,
