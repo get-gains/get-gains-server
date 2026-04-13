@@ -6,7 +6,7 @@ import { z } from 'zod';
 export const CreateUserSchema = z.object({
   body: z.object({
     email: z.email(),
-    name: z
+    full_name: z
       .string()
       .min(1, 'Name is required')
       .max(100, 'Name must be less than 100 characters'),
@@ -14,7 +14,7 @@ export const CreateUserSchema = z.object({
       .string()
       .min(1, 'Nickname is required')
       .max(50, 'Nickname must be less than 50 characters'),
-    supabaseId: z.string().min(1, 'Supabase ID is required'),
+    supabase_auth_id: z.string().min(1, 'Supabase ID is required'),
   }),
 });
 
@@ -23,7 +23,7 @@ export type CreateUserData = z.infer<typeof CreateUserSchema>['body'];
 export const CreateUserFromGoogleSchema = z.object({
   body: z.object({
     email: z.email(),
-    name: z
+    full_name: z
       .string()
       .min(1, 'Name is required')
       .max(100, 'Name must be less than 100 characters'),
@@ -31,7 +31,7 @@ export const CreateUserFromGoogleSchema = z.object({
       .string()
       .min(1, 'Nickname is required')
       .max(50, 'Nickname must be less than 50 characters'),
-    supabaseId: z.string().min(1, 'Supabase ID is required'),
+    supabase_auth_id: z.string().min(1, 'Supabase ID is required'),
   }),
 });
 
@@ -73,7 +73,7 @@ export type GetSubscribedCoachesQuery = z.infer<
  */
 export const SubscribeCoachSchema = z.object({
   params: z.object({
-    coachId: z.string().cuid('Invalid coach ID'),
+    coachId: z.string().min(1, 'Coach ID required'),
   }),
 });
 
@@ -86,7 +86,7 @@ export type SubscribeCoachParams = z.infer<
  */
 export const GetCoachProfileSchema = z.object({
   params: z.object({
-    coachId: z.string().cuid('Invalid coach ID'),
+    coachId: z.string().min(1, 'Coach ID required'),
   }),
 });
 
@@ -99,7 +99,7 @@ export type GetCoachProfileParams = z.infer<
  */
 export const UnsubscribeCoachSchema = z.object({
   params: z.object({
-    coachId: z.string().cuid('Invalid coach ID'),
+    coachId: z.string().min(1, 'Coach ID required'),
   }),
 });
 

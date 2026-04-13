@@ -38,8 +38,8 @@ declare global {
 export const getUserSubscriptionWithTier = async (
   supabaseId: string
 ): Promise<SubscriptionInfo['subscription']> => {
-  const dbUser = await prisma.user.findFirst({
-    where: { supabaseId },
+  const dbUser = await prisma.user.findUnique({
+    where: { supabase_auth_id: supabaseId },
   });
 
   if (!dbUser) {
@@ -48,22 +48,22 @@ export const getUserSubscriptionWithTier = async (
 
   const subscription = await prisma.subscription.findFirst({
     where: {
-      userId: dbUser.id,
+      user_id: dbUser.supabase_auth_id,
       status: SubscriptionStatus.ACTIVE,
-      currentPeriodEnd: {
+      current_period_end: {
         gt: new Date(),
       },
     },
     include: {
-      plan: {
+      subscription_plan: {
         select: {
           id: true,
-          tierLevel: true,
+          tier_level: true,
         },
       },
     },
     orderBy: {
-      createdAt: 'desc',
+      created_at: 'desc',
     },
   });
 
@@ -74,9 +74,9 @@ export const getUserSubscriptionWithTier = async (
   return {
     id: subscription.id,
     status: subscription.status,
-    planId: subscription.planId,
-    tierLevel: subscription.plan.tierLevel,
-    currentPeriodEnd: subscription.currentPeriodEnd,
+    planId: subscription.subscription_plan_id,
+    tierLevel: subscription.subscription_plan.tier_level,
+    currentPeriodEnd: subscription.current_period_end,
   };
 };
 

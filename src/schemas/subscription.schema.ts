@@ -22,7 +22,7 @@ export const VerifyPurchaseSchema = z.object({
   body: z.object({
     productId: z.string().min(1, 'Product ID is required'),
     purchaseToken: z.string().min(1, 'Purchase token is required'),
-    provider: z.enum(['GOOGLE_PAY']).default('GOOGLE_PAY'),
+    provider: z.enum(['GOOGLE_PLAY']).default('GOOGLE_PLAY'),
   }),
 });
 

@@ -4,12 +4,10 @@ import { z } from 'zod';
 
 export const CreatePersonalExerciseSchema = z.object({
   body: z.object({
-    name: z.string().min(1, 'Exercise name is required').max(100),
-    description: z.string().min(1, 'Description is required').max(2000),
-    primaryMuscleGroup: z.string().min(1, 'Primary muscle group is required'),
-    targetMuscles: z.array(z.string()).optional().default([]),
-    equipmentNeeded: z.array(z.string()).optional().default([]),
-    isPublic: z.boolean().optional().default(false),
+    name: z.string().min(1),
+    description: z.string().min(1),
+    target_muscles: z.array(z.string()).optional().default([]),
+    is_public: z.boolean().optional().default(false),
   }),
 });
 
@@ -19,10 +17,9 @@ export type CreatePersonalExerciseInput = z.infer<
 
 export const GetPersonalExercisesSchema = z.object({
   query: z.object({
-    muscleGroup: z.string().optional(),
-    search: z.string().optional(),
-    limit: z.coerce.number().int().min(1).max(100).optional().default(50),
+    limit: z.coerce.number().int().min(1).max(100).optional().default(20),
     offset: z.coerce.number().int().min(0).optional().default(0),
+    search: z.string().optional(),
   }),
 });
 
@@ -31,16 +28,12 @@ export type GetPersonalExercisesQuery = z.infer<
 >['query'];
 
 export const UpdatePersonalExerciseSchema = z.object({
-  params: z.object({
-    exerciseId: z.string().min(1, 'Exercise ID is required'),
-  }),
+  params: z.object({ exerciseId: z.string().cuid() }),
   body: z.object({
-    name: z.string().min(1).max(100).optional(),
-    description: z.string().min(1).max(2000).optional(),
-    primaryMuscleGroup: z.string().min(1).optional(),
-    targetMuscles: z.array(z.string()).optional(),
-    equipmentNeeded: z.array(z.string()).optional(),
-    isPublic: z.boolean().optional(),
+    name: z.string().min(1).optional(),
+    description: z.string().min(1).optional(),
+    target_muscles: z.array(z.string()).optional(),
+    is_public: z.boolean().optional(),
   }),
 });
 
@@ -52,9 +45,7 @@ export type UpdatePersonalExerciseInput = z.infer<
 >['body'];
 
 export const DeletePersonalExerciseSchema = z.object({
-  params: z.object({
-    exerciseId: z.string().min(1, 'Exercise ID is required'),
-  }),
+  params: z.object({ exerciseId: z.string().cuid() }),
 });
 
 export type DeletePersonalExerciseParams = z.infer<
@@ -67,8 +58,7 @@ export const CreatePersonalRoutineSchema = z.object({
   body: z.object({
     name: z.string().min(1),
     description: z.string().min(1),
-    estimatedDurationMinutes: z.number().int().min(1),
-    muscleGroupsTargeted: z.array(z.string()).optional().default([]),
+    estimated_duration_minutes: z.number().int().min(1),
   }),
 });
 
@@ -88,9 +78,7 @@ export type GetPersonalRoutinesQuery = z.infer<
 >['query'];
 
 export const GetPersonalRoutineByIdSchema = z.object({
-  params: z.object({
-    routineId: z.string().min(1, 'Routine ID is required'),
-  }),
+  params: z.object({ routineId: z.string().cuid() }),
 });
 
 export type GetPersonalRoutineByIdParams = z.infer<
@@ -98,14 +86,11 @@ export type GetPersonalRoutineByIdParams = z.infer<
 >['params'];
 
 export const UpdatePersonalRoutineSchema = z.object({
-  params: z.object({
-    routineId: z.string().min(1, 'Routine ID is required'),
-  }),
+  params: z.object({ routineId: z.string().cuid() }),
   body: z.object({
     name: z.string().min(1).optional(),
     description: z.string().min(1).optional(),
-    estimatedDurationMinutes: z.number().int().min(1).optional(),
-    muscleGroupsTargeted: z.array(z.string()).optional(),
+    estimated_duration_minutes: z.number().int().min(1).optional(),
   }),
 });
 
@@ -117,70 +102,11 @@ export type UpdatePersonalRoutineInput = z.infer<
 >['body'];
 
 export const DeletePersonalRoutineSchema = z.object({
-  params: z.object({
-    routineId: z.string().min(1, 'Routine ID is required'),
-  }),
+  params: z.object({ routineId: z.string().cuid() }),
 });
 
 export type DeletePersonalRoutineParams = z.infer<
   typeof DeletePersonalRoutineSchema
->['params'];
-
-// ============== Routine Exercise Junction Schemas ==============
-
-export const AddExerciseToRoutineSchema = z.object({
-  params: z.object({
-    routineId: z.string().min(1, 'Routine ID is required'),
-  }),
-  body: z.object({
-    exerciseId: z.string().min(1, 'Exercise ID is required'),
-    sets: z.number().int().min(1),
-    repsMin: z.number().int().min(1),
-    repsMax: z.number().int().min(1),
-    restSeconds: z.number().int().min(0),
-    orderInRoutine: z.number().int().min(1),
-    notes: z.string().nullable().optional(),
-  }),
-});
-
-export type AddExerciseToRoutineParams = z.infer<
-  typeof AddExerciseToRoutineSchema
->['params'];
-export type AddExerciseToRoutineInput = z.infer<
-  typeof AddExerciseToRoutineSchema
->['body'];
-
-export const UpdateRoutineExerciseSchema = z.object({
-  params: z.object({
-    routineId: z.string().min(1, 'Routine ID is required'),
-    routineExerciseId: z.string().min(1, 'Routine exercise ID is required'),
-  }),
-  body: z.object({
-    sets: z.number().int().min(1).optional(),
-    repsMin: z.number().int().min(1).optional(),
-    repsMax: z.number().int().min(1).optional(),
-    restSeconds: z.number().int().min(0).optional(),
-    orderInRoutine: z.number().int().min(1).optional(),
-    notes: z.string().nullable().optional(),
-  }),
-});
-
-export type UpdateRoutineExerciseParams = z.infer<
-  typeof UpdateRoutineExerciseSchema
->['params'];
-export type UpdateRoutineExerciseInput = z.infer<
-  typeof UpdateRoutineExerciseSchema
->['body'];
-
-export const RemoveRoutineExerciseSchema = z.object({
-  params: z.object({
-    routineId: z.string().min(1, 'Routine ID is required'),
-    routineExerciseId: z.string().min(1, 'Routine exercise ID is required'),
-  }),
-});
-
-export type RemoveRoutineExerciseParams = z.infer<
-  typeof RemoveRoutineExerciseSchema
 >['params'];
 
 // ============== Personal Program Schemas ==============
@@ -208,9 +134,7 @@ export type GetPersonalProgramsQuery = z.infer<
 >['query'];
 
 export const GetPersonalProgramByIdSchema = z.object({
-  params: z.object({
-    programId: z.string().min(1, 'Program ID is required'),
-  }),
+  params: z.object({ programId: z.string().cuid() }),
 });
 
 export type GetPersonalProgramByIdParams = z.infer<
@@ -218,9 +142,7 @@ export type GetPersonalProgramByIdParams = z.infer<
 >['params'];
 
 export const UpdatePersonalProgramSchema = z.object({
-  params: z.object({
-    programId: z.string().min(1, 'Program ID is required'),
-  }),
+  params: z.object({ programId: z.string().cuid() }),
   body: z.object({
     name: z.string().min(1).optional(),
     description: z.string().min(1).optional(),
@@ -235,96 +157,81 @@ export type UpdatePersonalProgramInput = z.infer<
 >['body'];
 
 export const DeletePersonalProgramSchema = z.object({
-  params: z.object({
-    programId: z.string().min(1, 'Program ID is required'),
-  }),
+  params: z.object({ programId: z.string().cuid() }),
 });
 
 export type DeletePersonalProgramParams = z.infer<
   typeof DeletePersonalProgramSchema
 >['params'];
 
-// ============== Program Routine Junction Schemas ==============
+// ============== Standalone Assignment Schemas ==============
 
-export const AssignRoutineToProgramSchema = z.object({
-  params: z.object({
-    programId: z.string().min(1, 'Program ID is required'),
-  }),
+const StandaloneAssignmentExerciseSchema = z.object({
+  exercise_id: z.string().cuid(),
+  sets: z.number().int().min(1),
+  reps_min: z.number().int().min(1),
+  reps_max: z.number().int().min(1),
+  rest_seconds: z.number().int().min(0),
+  order_in_routine: z.number().int().min(1),
+});
+
+const StandaloneAssignmentRoutineSchema = z.object({
+  routine_id: z.string().cuid(),
+  days_of_week: z
+    .array(
+      z.enum([
+        'MONDAY',
+        'TUESDAY',
+        'WEDNESDAY',
+        'THURSDAY',
+        'FRIDAY',
+        'SATURDAY',
+        'SUNDAY',
+      ])
+    )
+    .min(1),
+  exercises: z.array(StandaloneAssignmentExerciseSchema).min(1),
+});
+
+export const CreateStandaloneAssignmentSchema = z.object({
   body: z.object({
-    routineId: z.string().min(1, 'Routine ID is required'),
-    dayNumber: z.number().int().positive(),
+    program_id: z.string().cuid(),
+    notes: z.string().optional(),
+    start_date: z.coerce.date().optional(),
+    end_date: z.coerce.date().optional(),
+    routines: z.array(StandaloneAssignmentRoutineSchema).min(1),
   }),
 });
 
-export type AssignRoutineToProgramParams = z.infer<
-  typeof AssignRoutineToProgramSchema
->['params'];
-export type AssignRoutineToProgramInput = z.infer<
-  typeof AssignRoutineToProgramSchema
+export type CreateStandaloneAssignmentInput = z.infer<
+  typeof CreateStandaloneAssignmentSchema
 >['body'];
 
-export const UpdateProgramRoutineSchema = z.object({
-  params: z.object({
-    programId: z.string().min(1, 'Program ID is required'),
-    programRoutineId: z.string().min(1, 'Program routine ID is required'),
-  }),
-  body: z.object({
-    dayNumber: z.number().int().positive(),
+export const GetStandaloneAssignmentsSchema = z.object({
+  query: z.object({
+    limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+    offset: z.coerce.number().int().min(0).optional().default(0),
   }),
 });
 
-export type UpdateProgramRoutineParams = z.infer<
-  typeof UpdateProgramRoutineSchema
->['params'];
-export type UpdateProgramRoutineInput = z.infer<
-  typeof UpdateProgramRoutineSchema
->['body'];
+export type GetStandaloneAssignmentsQuery = z.infer<
+  typeof GetStandaloneAssignmentsSchema
+>['query'];
 
-export const RemoveProgramRoutineSchema = z.object({
+export const GetStandaloneAssignmentByIdSchema = z.object({
   params: z.object({
-    programId: z.string().min(1, 'Program ID is required'),
-    programRoutineId: z.string().min(1, 'Program routine ID is required'),
+    assignedProgramId: z.string().cuid(),
   }),
 });
 
-export type RemoveProgramRoutineParams = z.infer<
-  typeof RemoveProgramRoutineSchema
->['params'];
-
-// ============== Self-Assignment Schemas ==============
-
-export const ActivateProgramSchema = z.object({
-  params: z.object({
-    programId: z.string().min(1, 'Program ID is required'),
-  }),
-  body: z.object({
-    startDate: z.string().datetime().optional(),
-  }),
-});
-
-export type ActivateProgramParams = z.infer<
-  typeof ActivateProgramSchema
->['params'];
-export type ActivateProgramInput = z.infer<
-  typeof ActivateProgramSchema
->['body'];
-
-export const DeactivateProgramSchema = z.object({
-  params: z.object({
-    programId: z.string().min(1, 'Program ID is required'),
-  }),
-});
-
-export type DeactivateProgramParams = z.infer<
-  typeof DeactivateProgramSchema
+export type GetStandaloneAssignmentByIdParams = z.infer<
+  typeof GetStandaloneAssignmentByIdSchema
 >['params'];
 
 // ============== Today's Workout Schema ==============
 
 export const GetStandaloneTodaySchema = z.object({
-  query: z.object({
-    assignedProgramId: z.string().optional(),
-  }),
+  query: z.object({}).optional(),
 });
 
 export type GetStandaloneTodayQuery = z.infer<
@@ -335,7 +242,7 @@ export type GetStandaloneTodayQuery = z.infer<
 
 export const StartStandaloneSessionSchema = z.object({
   body: z.object({
-    assignedProgramId: z.string().optional(),
+    assigned_program_routine_id: z.string().cuid(),
   }),
 });
 
@@ -344,11 +251,9 @@ export type StartStandaloneSessionInput = z.infer<
 >['body'];
 
 export const CompleteStandaloneSessionSchema = z.object({
-  params: z.object({
-    sessionId: z.string().min(1, 'Session ID is required'),
-  }),
+  params: z.object({ sessionId: z.string().cuid() }),
   body: z.object({
-    notes: z.string().max(1000).optional(),
+    feedback: z.string().optional(),
   }),
 });
 
@@ -373,9 +278,7 @@ export type GetStandaloneSessionsQuery = z.infer<
 >['query'];
 
 export const GetStandaloneSessionByIdSchema = z.object({
-  params: z.object({
-    sessionId: z.string().min(1, 'Session ID is required'),
-  }),
+  params: z.object({ sessionId: z.string().cuid() }),
 });
 
 export type GetStandaloneSessionByIdParams = z.infer<

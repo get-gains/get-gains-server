@@ -5,7 +5,7 @@ import { z } from 'zod';
 export const ShopCatalogQuerySchema = z.object({
   query: z.object({
     tier: z.coerce.number().int().min(1).max(3).optional(),
-    category: z.enum(['HEADWEAR', 'TOP', 'BOTTOM', 'ACCESSORY']).optional(),
+    category: z.string().optional(),
   }),
 });
 

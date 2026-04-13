@@ -1,5 +1,8 @@
 import { Router } from 'express';
-import { authenticateSupabaseUser } from '../middleware/auth.middleware';
+import {
+  authenticateSupabaseUser,
+  requireAppUser,
+} from '../middleware/auth.middleware';
 import { validateRequest } from '../middleware/validate.middleware';
 import {
   GetPlansSchema,
@@ -33,6 +36,7 @@ router.get('/plans', validateRequest(GetPlansSchema), getPlans);
 router.get(
   '/status',
   authenticateSupabaseUser,
+  requireAppUser,
   validateRequest(GetSubscriptionStatusSchema),
   getSubscriptionStatus
 );
@@ -44,6 +48,7 @@ router.get(
 router.get(
   '/history',
   authenticateSupabaseUser,
+  requireAppUser,
   validateRequest(GetSubscriptionHistorySchema),
   getSubscriptionHistory
 );
@@ -55,6 +60,7 @@ router.get(
 router.post(
   '/verify',
   authenticateSupabaseUser,
+  requireAppUser,
   validateRequest(VerifyPurchaseSchema),
   verifyPurchase
 );

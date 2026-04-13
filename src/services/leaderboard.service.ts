@@ -1,14 +1,9 @@
 import { PrismaClient } from '@prisma/client';
+import { LEADERBOARD_WEIGHTS, LeaderboardWeights } from '../config/economy';
 import { logger } from '../utils/logger';
 import { calculateStreak } from '../utils/streak';
 
 // ── Types ──
-
-interface LeaderboardWeights {
-  sessions: number;
-  streak: number;
-  accuracy: number;
-}
 
 export interface LeaderboardEntry {
   userId: string;
@@ -28,50 +23,6 @@ export interface ClassLeaderboardResult {
   currentUserRank: number | null;
   totalClients: number;
   lastUpdated: string;
-}
-
-// ── Default weights (used if LEADERBOARD_WEIGHTS not in EconomyConfig) ──
-
-const DEFAULT_WEIGHTS: LeaderboardWeights = {
-  sessions: 1,
-  streak: 1,
-  accuracy: 1,
-};
-
-/**
- * Load leaderboard weights from EconomyConfig.
- * Falls back to equal weighting (1:1:1) if not configured.
- */
-async function loadLeaderboardWeights(
-  prisma:
-    | PrismaClient
-    | Parameters<Parameters<PrismaClient['$transaction']>[0]>[0]
-): Promise<LeaderboardWeights> {
-  try {
-    const row = await (prisma as PrismaClient).economyConfig.findUnique({
-      where: { key: 'LEADERBOARD_WEIGHTS' },
-    });
-    if (row && row.value && typeof row.value === 'object') {
-      const val = row.value as Record<string, unknown>;
-      return {
-        sessions:
-          typeof val.sessions === 'number'
-            ? val.sessions
-            : DEFAULT_WEIGHTS.sessions,
-        streak:
-          typeof val.streak === 'number' ? val.streak : DEFAULT_WEIGHTS.streak,
-        accuracy:
-          typeof val.accuracy === 'number'
-            ? val.accuracy
-            : DEFAULT_WEIGHTS.accuracy,
-      };
-    }
-  } catch (error) {
-    logger.warn('Failed to load LEADERBOARD_WEIGHTS, using defaults', {
-      error,
-    });
-  }
-  return DEFAULT_WEIGHTS;
 }
 
 /**
@@ -95,20 +46,18 @@ export async function computeClassLeaderboard(
 
   // ── Load coach info ──
   const coach = await prisma.coach.findUnique({
-    where: { id: coachId },
-    select: { id: true, name: true },
+    where: { user_id: coachId },
+    include: { user: true },
   });
   if (!coach) {
     throw new LeaderboardError('Coach not found.', 404);
   }
 
   // ── Verify requesting user is subscribed to this coach ──
-  const subscription = await prisma.subscribedCoach.findUnique({
-    where: {
-      userId_coachId: { userId: requestingUserId, coachId },
-    },
+  const subscription = await prisma.subscribed_coach.findFirst({
+    where: { user_id: requestingUserId, coach_id: coachId, ended_at: null },
   });
-  if (!subscription || subscription.endedAt !== null) {
+  if (!subscription) {
     throw new LeaderboardError(
       'You must be subscribed to this coach to view their class leaderboard.',
       403
@@ -116,23 +65,23 @@ export async function computeClassLeaderboard(
   }
 
   // ── Get all active subscribers of this coach ──
-  const activeSubscribers = await prisma.subscribedCoach.findMany({
+  const activeSubscribers = await prisma.subscribed_coach.findMany({
     where: {
-      coachId,
-      endedAt: null,
+      coach_id: coachId,
+      ended_at: null,
     },
     select: {
-      userId: true,
+      user_id: true,
       user: {
-        select: { id: true, nickname: true },
+        select: { supabase_auth_id: true, nickname: true },
       },
     },
   });
 
   if (activeSubscribers.length === 0) {
     return {
-      coachId: coach.id,
-      coachName: coach.name,
+      coachId: coach.user_id,
+      coachName: coach.user.full_name,
       entries: [],
       currentUserRank: null,
       totalClients: 0,
@@ -147,76 +96,88 @@ export async function computeClassLeaderboard(
 
   // ── Get coach's program IDs (for scoping sessions to this coach) ──
   const coachPrograms = await prisma.program.findMany({
-    where: { coachId },
+    where: { user_id: coachId },
     select: { id: true },
   });
   const coachProgramIds = coachPrograms.map((p) => p.id);
 
   // ── Get all assigned program IDs for coach's programs ──
-  const assignedPrograms = await prisma.assignedProgram.findMany({
-    where: { programId: { in: coachProgramIds } },
-    select: { id: true, userId: true },
+  const assignedPrograms = await prisma.assigned_program.findMany({
+    where: { program_id: { in: coachProgramIds } },
+    select: { id: true, user_id: true },
   });
   const assignedProgramIdsByUser = new Map<string, string[]>();
   for (const ap of assignedPrograms) {
-    const existing = assignedProgramIdsByUser.get(ap.userId) ?? [];
+    const existing = assignedProgramIdsByUser.get(ap.user_id) ?? [];
     existing.push(ap.id);
-    assignedProgramIdsByUser.set(ap.userId, existing);
+    assignedProgramIdsByUser.set(ap.user_id, existing);
   }
 
-  // ── Load weights ──
-  const weights = await loadLeaderboardWeights(prisma);
+  // ── Load weights from static config ──
+  const weights: LeaderboardWeights = LEADERBOARD_WEIGHTS;
 
   // ── Compute metrics for each subscriber ──
-  const clientIds = activeSubscribers.map((s) => s.userId);
+  const clientIds = activeSubscribers.map((s) => s.user_id);
 
   // Batch query: completed sessions for all clients in the last 90 days under this coach's programs
   const allAssignedProgramIds = assignedPrograms.map((ap) => ap.id);
 
-  const sessions = await prisma.workoutSession.findMany({
+  const sessions = await prisma.workout_session.findMany({
     where: {
-      userId: { in: clientIds },
-      completedAt: { not: null },
-      startedAt: { gte: lookbackStart },
-      assignedProgramId: { in: allAssignedProgramIds },
+      completed_at: { not: null },
+      started_at: { gte: lookbackStart },
+      assigned_program_routine: {
+        assigned_program: {
+          user_id: { in: clientIds },
+          id: { in: allAssignedProgramIds },
+        },
+      },
     },
-    select: { id: true, userId: true },
+    select: {
+      id: true,
+      assigned_program_routine: {
+        select: {
+          assigned_program: { select: { user_id: true } },
+        },
+      },
+    },
   });
 
   // Count sessions per user
   const sessionCountByUser = new Map<string, number>();
   const sessionIdsByUser = new Map<string, string[]>();
   for (const s of sessions) {
-    sessionCountByUser.set(
-      s.userId,
-      (sessionCountByUser.get(s.userId) ?? 0) + 1
-    );
-    const ids = sessionIdsByUser.get(s.userId) ?? [];
+    const userId = s.assigned_program_routine.assigned_program.user_id;
+    sessionCountByUser.set(userId, (sessionCountByUser.get(userId) ?? 0) + 1);
+    const ids = sessionIdsByUser.get(userId) ?? [];
     ids.push(s.id);
-    sessionIdsByUser.set(s.userId, ids);
+    sessionIdsByUser.set(userId, ids);
   }
 
-  // Batch query: form comparison results for all sessions
+  // Batch query: performed_set accuracy results for all sessions
   const allSessionIds = sessions.map((s) => s.id);
-  const formResults = await prisma.formComparisonResult.findMany({
+  const formResults = await prisma.performed_set.findMany({
     where: {
-      workoutSessionId: { in: allSessionIds },
+      workout_session_id: { in: allSessionIds },
     },
-    select: { workoutSessionId: true, overallScore: true },
+    select: { workout_session_id: true, overall_score: true },
   });
 
   // Compute average accuracy per user
   const accuracySumByUser = new Map<string, { sum: number; count: number }>();
   const sessionToUser = new Map<string, string>();
   for (const s of sessions) {
-    sessionToUser.set(s.id, s.userId);
+    sessionToUser.set(
+      s.id,
+      s.assigned_program_routine.assigned_program.user_id
+    );
   }
   for (const fr of formResults) {
-    if (!fr.workoutSessionId) continue;
-    const userId = sessionToUser.get(fr.workoutSessionId);
+    if (!fr.workout_session_id) continue;
+    const userId = sessionToUser.get(fr.workout_session_id);
     if (!userId) continue;
     const acc = accuracySumByUser.get(userId) ?? { sum: 0, count: 0 };
-    acc.sum += fr.overallScore;
+    acc.sum += fr.overall_score / 100; // normalize 0–100 int to 0.0–1.0 float
     acc.count += 1;
     accuracySumByUser.set(userId, acc);
   }
@@ -244,7 +205,7 @@ export async function computeClassLeaderboard(
   }[] = [];
 
   for (const sub of activeSubscribers) {
-    const userId = sub.userId;
+    const userId = sub.user_id;
     const sessionsCompleted = sessionCountByUser.get(userId) ?? 0;
     const streakDays = streakByUser.get(userId) ?? 0;
 
@@ -322,8 +283,8 @@ export async function computeClassLeaderboard(
   });
 
   return {
-    coachId: coach.id,
-    coachName: coach.name,
+    coachId: coach.user_id,
+    coachName: coach.user.full_name,
     entries,
     currentUserRank,
     totalClients: activeSubscribers.length,

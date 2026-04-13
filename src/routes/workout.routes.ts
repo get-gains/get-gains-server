@@ -120,7 +120,7 @@ router.get(
  * @access  Protected
  */
 router.get(
-  '/routines/:routineId',
+  '/routines/:assignedProgramRoutineId',
   authenticateSupabaseUser,
   requireSubscription(),
   validateRequest(GetRoutineByIdSchema),

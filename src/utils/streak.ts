@@ -27,21 +27,23 @@ export async function calculateStreak(
   lookbackStart.setUTCDate(anchor.getUTCDate() - 90);
   lookbackStart.setUTCHours(0, 0, 0, 0);
 
-  const recentSessions = await (prisma as PrismaClient).workoutSession.findMany(
-    {
-      where: {
-        userId,
-        completedAt: { not: null },
-        startedAt: { gte: lookbackStart, lte: anchor },
+  const recentSessions = await (
+    prisma as PrismaClient
+  ).workout_session.findMany({
+    where: {
+      assigned_program_routine: {
+        assigned_program: { user_id: userId },
       },
-      select: { startedAt: true },
-      orderBy: { startedAt: 'desc' },
-    }
-  );
+      completed_at: { not: null },
+      started_at: { gte: lookbackStart, lte: anchor },
+    },
+    select: { started_at: true },
+    orderBy: { started_at: 'desc' },
+  });
 
   // Build a set of unique workout dates (YYYY-MM-DD in UTC)
   const workoutDates = new Set(
-    recentSessions.map((s) => s.startedAt.toISOString().slice(0, 10))
+    recentSessions.map((s) => s.started_at!.toISOString().slice(0, 10))
   );
 
   // Count streak backwards from anchor date
@@ -82,34 +84,27 @@ export async function calculateStreaksBySource(
   lookbackStart.setUTCDate(anchor.getUTCDate() - 90);
   lookbackStart.setUTCHours(0, 0, 0, 0);
 
-  const recentSessions = await (prisma as PrismaClient).workoutSession.findMany(
-    {
-      where: {
-        userId,
-        completedAt: { not: null },
-        startedAt: { gte: lookbackStart, lte: anchor },
+  const recentSessions = await (
+    prisma as PrismaClient
+  ).workout_session.findMany({
+    where: {
+      assigned_program_routine: {
+        assigned_program: { user_id: userId },
       },
-      select: {
-        startedAt: true,
-        assignedProgramId: true,
-      },
-      orderBy: { startedAt: 'desc' },
-    }
-  );
+      completed_at: { not: null },
+      started_at: { gte: lookbackStart, lte: anchor },
+    },
+    select: { started_at: true },
+    orderBy: { started_at: 'desc' },
+  });
 
-  // Build date sets for streak calculation
+  // Build date set for streak calculation
+  // In the new schema every session belongs to an assigned_program_routine;
+  // the standalone/coach distinction no longer exists.
   const allDates = new Set<string>();
-  const standaloneDates = new Set<string>();
-  const coachDates = new Set<string>();
 
   for (const s of recentSessions) {
-    const dateStr = s.startedAt.toISOString().slice(0, 10);
-    allDates.add(dateStr);
-    if (s.assignedProgramId === null) {
-      standaloneDates.add(dateStr);
-    } else {
-      coachDates.add(dateStr);
-    }
+    allDates.add(s.started_at!.toISOString().slice(0, 10));
   }
 
   // Count streak backwards from anchor date
@@ -125,9 +120,11 @@ export async function calculateStreaksBySource(
     return streak;
   };
 
+  const combinedStreak = countStreak(allDates);
+
   return {
-    combinedStreak: countStreak(allDates),
-    standaloneStreak: countStreak(standaloneDates),
-    coachStreak: countStreak(coachDates),
+    combinedStreak,
+    standaloneStreak: combinedStreak,
+    coachStreak: combinedStreak,
   };
 }

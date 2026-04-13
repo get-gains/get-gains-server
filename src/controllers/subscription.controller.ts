@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Provider } from '@prisma/client';
 import { logger } from '../utils/logger';
 import { sendSuccess, sendSingleError } from '../utils/response';
 import {
@@ -14,7 +15,6 @@ import {
   verifyAndProcessPurchase,
   hasActiveSubscription,
 } from '../services/subscription.service';
-import { PaymentProvider } from '@prisma/client';
 import prisma from '../config/database';
 
 // ============== Plan Controllers ==============
@@ -30,8 +30,9 @@ export const getPlans = async (req: Request, res: Response): Promise<void> => {
 
     let plans;
     if (includeInactive) {
-      plans = await prisma.plan.findMany({
-        orderBy: { sortOrder: 'asc' },
+      plans = await prisma.subscription_plan.findMany({
+        orderBy: { sort_order: 'asc' },
+        include: { provider_plans: { where: { is_active: true } } },
       });
     } else {
       plans = await getAvailablePlans();
@@ -42,12 +43,13 @@ export const getPlans = async (req: Request, res: Response): Promise<void> => {
         id: p.id,
         name: p.name,
         description: p.description,
-        priceCents: p.priceCents,
+        priceCents: p.price_cents,
         currency: p.currency,
-        billingCycle: p.billingCycle,
+        billingCycle: p.billing_cycle,
         features: p.features,
-        trialPeriodDays: p.trialPeriodDays,
-        productId: p.productId,
+        trialPeriodDays: p.trial_period_days,
+        tierLevel: p.tier_level,
+        productId: p.provider_plans[0]?.provider_product_id ?? null,
       })),
     });
   } catch (error) {
@@ -66,28 +68,18 @@ export const getSubscriptionStatus = async (
   res: Response
 ): Promise<void> => {
   try {
-    const user = req.user!;
+    const userId = req.appUser!.supabase_auth_id;
     const { includeHistory } = res.locals.validated
       ?.query as GetSubscriptionStatusQuery;
 
-    // Get user from database using Supabase ID
-    const dbUser = await prisma.user.findFirst({
-      where: { supabaseId: user.id },
-    });
+    logger.debug('Fetching subscription status', { userId });
 
-    if (!dbUser) {
-      sendSingleError(res, 'User not found', 404);
-      return;
-    }
-
-    logger.debug('Fetching subscription status', { userId: dbUser.id });
-
-    const subscription = await getUserSubscription(dbUser.id);
-    const isActive = await hasActiveSubscription(dbUser.id);
+    const subscription = await getUserSubscription(userId);
+    const isActive = await hasActiveSubscription(userId);
 
     let history = null;
     if (includeHistory) {
-      const historyResult = await getUserSubscriptionHistory(dbUser.id, 5);
+      const historyResult = await getUserSubscriptionHistory(userId, 5);
       history = historyResult.subscriptions;
     }
 
@@ -98,25 +90,25 @@ export const getSubscriptionStatus = async (
             id: subscription.id,
             status: subscription.status,
             plan: {
-              id: subscription.plan.id,
-              name: subscription.plan.name,
-              billingCycle: subscription.plan.billingCycle,
-              tierLevel: subscription.plan.tierLevel,
+              id: subscription.subscription_plan.id,
+              name: subscription.subscription_plan.name,
+              billingCycle: subscription.subscription_plan.billing_cycle,
+              tierLevel: subscription.subscription_plan.tier_level,
             },
-            currentPeriodStart: subscription.currentPeriodStart,
-            currentPeriodEnd: subscription.currentPeriodEnd,
-            nextBillingDate: subscription.nextBillingDate,
-            cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
-            autoRenew: subscription.autoRenew,
+            currentPeriodStart: subscription.current_period_start,
+            currentPeriodEnd: subscription.current_period_end,
+            nextBillingDate: subscription.next_billing_date,
+            cancelAtPeriodEnd: subscription.cancel_at_period_end,
+            autoRenew: subscription.auto_renew,
           }
         : null,
       history: history
         ? history.map((s) => ({
             id: s.id,
             status: s.status,
-            planName: s.plan.name,
-            startDate: s.startDate,
-            endedAt: s.endedAt,
+            planName: s.subscription_plan.name,
+            startDate: s.start_date,
+            endedAt: s.ended_at,
           }))
         : null,
     });
@@ -134,27 +126,14 @@ export const getSubscriptionHistory = async (
   res: Response
 ): Promise<void> => {
   try {
-    const user = req.user!;
+    const userId = req.appUser!.supabase_auth_id;
     const { limit, offset } = res.locals.validated
       ?.query as GetSubscriptionHistoryQuery;
 
-    const dbUser = await prisma.user.findFirst({
-      where: { supabaseId: user.id },
-    });
-
-    if (!dbUser) {
-      sendSingleError(res, 'User not found', 404);
-      return;
-    }
-
-    logger.debug('Fetching subscription history', {
-      userId: dbUser.id,
-      limit,
-      offset,
-    });
+    logger.debug('Fetching subscription history', { userId, limit, offset });
 
     const { subscriptions, total } = await getUserSubscriptionHistory(
-      dbUser.id,
+      userId,
       limit,
       offset
     );
@@ -164,17 +143,17 @@ export const getSubscriptionHistory = async (
         id: s.id,
         status: s.status,
         plan: {
-          id: s.plan.id,
-          name: s.plan.name,
-          billingCycle: s.plan.billingCycle,
+          id: s.subscription_plan.id,
+          name: s.subscription_plan.name,
+          billingCycle: s.subscription_plan.billing_cycle,
         },
-        startDate: s.startDate,
-        currentPeriodStart: s.currentPeriodStart,
-        currentPeriodEnd: s.currentPeriodEnd,
-        cancelAtPeriodEnd: s.cancelAtPeriodEnd,
-        canceledAt: s.canceledAt,
-        endedAt: s.endedAt,
-        createdAt: s.createdAt,
+        startDate: s.start_date,
+        currentPeriodStart: s.current_period_start,
+        currentPeriodEnd: s.current_period_end,
+        cancelAtPeriodEnd: s.cancel_at_period_end,
+        canceledAt: s.canceled_at,
+        endedAt: s.ended_at,
+        createdAt: s.created_at,
       })),
       pagination: {
         total,
@@ -183,11 +162,9 @@ export const getSubscriptionHistory = async (
         hasMore: offset! + subscriptions.length < total,
       },
     });
-    return;
   } catch (error) {
     logger.error('Failed to fetch subscription history', error);
     sendSingleError(res, 'Failed to fetch subscription history', 500);
-    return;
   }
 };
 
@@ -199,32 +176,17 @@ export const verifyPurchase = async (
   res: Response
 ): Promise<void> => {
   try {
-    const user = req.user!;
+    const userId = req.appUser!.supabase_auth_id;
     const { productId, purchaseToken, provider } = res.locals.validated
       ?.body as VerifyPurchaseInput;
 
-    const dbUser = await prisma.user.findFirst({
-      where: { supabaseId: user.id },
-    });
-
-    if (!dbUser) {
-      sendSingleError(res, 'User not found', 404);
-      return;
-    }
-
-    logger.info('Verifying purchase', {
-      userId: dbUser.id,
-      productId,
-      provider,
-    });
+    logger.info('Verifying purchase', { userId, productId, provider });
 
     const paymentProvider =
-      provider === 'GOOGLE_PAY'
-        ? PaymentProvider.GOOGLE_PAY
-        : PaymentProvider.GOOGLE_PAY;
+      provider === 'GOOGLE_PLAY' ? Provider.GOOGLE_PLAY : Provider.GOOGLE_PLAY;
 
     const result = await verifyAndProcessPurchase(
-      dbUser.id,
+      userId,
       productId,
       purchaseToken,
       paymentProvider
@@ -242,16 +204,16 @@ export const verifyPurchase = async (
             id: result.subscription.id,
             status: result.subscription.status,
             plan: {
-              id: result.subscription.plan.id,
-              name: result.subscription.plan.name,
-              billingCycle: result.subscription.plan.billingCycle,
-              tierLevel: result.subscription.plan.tierLevel,
+              id: result.subscription.subscription_plan.id,
+              name: result.subscription.subscription_plan.name,
+              billingCycle: result.subscription.subscription_plan.billing_cycle,
+              tierLevel: result.subscription.subscription_plan.tier_level,
             },
-            currentPeriodStart: result.subscription.currentPeriodStart,
-            currentPeriodEnd: result.subscription.currentPeriodEnd,
-            nextBillingDate: result.subscription.nextBillingDate,
-            cancelAtPeriodEnd: result.subscription.cancelAtPeriodEnd,
-            autoRenew: result.subscription.autoRenew,
+            currentPeriodStart: result.subscription.current_period_start,
+            currentPeriodEnd: result.subscription.current_period_end,
+            nextBillingDate: result.subscription.next_billing_date,
+            cancelAtPeriodEnd: result.subscription.cancel_at_period_end,
+            autoRenew: result.subscription.auto_renew,
           }
         : null,
     });

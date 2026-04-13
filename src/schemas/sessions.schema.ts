@@ -25,20 +25,20 @@ export type SessionHistoryQuery = z.infer<
 /**
  * Schema for a single session in the unified history response.
  *
- * `source` is derived from `assignedProgramId IS NULL` (standalone) vs
- * `IS NOT NULL` (coach). `programName` and `coachName` are resolved via
- * joins and present only for coach sessions.
+ * `source` is derived from the relational path:
+ *   assigned_program.program.user_id == supabaseId → "standalone"
+ *   assigned_program.program.user_id != supabaseId → "coach"
+ * `programName` and `coachName` are resolved via joins and present only for
+ * coach sessions.
  */
 export const UnifiedSessionSummarySchema = z.object({
   id: z.string(),
-  userId: z.string(),
-  assignedProgramId: z.string().nullable(),
-  routineId: z.string().nullable(),
-  startedAt: z.string(),
+  routineId: z.string(),
+  startedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
-  notes: z.string().nullable(),
+  feedback: z.string().nullable(),
   totalSets: z.number().int().min(0),
-  routineName: z.string().nullable(),
+  routineName: z.string(),
   source: z.enum(['standalone', 'coach']),
   programName: z.string().nullable(),
   coachName: z.string().nullable(),

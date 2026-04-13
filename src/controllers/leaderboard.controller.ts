@@ -20,7 +20,7 @@ export const getClassLeaderboard = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.appUser!.id;
+    const userId = req.appUser!.supabase_auth_id;
     const { coachId } = res.locals.validated?.params as ClassLeaderboardParams;
     const { limit } = res.locals.validated?.query as ClassLeaderboardQuery;
 
@@ -53,20 +53,24 @@ export const getMyCoaches = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.appUser!.id;
+    const userId = req.appUser!.supabase_auth_id;
 
     // Get all active coach subscriptions for this user
-    const subscriptions = await prisma.subscribedCoach.findMany({
+    const subscriptions = await prisma.subscribed_coach.findMany({
       where: {
-        userId,
-        endedAt: null,
+        user_id: userId,
+        ended_at: null,
       },
       select: {
-        coachId: true,
+        coach_id: true,
         coach: {
           select: {
-            id: true,
-            name: true,
+            user_id: true,
+            user: {
+              select: {
+                full_name: true,
+              },
+            },
           },
         },
       },
@@ -75,16 +79,16 @@ export const getMyCoaches = async (
     // For each coach, count active clients
     const coaches = await Promise.all(
       subscriptions.map(async (sub) => {
-        const clientCount = await prisma.subscribedCoach.count({
+        const clientCount = await prisma.subscribed_coach.count({
           where: {
-            coachId: sub.coachId,
-            endedAt: null,
+            coach_id: sub.coach_id,
+            ended_at: null,
           },
         });
 
         return {
-          coachId: sub.coach.id,
-          coachName: sub.coach.name,
+          coachId: sub.coach_id,
+          coachName: sub.coach.user.full_name,
           clientCount,
         };
       })

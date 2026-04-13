@@ -3,30 +3,20 @@ import prisma from '../config/database';
 import { logger } from '../utils/logger';
 import { sendSuccess, sendSingleError } from '../utils/response';
 import { EquipBody, UnequipBody } from '../schemas/cosmetics.schema';
-import { CosmeticCategory } from '@prisma/client';
-
-const ALL_CATEGORIES: CosmeticCategory[] = [
-  'HEADWEAR',
-  'TOP',
-  'BOTTOM',
-  'ACCESSORY',
-];
 
 /**
- * Build the full equipped map { HEADWEAR: id|null, TOP: id|null, ... }
- * from a list of EquippedCosmetic records.
+ * Build an equipped map keyed by category string.
+ * Input rows must have cosmetic_id and category.
+ * Returns { [category: string]: cosmeticId | null } for all categories seen.
  */
 function buildEquippedMap(
-  equippedRows: { cosmeticId: string; category: CosmeticCategory }[]
-): Record<CosmeticCategory, string | null> {
+  equippedRows: { cosmetic_id: string; category: string }[]
+): Record<string, string | null> {
   const map: Record<string, string | null> = {};
-  for (const cat of ALL_CATEGORIES) {
-    map[cat] = null;
-  }
   for (const row of equippedRows) {
-    map[row.category] = row.cosmeticId;
+    map[row.category] = row.cosmetic_id;
   }
-  return map as Record<CosmeticCategory, string | null>;
+  return map;
 }
 
 /**
@@ -38,37 +28,34 @@ export const getInventory = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.appUser!.id;
+    const userId = req.appUser!.supabase_auth_id;
 
-    // Fetch owned cosmetics and equipped state in parallel
-    const [ownedRecords, equippedRecords] = await Promise.all([
-      prisma.userCosmetic.findMany({
-        where: { userId },
-        include: { cosmetic: true },
-        orderBy: { purchasedAt: 'desc' },
-      }),
-      prisma.equippedCosmetic.findMany({
-        where: { userId },
-        select: { cosmeticId: true, category: true },
-      }),
-    ]);
+    const ownedRecords = await prisma.user_cosmetic.findMany({
+      where: { user_id: userId },
+      include: { cosmetic: true },
+      orderBy: { created_at: 'desc' },
+    });
 
-    const equippedMap = buildEquippedMap(equippedRecords);
-    const equippedCosmeticIds = new Set(
-      equippedRecords.map((e) => e.cosmeticId)
-    );
+    const equippedRows = ownedRecords
+      .filter((uc) => uc.equipped_at !== null)
+      .map((uc) => ({
+        cosmetic_id: uc.cosmetic_id,
+        category: uc.cosmetic.category,
+      }));
+
+    const equippedMap = buildEquippedMap(equippedRows);
+
+    const equippedCosmeticIds = new Set(equippedRows.map((r) => r.cosmetic_id));
 
     const owned = ownedRecords.map((uc) => ({
-      id: uc.id,
-      cosmeticId: uc.cosmeticId,
+      cosmeticId: uc.cosmetic_id,
       name: uc.cosmetic.name,
       description: uc.cosmetic.description,
       tier: uc.cosmetic.tier,
       category: uc.cosmetic.category,
-      previewImageUrl: uc.cosmetic.previewImageUrl,
-      unityAssetRef: uc.cosmetic.unityAssetRef,
-      purchasedAt: uc.purchasedAt,
-      isEquipped: equippedCosmeticIds.has(uc.cosmeticId),
+      preview_image_key: uc.cosmetic.preview_image_key,
+      purchasedAt: uc.created_at,
+      isEquipped: equippedCosmeticIds.has(uc.cosmetic_id),
     }));
 
     sendSuccess(res, {
@@ -90,13 +77,13 @@ export const equipCosmetic = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.appUser!.id;
+    const userId = req.appUser!.supabase_auth_id;
     const { cosmeticId } = res.locals.validated?.body as EquipBody;
 
-    // 1. Verify cosmetic exists
-    const cosmetic = await prisma.cosmetic.findUnique({
+    // 1. Verify cosmetic exists and is not soft-deleted
+    const cosmetic = await prisma.cosmetics.findUnique({
       where: { id: cosmeticId },
-      select: { id: true, category: true },
+      select: { id: true, category: true, deleted_at: true },
     });
 
     if (!cosmetic) {
@@ -104,10 +91,15 @@ export const equipCosmetic = async (
       return;
     }
 
+    if (cosmetic.deleted_at) {
+      sendSingleError(res, 'Cosmetic not found.', 404);
+      return;
+    }
+
     // 2. Verify user owns this cosmetic
-    const ownership = await prisma.userCosmetic.findUnique({
+    const ownership = await prisma.user_cosmetic.findUnique({
       where: {
-        userId_cosmeticId: { userId, cosmeticId },
+        user_id_cosmetic_id: { user_id: userId, cosmetic_id: cosmeticId },
       },
     });
 
@@ -116,50 +108,48 @@ export const equipCosmetic = async (
       return;
     }
 
-    // 3. Upsert EquippedCosmetic for (userId, category)
-    await prisma.equippedCosmetic.upsert({
-      where: {
-        userId_category: { userId, category: cosmetic.category },
-      },
-      update: {
-        cosmeticId,
-        equippedAt: new Date(),
-      },
-      create: {
-        userId,
-        cosmeticId,
-        category: cosmetic.category,
-      },
-    });
+    // 3. Apply B8 equip transaction: unequip current in same category, then equip this one
+    const { category } = cosmetic;
+    await prisma.$transaction([
+      prisma.user_cosmetic.updateMany({
+        where: {
+          user_id: userId,
+          equipped_at: { not: null },
+          cosmetic: { category },
+        },
+        data: { equipped_at: null },
+      }),
+      prisma.user_cosmetic.update({
+        where: {
+          user_id_cosmetic_id: { user_id: userId, cosmetic_id: cosmeticId },
+        },
+        data: { equipped_at: new Date() },
+      }),
+    ]);
 
-    // 4. Return full equipped state
-    const equippedRecords = await prisma.equippedCosmetic.findMany({
-      where: { userId },
+    // 4. Return updated equipped state
+    const equippedRecords = await prisma.user_cosmetic.findMany({
+      where: { user_id: userId, equipped_at: { not: null } },
       include: {
         cosmetic: {
-          select: {
-            id: true,
-            category: true,
-            unityAssetRef: true,
-          },
+          select: { id: true, category: true },
         },
       },
     });
 
     const equippedMap = buildEquippedMap(
-      equippedRecords.map((e) => ({
-        cosmeticId: e.cosmeticId,
-        category: e.category,
+      equippedRecords.map((uc) => ({
+        cosmetic_id: uc.cosmetic_id,
+        category: uc.cosmetic.category,
       }))
     );
 
     sendSuccess(res, {
       equipped: equippedMap,
-      equippedCosmetics: equippedRecords.map((e) => ({
-        cosmeticId: e.cosmeticId,
-        category: e.category,
-        unityAssetRef: e.cosmetic.unityAssetRef,
-        equippedAt: e.equippedAt,
+      equippedCosmetics: equippedRecords.map((uc) => ({
+        cosmeticId: uc.cosmetic_id,
+        category: uc.cosmetic.category,
+        equippedAt: uc.equipped_at,
       })),
     });
   } catch (error) {
@@ -170,74 +160,69 @@ export const equipCosmetic = async (
 
 /**
  * POST /api/cosmetics/unequip
- * Unequip a cosmetic from its category slot.
+ * Unequip a specific cosmetic by ID.
  */
 export const unequipCosmetic = async (
   req: Request,
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.appUser!.id;
-    const { category } = res.locals.validated?.body as UnequipBody;
+    const userId = req.appUser!.supabase_auth_id;
+    const { cosmeticId } = res.locals.validated?.body as UnequipBody;
 
-    // 1. Check if there is something equipped in the slot
-    const existing = await prisma.equippedCosmetic.findUnique({
+    // 1. Find the user_cosmetic row
+    const row = await prisma.user_cosmetic.findUnique({
       where: {
-        userId_category: {
-          userId,
-          category: category as CosmeticCategory,
-        },
+        user_id_cosmetic_id: { user_id: userId, cosmetic_id: cosmeticId },
       },
     });
 
-    if (!existing) {
+    if (!row) {
+      sendSingleError(res, 'You do not own this cosmetic.', 400, 'cosmeticId');
+      return;
+    }
+
+    if (row.equipped_at === null) {
       sendSingleError(
         res,
-        'No cosmetic equipped in this slot.',
+        'This cosmetic is not currently equipped.',
         400,
-        'category'
+        'cosmeticId'
       );
       return;
     }
 
-    // 2. Delete the equipped record
-    await prisma.equippedCosmetic.delete({
+    // 2. Unequip by setting equipped_at to null
+    await prisma.user_cosmetic.update({
       where: {
-        userId_category: {
-          userId,
-          category: category as CosmeticCategory,
-        },
+        user_id_cosmetic_id: { user_id: userId, cosmetic_id: cosmeticId },
       },
+      data: { equipped_at: null },
     });
 
-    // 3. Return full equipped state
-    const equippedRecords = await prisma.equippedCosmetic.findMany({
-      where: { userId },
+    // 3. Return updated equipped state
+    const equippedRecords = await prisma.user_cosmetic.findMany({
+      where: { user_id: userId, equipped_at: { not: null } },
       include: {
         cosmetic: {
-          select: {
-            id: true,
-            category: true,
-            unityAssetRef: true,
-          },
+          select: { id: true, category: true },
         },
       },
     });
 
     const equippedMap = buildEquippedMap(
-      equippedRecords.map((e) => ({
-        cosmeticId: e.cosmeticId,
-        category: e.category,
+      equippedRecords.map((uc) => ({
+        cosmetic_id: uc.cosmetic_id,
+        category: uc.cosmetic.category,
       }))
     );
 
     sendSuccess(res, {
       equipped: equippedMap,
-      equippedCosmetics: equippedRecords.map((e) => ({
-        cosmeticId: e.cosmeticId,
-        category: e.category,
-        unityAssetRef: e.cosmetic.unityAssetRef,
-        equippedAt: e.equippedAt,
+      equippedCosmetics: equippedRecords.map((uc) => ({
+        cosmeticId: uc.cosmetic_id,
+        category: uc.cosmetic.category,
+        equippedAt: uc.equipped_at,
       })),
     });
   } catch (error) {
@@ -248,33 +233,29 @@ export const unequipCosmetic = async (
 
 /**
  * GET /api/cosmetics/equipped
- * Get only the currently equipped cosmetics (lightweight endpoint for Unity widget loading).
+ * Get only the currently equipped cosmetics.
  */
 export const getEquipped = async (
   req: Request,
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.appUser!.id;
+    const userId = req.appUser!.supabase_auth_id;
 
-    const equippedRecords = await prisma.equippedCosmetic.findMany({
-      where: { userId },
+    const equippedRecords = await prisma.user_cosmetic.findMany({
+      where: { user_id: userId, equipped_at: { not: null } },
       include: {
         cosmetic: {
-          select: {
-            id: true,
-            category: true,
-            unityAssetRef: true,
-          },
+          select: { id: true, category: true },
         },
       },
     });
 
     sendSuccess(res, {
-      equippedCosmetics: equippedRecords.map((e) => ({
-        cosmeticId: e.cosmeticId,
-        category: e.category,
-        unityAssetRef: e.cosmetic.unityAssetRef,
+      equippedCosmetics: equippedRecords.map((uc) => ({
+        cosmeticId: uc.cosmetic_id,
+        category: uc.cosmetic.category,
+        equippedAt: uc.equipped_at,
       })),
     });
   } catch (error) {
