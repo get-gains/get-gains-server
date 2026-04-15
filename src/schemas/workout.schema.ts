@@ -7,7 +7,6 @@ import { z } from 'zod';
  */
 export const GetExercisesSchema = z.object({
   query: z.object({
-    muscleGroup: z.string().optional(),
     search: z.string().optional(),
     limit: z.coerce.number().int().min(1).max(100).optional().default(50),
     offset: z.coerce.number().int().min(0).optional().default(0),
@@ -23,10 +22,8 @@ export const CreateExerciseSchema = z.object({
   body: z.object({
     name: z.string().min(1, 'Exercise name is required').max(100),
     description: z.string().min(1, 'Description is required').max(2000),
-    primaryMuscleGroup: z.string().min(1, 'Primary muscle group is required'),
-    targetMuscles: z.array(z.string()).optional().default([]),
-    equipmentNeeded: z.array(z.string()).optional().default([]),
-    isPublic: z.boolean().optional().default(true),
+    target_muscles: z.array(z.string()).optional().default([]),
+    is_public: z.boolean().optional().default(true),
   }),
 });
 
@@ -42,10 +39,8 @@ export const UpdateExerciseSchema = z.object({
   body: z.object({
     name: z.string().min(1).max(100).optional(),
     description: z.string().min(1).max(2000).optional(),
-    primaryMuscleGroup: z.string().min(1).optional(),
-    targetMuscles: z.array(z.string()).optional(),
-    equipmentNeeded: z.array(z.string()).optional(),
-    isPublic: z.boolean().optional(),
+    target_muscles: z.array(z.string()).optional(),
+    is_public: z.boolean().optional(),
   }),
 });
 
@@ -83,11 +78,13 @@ export const GetRoutinesSchema = z.object({
 export type GetRoutinesQuery = z.infer<typeof GetRoutinesSchema>['query'];
 
 /**
- * Schema for getting a single routine
+ * Schema for getting a single assigned program routine
  */
 export const GetRoutineByIdSchema = z.object({
   params: z.object({
-    routineId: z.string().min(1, 'Routine ID is required'),
+    assignedProgramRoutineId: z
+      .string()
+      .min(1, 'Assigned program routine ID is required'),
   }),
 });
 
@@ -98,11 +95,13 @@ export type GetRoutineByIdParams = z.infer<
 // ============== Workout Session Schemas ==============
 
 /**
- * Schema for starting a workout session
+ * Schema for starting a workout session (must belong to an assigned program routine)
  */
 export const StartWorkoutSessionSchema = z.object({
   body: z.object({
-    assignedProgramId: z.string().optional(),
+    assignedProgramRoutineId: z
+      .string()
+      .min(1, 'Assigned program routine ID is required'),
   }),
 });
 
@@ -111,12 +110,10 @@ export type StartWorkoutSessionInput = z.infer<
 >['body'];
 
 /**
- * Schema for getting today's scheduled workout
+ * Schema for getting today's scheduled workout (uses days_of_week, no explicit ID needed)
  */
 export const GetTodayWorkoutSchema = z.object({
-  query: z.object({
-    assignedProgramId: z.string().optional(),
-  }),
+  query: z.object({}),
 });
 
 export type GetTodayWorkoutQuery = z.infer<
@@ -131,7 +128,7 @@ export const CompleteWorkoutSessionSchema = z.object({
     sessionId: z.string().min(1, 'Session ID is required'),
   }),
   body: z.object({
-    notes: z.string().max(1000).optional(),
+    feedback: z.string().max(1000).optional(),
   }),
 });
 
@@ -149,8 +146,8 @@ export const GetWorkoutSessionsSchema = z.object({
   query: z.object({
     limit: z.coerce.number().int().min(1).max(100).optional().default(20),
     offset: z.coerce.number().int().min(0).optional().default(0),
-    startDate: z.string().datetime().optional(),
-    endDate: z.string().datetime().optional(),
+    startDate: z.iso.datetime().optional(),
+    endDate: z.iso.datetime().optional(),
   }),
 });
 
@@ -184,12 +181,15 @@ export const GetActiveSessionSchema = z.object({});
 export const LogSetSchema = z.object({
   body: z.object({
     workoutSessionId: z.string().min(1, 'Workout session ID is required'),
-    routineExerciseId: z.string().min(1, 'Routine exercise ID is required'),
-    setNumber: z.number().int().min(1, 'Set number must be at least 1'),
-    repsCompleted: z.number().int().min(0, 'Reps must be at least 0'),
-    weightKg: z.number().min(0).optional(),
-    rpe: z.number().int().min(1).max(10).optional(),
-    notes: z.string().max(500).optional(),
+    assignedProgramRoutineExerciseId: z
+      .string()
+      .min(1, 'Assigned program routine exercise ID is required'),
+    set_number: z.number().int().min(1),
+    reps: z.number().int().min(0),
+    weight: z.number().min(0),
+    overallScore: z.number().int().min(0).max(100),
+    recordedFramesKey: z.string().optional(),
+    completedAt: z.iso.datetime(),
   }),
 });
 
@@ -203,10 +203,7 @@ export const UpdateSetSchema = z.object({
     setId: z.string().min(1, 'Set ID is required'),
   }),
   body: z.object({
-    repsCompleted: z.number().int().min(0).optional(),
-    weightKg: z.number().min(0).optional(),
-    rpe: z.number().int().min(1).max(10).optional(),
-    notes: z.string().max(500).optional(),
+    weight: z.number().min(0).optional(),
   }),
 });
 
@@ -233,13 +230,14 @@ export const BatchSyncSetsSchema = z.object({
       z.object({
         localId: z.string().optional(),
         workoutSessionId: z.string().min(1),
-        routineExerciseId: z.string().min(1),
-        setNumber: z.number().int().min(1),
-        repsCompleted: z.number().int().min(0),
-        weightKg: z.number().min(0).optional(),
-        rpe: z.number().int().min(1).max(10).optional(),
-        notes: z.string().max(500).optional(),
-        createdAt: z.string().datetime().optional(),
+        assignedProgramRoutineExerciseId: z.string().min(1),
+        set_number: z.number().int().min(1),
+        reps: z.number().int().min(0),
+        weight: z.number().min(0),
+        overallScore: z.number().int().min(0).max(100),
+        recordedFramesKey: z.string().optional(),
+        completedAt: z.iso.datetime(),
+        createdAt: z.iso.datetime().optional(),
       })
     ),
   }),
@@ -255,7 +253,7 @@ export type BatchSyncSetsInput = z.infer<typeof BatchSyncSetsSchema>['body'];
 export const GetWeeklyStatsSchema = z.object({
   query: z.object({
     // ISO date string for which week to query (defaults to current week)
-    weekOf: z.string().datetime().optional(),
+    weekOf: z.iso.datetime().optional(),
   }),
 });
 

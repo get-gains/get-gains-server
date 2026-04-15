@@ -16,34 +16,29 @@ import type {
 
 // ─── Shared select for consistent response shape ────────────────────
 const profileSelect = {
-  id: true,
-  userId: true,
+  supabase_auth_id: true,
   bio: true,
-  avatarUrl: true,
-  heightCm: true,
-  weightKg: true,
-  unitPreference: true,
+  avatar_key: true,
+  height_cm: true,
+  weight_kg: true,
   sex: true,
-  dateOfBirth: true,
-  equipment: true,
-  injuryHistory: true,
-  experienceLevel: true,
-  daysAvailable: true,
-  sessionDurationMinutes: true,
-  createdAt: true,
-  updatedAt: true,
+  date_of_birth: true,
+  equipment_available: true,
+  experience_level: true,
+  created_at: true,
+  updated_at: true,
 } as const;
 
 /**
- * Takes a raw profile from Prisma (with avatarUrl storing an S3 key)
+ * Takes a raw profile from Prisma (with avatar_key storing an S3 key)
  * and resolves it to a response object with a presigned avatar URL.
  */
-async function withSignedAvatar<T extends { avatarUrl: string | null }>(
+async function withSignedAvatar<T extends { avatar_key: string | null }>(
   profile: T | null
-): Promise<(T & { avatarUrl: string | null }) | null> {
+): Promise<(Omit<T, 'avatar_key'> & { avatar_key: string | null }) | null> {
   if (!profile) return null;
-  const avatarUrl = await resolveAvatarUrl(profile.avatarUrl);
-  return { ...profile, avatarUrl };
+  const avatarUrl = await resolveAvatarUrl(profile.avatar_key);
+  return { ...profile, avatar_key: avatarUrl };
 }
 
 // ─── GET  /profile — Get own user profile ───────────────────────────
@@ -58,8 +53,8 @@ export const getUserProfile = async (
       return;
     }
 
-    const raw = await prisma.userProfile.findUnique({
-      where: { userId: appUser.id },
+    const raw = await prisma.user.findUnique({
+      where: { supabase_auth_id: appUser.supabase_auth_id },
       select: profileSelect,
     });
 
@@ -88,15 +83,6 @@ export const createUserProfile = async (
       return;
     }
 
-    // Prevent duplicate profiles
-    const existing = await prisma.userProfile.findUnique({
-      where: { userId: appUser.id },
-    });
-    if (existing) {
-      sendSingleError(res, 'Profile already exists. Use PATCH to update.', 409);
-      return;
-    }
-
     // Use res.locals.validated.body — the validateRequest middleware stores
     // the Zod-parsed (and coerced) result here. Multipart text fields arrive as
     // strings; the schema's z.preprocess(toNumber, …) converts them to numbers
@@ -109,7 +95,7 @@ export const createUserProfile = async (
     const file = req.file;
     if (file) {
       try {
-        avatarKey = buildAvatarKey(appUser.id, file.originalname);
+        avatarKey = buildAvatarKey(appUser.supabase_auth_id, file.originalname);
         await uploadFile(avatarKey, file.buffer, file.mimetype);
       } catch (uploadError) {
         logger.error('Failed to upload avatar during onboarding', uploadError);
@@ -118,28 +104,24 @@ export const createUserProfile = async (
       }
     }
 
-    const profile = await prisma.userProfile.create({
+    // The user already exists (created at registration). Update profile fields.
+    const profile = await prisma.user.update({
+      where: { supabase_auth_id: appUser.supabase_auth_id },
       data: {
-        userId: appUser.id,
         bio: body.bio ?? null,
-        avatarUrl: avatarKey,
-        heightCm: body.heightCm ?? null,
-        weightKg: body.weightKg ?? null,
-        unitPreference: body.unitPreference ?? null,
+        avatar_key: avatarKey,
+        height_cm: body.heightCm ?? null,
+        weight_kg: body.weightKg ?? null,
         sex: body.sex ?? null,
-        dateOfBirth: body.dateOfBirth ? new Date(body.dateOfBirth) : null,
-        equipment: body.equipment ?? [],
-        injuryHistory: body.injuryHistory ?? null,
-        experienceLevel: body.experienceLevel ?? null,
-        daysAvailable: body.daysAvailable,
-        sessionDurationMinutes: body.sessionDurationMinutes,
+        date_of_birth: body.dateOfBirth ? new Date(body.dateOfBirth) : null,
+        equipment_available: body.equipment ?? [],
+        experience_level: body.experienceLevel ?? null,
       },
       select: profileSelect,
     });
 
     logger.info('User profile created (onboarding)', {
-      userId: appUser.id,
-      profileId: profile.id,
+      userId: appUser.supabase_auth_id,
     });
 
     const resolved = await withSignedAvatar(profile);
@@ -166,15 +148,12 @@ export const updateUserProfile = async (
       return;
     }
 
-    const existing = await prisma.userProfile.findUnique({
-      where: { userId: appUser.id },
+    const existing = await prisma.user.findUnique({
+      where: { supabase_auth_id: appUser.supabase_auth_id },
+      select: { avatar_key: true },
     });
     if (!existing) {
-      sendSingleError(
-        res,
-        'Profile not found. Complete onboarding first.',
-        404
-      );
+      sendSingleError(res, 'User not found', 404);
       return;
     }
 
@@ -189,17 +168,20 @@ export const updateUserProfile = async (
     if (file) {
       try {
         // Delete old avatar from S3 if it exists
-        if (existing.avatarUrl) {
-          await deleteFile(existing.avatarUrl).catch((err) =>
+        if (existing.avatar_key) {
+          await deleteFile(existing.avatar_key).catch((err) =>
             logger.warn('Failed to delete old avatar from S3', {
-              key: existing.avatarUrl,
+              key: existing.avatar_key,
               err,
             })
           );
         }
-        const newKey = buildAvatarKey(appUser.id, file.originalname);
+        const newKey = buildAvatarKey(
+          appUser.supabase_auth_id,
+          file.originalname
+        );
         await uploadFile(newKey, file.buffer, file.mimetype);
-        data.avatarUrl = newKey;
+        data.avatar_key = newKey;
       } catch (uploadError) {
         logger.error(
           'Failed to upload avatar during profile update',
@@ -210,39 +192,31 @@ export const updateUserProfile = async (
       }
     } else if (body.removeAvatar) {
       // Explicitly remove avatar
-      if (existing.avatarUrl) {
-        await deleteFile(existing.avatarUrl).catch((err) =>
+      if (existing.avatar_key) {
+        await deleteFile(existing.avatar_key).catch((err) =>
           logger.warn('Failed to delete avatar from S3', {
-            key: existing.avatarUrl,
+            key: existing.avatar_key,
             err,
           })
         );
       }
-      data.avatarUrl = null;
+      data.avatar_key = null;
     }
 
     if (body.bio !== undefined) data.bio = body.bio;
-    if (body.heightCm !== undefined) data.heightCm = body.heightCm;
-    if (body.weightKg !== undefined) data.weightKg = body.weightKg;
-    if (body.unitPreference !== undefined)
-      data.unitPreference = body.unitPreference;
+    if (body.heightCm !== undefined) data.height_cm = body.heightCm;
+    if (body.weightKg !== undefined) data.weight_kg = body.weightKg;
     if (body.sex !== undefined) data.sex = body.sex;
     if (body.dateOfBirth !== undefined)
-      data.dateOfBirth = body.dateOfBirth ? new Date(body.dateOfBirth) : null;
-    if (body.equipment !== undefined) data.equipment = body.equipment;
-    if (body.injuryHistory !== undefined)
-      data.injuryHistory = body.injuryHistory ?? null;
+      data.date_of_birth = body.dateOfBirth ? new Date(body.dateOfBirth) : null;
+    if (body.equipment !== undefined) data.equipment_available = body.equipment;
     if (body.experienceLevel !== undefined)
-      data.experienceLevel = body.experienceLevel;
-    if (body.daysAvailable !== undefined)
-      data.daysAvailable = body.daysAvailable;
-    if (body.sessionDurationMinutes !== undefined)
-      data.sessionDurationMinutes = body.sessionDurationMinutes;
+      data.experience_level = body.experienceLevel;
 
     // If nothing to update, return the existing profile
     if (Object.keys(data).length === 0) {
-      const raw = await prisma.userProfile.findUnique({
-        where: { userId: appUser.id },
+      const raw = await prisma.user.findUnique({
+        where: { supabase_auth_id: appUser.supabase_auth_id },
         select: profileSelect,
       });
       const resolved = await withSignedAvatar(raw);
@@ -250,15 +224,14 @@ export const updateUserProfile = async (
       return;
     }
 
-    const profile = await prisma.userProfile.update({
-      where: { userId: appUser.id },
+    const profile = await prisma.user.update({
+      where: { supabase_auth_id: appUser.supabase_auth_id },
       data,
       select: profileSelect,
     });
 
     logger.info('User profile updated', {
-      userId: appUser.id,
-      profileId: profile.id,
+      userId: appUser.supabase_auth_id,
       fields: Object.keys(data),
     });
 
@@ -289,34 +262,32 @@ export const getClientProfile = async (
     const { userId } = res.locals.validated?.params as GetClientProfileParams;
 
     // Verify the user is actively subscribed to this coach
-    const subscription = await prisma.subscribedCoach.findUnique({
+    // No unique constraint on (user_id, coach_id) — use findFirst
+    const subscription = await prisma.subscribed_coach.findFirst({
       where: {
-        userId_coachId: { userId, coachId: coach.id },
+        user_id: userId,
+        coach_id: coach.user_id,
+        ended_at: null,
       },
     });
 
-    if (!subscription || subscription.endedAt !== null) {
+    if (!subscription) {
       sendSingleError(res, 'User is not subscribed to you', 403, 'userId');
       return;
     }
 
-    const profile = await prisma.userProfile.findUnique({
-      where: { userId },
+    const profile = await prisma.user.findUnique({
+      where: { supabase_auth_id: userId },
       select: {
         ...profileSelect,
-        user: {
-          select: {
-            id: true,
-            name: true,
-            nickname: true,
-            email: true,
-          },
-        },
+        full_name: true,
+        nickname: true,
+        email: true,
       },
     });
 
     if (!profile) {
-      sendSingleError(res, 'Client has not completed their profile', 404);
+      sendSingleError(res, 'Client profile not found', 404);
       return;
     }
 

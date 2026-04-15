@@ -2,12 +2,11 @@ import { Request, Response } from 'express';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
 import { sendSuccess, sendSingleError } from '../utils/response';
-import { ShopCatalogQuery } from '../schemas/shop.schema';
-import { PurchaseBody } from '../schemas/shop.schema';
+import { ShopCatalogQuery, PurchaseBody } from '../schemas/shop.schema';
 
 /**
  * GET /api/shop/catalog
- * Browse the cosmetic shop catalog. Returns only ACTIVE items.
+ * Browse the cosmetic shop catalog. Returns only active (non-deleted) items.
  * Includes user balance and owned cosmetic IDs for client-side affordability/ownership display.
  */
 export const getCatalog = async (
@@ -15,12 +14,12 @@ export const getCatalog = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.appUser!.id;
+    const userId = req.appUser!.supabase_auth_id;
     const { tier, category } = (res.locals.validated?.query ??
       {}) as ShopCatalogQuery;
 
-    // Build filter for active cosmetics
-    const where: Record<string, unknown> = { status: 'ACTIVE' };
+    // Build filter for active cosmetics (deleted_at null = active)
+    const where: Record<string, unknown> = { deleted_at: null };
     if (tier !== undefined) {
       where.tier = tier;
     }
@@ -28,19 +27,15 @@ export const getCatalog = async (
       where.category = category;
     }
 
-    // Fetch catalog, user balance, and owned cosmetic IDs in parallel
-    const [items, balance, ownedCosmetics] = await Promise.all([
-      prisma.cosmetic.findMany({
+    // Fetch catalog and owned cosmetic IDs in parallel; balance lives on user record
+    const [items, ownedCosmetics] = await Promise.all([
+      prisma.cosmetics.findMany({
         where,
-        orderBy: [{ tier: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
+        orderBy: [{ tier: 'asc' }, { name: 'asc' }],
       }),
-      prisma.coinBalance.findUnique({
-        where: { userId },
-        select: { currentBalance: true },
-      }),
-      prisma.userCosmetic.findMany({
-        where: { userId },
-        select: { cosmeticId: true },
+      prisma.user_cosmetic.findMany({
+        where: { user_id: userId },
+        select: { cosmetic_id: true },
       }),
     ]);
 
@@ -50,14 +45,12 @@ export const getCatalog = async (
         name: item.name,
         description: item.description,
         tier: item.tier,
-        coinCost: item.coinCost,
+        price: item.price,
         category: item.category,
-        previewImageUrl: item.previewImageUrl,
-        unityAssetRef: item.unityAssetRef,
-        sortOrder: item.sortOrder,
+        previewImageKey: item.preview_image_key,
       })),
-      userBalance: balance?.currentBalance ?? 0,
-      ownedCosmeticIds: ownedCosmetics.map((uc) => uc.cosmeticId),
+      userBalance: req.appUser!.coin_balance,
+      ownedCosmeticIds: ownedCosmetics.map((uc) => uc.cosmetic_id),
     });
   } catch (error) {
     logger.error('Error fetching shop catalog', error);
@@ -67,119 +60,98 @@ export const getCatalog = async (
 
 /**
  * POST /api/shop/purchase
- * Purchase a cosmetic item. Atomic: validates balance, deducts coins, grants ownership.
- * Uses Serializable isolation to prevent race conditions (R-003).
+ * Purchase a cosmetic item. Atomic: locks user row, validates balance, deducts coins,
+ * grants ownership, and records the transaction.
+ * Uses Serializable isolation + SELECT FOR UPDATE to prevent race conditions (B2).
  */
 export const purchaseCosmetic = async (
   req: Request,
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.appUser!.id;
+    const userId = req.appUser!.supabase_auth_id;
     const { cosmeticId } = res.locals.validated?.body as PurchaseBody;
 
+    // Pre-transaction checks (no lock needed yet)
+    const cosmetic = await prisma.cosmetics.findUnique({
+      where: { id: cosmeticId },
+    });
+
+    if (!cosmetic || cosmetic.deleted_at !== null) {
+      sendSingleError(res, 'Cosmetic not found or no longer available.', 404);
+      return;
+    }
+
+    const existingOwnership = await prisma.user_cosmetic.findUnique({
+      where: {
+        user_id_cosmetic_id: { user_id: userId, cosmetic_id: cosmeticId },
+      },
+    });
+
+    if (existingOwnership) {
+      sendSingleError(res, 'You already own this cosmetic.', 400, 'cosmeticId');
+      return;
+    }
+
+    // Atomic balance deduction via SELECT FOR UPDATE + Serializable transaction
     const result = await prisma.$transaction(
       async (tx) => {
-        // 1. Verify cosmetic exists and is ACTIVE
-        const cosmetic = await tx.cosmetic.findUnique({
-          where: { id: cosmeticId },
-        });
+        // 1. Lock the user row and read current balance
+        const rows = await tx.$queryRaw<{ coin_balance: number }[]>`
+          SELECT coin_balance FROM "user" WHERE supabase_auth_id = ${userId} FOR UPDATE
+        `;
+        const currentBalance = rows[0].coin_balance;
 
-        if (!cosmetic || cosmetic.status !== 'ACTIVE') {
-          return {
-            error: 'not_found' as const,
-            message: 'Cosmetic not found or no longer available.',
-          };
-        }
-
-        // 2. Verify user doesn't already own it
-        const existingOwnership = await tx.userCosmetic.findUnique({
-          where: {
-            userId_cosmeticId: { userId, cosmeticId },
-          },
-        });
-
-        if (existingOwnership) {
-          return {
-            error: 'already_owned' as const,
-            message: 'You already own this cosmetic.',
-          };
-        }
-
-        // 3. Load CoinBalance, verify sufficient funds
-        const balance = await tx.coinBalance.findUnique({
-          where: { userId },
-        });
-
-        const currentBalance = balance?.currentBalance ?? 0;
-
-        if (currentBalance < cosmetic.coinCost) {
-          const deficit = cosmetic.coinCost - currentBalance;
+        // 2. Check sufficient balance
+        if (currentBalance < cosmetic.price) {
+          const deficit = cosmetic.price - currentBalance;
           return {
             error: 'insufficient_balance' as const,
             message: `Insufficient coin balance. You need ${deficit} more coins.`,
           };
         }
 
-        // 4. Decrement balance, increment lifetimeSpent
-        const updatedBalance = await tx.coinBalance.update({
-          where: { userId },
+        const newBalance = currentBalance - cosmetic.price;
+
+        // 3. Create UserCosmetic ownership record
+        const userCosmetic = await tx.user_cosmetic.create({
           data: {
-            currentBalance: { decrement: cosmetic.coinCost },
-            lifetimeSpent: { increment: cosmetic.coinCost },
+            user_id: userId,
+            cosmetic_id: cosmeticId,
           },
         });
 
-        // 5. Create UserCosmetic ownership record
-        const userCosmetic = await tx.userCosmetic.create({
+        // 4. Record the coin transaction
+        await tx.coin_transactions.create({
           data: {
-            userId,
-            cosmeticId,
+            user_id: userId,
+            transaction_type: 'SHOP_PURCHASE',
+            value: -cosmetic.price,
+            balance_after: newBalance,
+            user_cosmetic_user_id: userId,
+            user_cosmetic_cosmetic_id: cosmeticId,
           },
         });
 
-        // 6. Create CoinTransaction (spending record)
-        const transaction = await tx.coinTransaction.create({
-          data: {
-            userId,
-            type: 'SHOP_PURCHASE',
-            amount: -cosmetic.coinCost,
-            balanceAfter: updatedBalance.currentBalance,
-            userCosmeticId: userCosmetic.id,
-          },
+        // 5. Update user's coin balance
+        await tx.user.update({
+          where: { supabase_auth_id: userId },
+          data: { coin_balance: newBalance },
         });
 
         return {
           error: null,
           purchase: {
-            id: userCosmetic.id,
             cosmeticId: cosmetic.id,
             cosmeticName: cosmetic.name,
-            coinCost: cosmetic.coinCost,
-            purchasedAt: userCosmetic.purchasedAt,
+            price: cosmetic.price,
+            purchasedAt: userCosmetic.created_at,
           },
-          transaction: {
-            id: transaction.id,
-            type: transaction.type,
-            amount: transaction.amount,
-            balanceAfter: transaction.balanceAfter,
-          },
-          newBalance: updatedBalance.currentBalance,
+          newBalance,
         };
       },
       { isolationLevel: 'Serializable' }
     );
-
-    // Handle error results from the transaction
-    if (result.error === 'not_found') {
-      sendSingleError(res, result.message, 404);
-      return;
-    }
-
-    if (result.error === 'already_owned') {
-      sendSingleError(res, result.message, 400, 'cosmeticId');
-      return;
-    }
 
     if (result.error === 'insufficient_balance') {
       sendSingleError(res, result.message, 400, 'cosmeticId');
@@ -188,7 +160,6 @@ export const purchaseCosmetic = async (
 
     sendSuccess(res, {
       purchase: result.purchase,
-      transaction: result.transaction,
       newBalance: result.newBalance,
     });
   } catch (error) {

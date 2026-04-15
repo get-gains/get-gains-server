@@ -4,6 +4,7 @@ import { logger } from '../utils/logger';
 import { sendSuccess, sendSingleError } from '../utils/response';
 import { WeeklyStatsQuery, SourceStats } from '../schemas/stats.schema';
 import { calculateStreaksBySource } from '../utils/streak';
+import type { AuthenticatedUser } from '../middleware/auth.middleware';
 
 // ============== Unified Weekly Stats ==============
 
@@ -23,21 +24,16 @@ export const getWeeklyStats = async (
   res: Response
 ): Promise<void> => {
   try {
-    const supabaseId = req.user?.id;
+    const rawUser = req.user;
+    const supabaseId = rawUser
+      ? 'supabase_auth_id' in rawUser
+        ? rawUser.supabase_auth_id
+        : (rawUser as AuthenticatedUser).id
+      : undefined;
     const { weekOf } = (res.locals.validated?.query as WeeklyStatsQuery) || {};
 
     if (!supabaseId) {
       sendSingleError(res, 'Unauthorized', 401);
-      return;
-    }
-
-    // Resolve app user
-    const user = await prisma.user.findUnique({
-      where: { supabaseId },
-    });
-
-    if (!user) {
-      sendSingleError(res, 'User not found', 404);
       return;
     }
 
@@ -56,40 +52,59 @@ export const getWeeklyStats = async (
     weekEnd.setUTCDate(weekStart.getUTCDate() + 7);
 
     logger.debug('Fetching unified weekly stats', {
-      userId: user.id,
+      supabaseId,
       weekStart,
       weekEnd,
       isSubscribed,
     });
 
-    // Fetch completed sessions for the week with source indicator
-    const sessions = await prisma.workoutSession.findMany({
+    // Fetch completed sessions for the week with source indicator via relational path
+    const sessions = await prisma.workout_session.findMany({
       where: {
-        userId: user.id,
-        completedAt: { not: null },
-        startedAt: { gte: weekStart, lt: weekEnd },
+        assigned_program_routine: { assigned_program: { user_id: supabaseId } },
+        completed_at: { not: null },
+        started_at: { gte: weekStart, lt: weekEnd },
       },
       select: {
-        startedAt: true,
-        completedAt: true,
-        assignedProgramId: true,
+        started_at: true,
+        completed_at: true,
+        assigned_program_routine: {
+          select: {
+            assigned_program: {
+              select: {
+                program: {
+                  select: { user_id: true, name: true },
+                },
+              },
+            },
+          },
+        },
       },
-      orderBy: { startedAt: 'asc' },
+      orderBy: { started_at: 'asc' },
     });
 
     // Partition sessions by source
     const standaloneSessions = sessions.filter(
-      (s) => s.assignedProgramId === null
+      (s) =>
+        s.assigned_program_routine.assigned_program.program.user_id ===
+        supabaseId
     );
-    const coachSessions = sessions.filter((s) => s.assignedProgramId !== null);
+    const coachSessions = sessions.filter(
+      (s) =>
+        s.assigned_program_routine.assigned_program.program.user_id !==
+        supabaseId
+    );
 
-    // Helper: compute minutes from sessions
+    // Helper: compute minutes from sessions; guard nullable started_at
     const computeMinutes = (sessionList: typeof sessions): number =>
       sessionList.reduce((sum, s) => {
-        if (s.completedAt) {
-          const durationMs =
-            new Date(s.completedAt).getTime() - new Date(s.startedAt).getTime();
-          return sum + Math.round(durationMs / 60000);
+        if (s.started_at && s.completed_at) {
+          return (
+            sum +
+            Math.round(
+              (s.completed_at.getTime() - s.started_at.getTime()) / 60000
+            )
+          );
         }
         return sum;
       }, 0);
@@ -107,19 +122,14 @@ export const getWeeklyStats = async (
     // ── Streak Calculation (shared utility) ──
 
     const { combinedStreak, standaloneStreak, coachStreak } =
-      await calculateStreaksBySource(user.id, new Date(), prisma);
+      await calculateStreaksBySource(supabaseId, new Date(), prisma);
 
-    // Get most recently active coach program name (if subscribed)
+    // Get most recently active coach program name from included data (no extra DB query)
     let coachProgramName: string | null = null;
-    if (isSubscribed && coachWorkouts > 0) {
-      const recentCoachSession = coachSessions[coachSessions.length - 1];
-      if (recentCoachSession?.assignedProgramId) {
-        const assignedProgram = await prisma.assignedProgram.findUnique({
-          where: { id: recentCoachSession.assignedProgramId },
-          include: { program: { select: { name: true } } },
-        });
-        coachProgramName = assignedProgram?.program?.name ?? null;
-      }
+    if (isSubscribed && coachSessions.length > 0) {
+      const recent = coachSessions[coachSessions.length - 1];
+      coachProgramName =
+        recent.assigned_program_routine.assigned_program.program.name;
     }
 
     // Build sources array based on subscription status

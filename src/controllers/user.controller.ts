@@ -14,14 +14,14 @@ import {
 } from '../schemas/user.schema';
 
 export const createUser = async (data: CreateUserData) => {
-  const { email, name, nickname, supabaseId } = data;
+  const { email, full_name, nickname, supabase_auth_id } = data;
   // Create user in database
   const user = await prisma.user.create({
     data: {
       email: email.toLowerCase(),
-      name,
+      full_name,
       nickname,
-      supabaseId,
+      supabase_auth_id,
     },
   });
 
@@ -30,7 +30,7 @@ export const createUser = async (data: CreateUserData) => {
 
 export const getUserBySupabaseId = async (supabaseId: string) => {
   return await prisma.user.findUnique({
-    where: { supabaseId },
+    where: { supabase_auth_id: supabaseId },
   });
 };
 
@@ -45,10 +45,18 @@ export const createUserFromGoogle = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { email, name, nickname, supabaseId }: CreateUserFromGoogleData = res
-      .locals.validated?.body as CreateUserFromGoogleData;
+    const {
+      email,
+      full_name,
+      nickname,
+      supabase_auth_id,
+    }: CreateUserFromGoogleData = res.locals.validated
+      ?.body as CreateUserFromGoogleData;
 
-    logger.debug('Creating user from Google OAuth', { email, supabaseId });
+    logger.debug('Creating user from Google OAuth', {
+      email,
+      supabase_auth_id,
+    });
 
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
@@ -61,22 +69,29 @@ export const createUserFromGoogle = async (
       return;
     }
 
-    // Also check by supabaseId
+    // Also check by supabase_auth_id
     const existingBySupabase = await prisma.user.findUnique({
-      where: { supabaseId },
+      where: { supabase_auth_id },
     });
 
     if (existingBySupabase) {
-      logger.debug('User already exists with this Supabase ID', { supabaseId });
+      logger.debug('User already exists with this Supabase ID', {
+        supabase_auth_id,
+      });
       sendSingleError(res, 'User already exists', 409);
       return;
     }
 
     // Create user
-    const user = await createUser({ email, name, nickname, supabaseId });
+    const user = await createUser({
+      email,
+      full_name,
+      nickname,
+      supabase_auth_id,
+    });
 
     logger.info('User created from Google OAuth', {
-      userId: user.id,
+      userId: user.supabase_auth_id,
       email: user.email,
     });
 
@@ -84,11 +99,10 @@ export const createUserFromGoogle = async (
       res,
       {
         user: {
-          id: user.id,
+          supabase_auth_id: user.supabase_auth_id,
           email: user.email,
-          name: user.name,
+          full_name: user.full_name,
           nickname: user.nickname,
-          supabaseId: user.supabaseId,
         },
       },
       201
@@ -114,46 +128,55 @@ export const discoverCoaches = async (
     const take = Math.min(Math.max(1, limit || 50), 100);
     const skip = Math.max(0, offset || 0);
 
-    // Coaches with no settings row are treated as discoverable (backward-compatible).
-    const where: any = {
-      AND: [
-        {
-          OR: [{ settings: null }, { settings: { isDiscoverable: true } }],
-        },
-      ],
+    // Only show coaches that are discoverable (is_discoverable defaults to true)
+    const where: {
+      is_discoverable: boolean;
+      AND?: {
+        OR: (
+          | { user: { full_name: { contains: string; mode: 'insensitive' } } }
+          | { user: { bio: { contains: string; mode: 'insensitive' } } }
+          | { specialties: { hasSome: string[] } }
+        )[];
+      }[];
+    } = {
+      is_discoverable: true,
     };
+
     if (search) {
       const searchLower = search.toLowerCase();
-      where.AND.push({
-        OR: [
-          { name: { contains: searchLower, mode: 'insensitive' } },
-          { bio: { contains: searchLower, mode: 'insensitive' } },
-          { specialties: { hasSome: [searchLower] } },
-        ],
-      });
+      where.AND = [
+        {
+          OR: [
+            {
+              user: {
+                full_name: { contains: searchLower, mode: 'insensitive' },
+              },
+            },
+            { user: { bio: { contains: searchLower, mode: 'insensitive' } } },
+            { specialties: { hasSome: [searchLower] } },
+          ],
+        },
+      ];
     }
 
     const [coaches, total] = await Promise.all([
       prisma.coach.findMany({
         where,
         select: {
-          id: true,
-          name: true,
-          email: true,
-          avatarUrl: true,
-          bio: true,
-          yearsExperience: true,
+          user_id: true,
           certifications: true,
-          awards: true,
           specialties: true,
-          isVerified: true,
-          createdAt: true,
+          created_at: true,
+          user: {
+            select: {
+              full_name: true,
+              email: true,
+              avatar_key: true,
+              bio: true,
+            },
+          },
         },
-        orderBy: [
-          { isVerified: 'desc' },
-          { yearsExperience: 'desc' },
-          { createdAt: 'desc' },
-        ],
+        orderBy: [{ created_at: 'desc' }],
         take,
         skip,
       }),
@@ -187,23 +210,24 @@ export const getCoachProfile = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { coachId } = req.params as unknown as GetCoachProfileParams;
+    const { coachId } = res.locals.validated?.params as GetCoachProfileParams;
 
     const coach = await prisma.coach.findUnique({
-      where: { id: coachId },
+      where: { user_id: coachId },
       select: {
-        id: true,
-        name: true,
-        email: true,
-        avatarUrl: true,
-        bio: true,
-        yearsExperience: true,
+        user_id: true,
         certifications: true,
-        awards: true,
         specialties: true,
-        isVerified: true,
-        socialLinks: true,
-        createdAt: true,
+        social_links: true,
+        created_at: true,
+        user: {
+          select: {
+            full_name: true,
+            email: true,
+            avatar_key: true,
+            bio: true,
+          },
+        },
       },
     });
 
@@ -243,42 +267,43 @@ export const getSubscribedCoaches = async (
     const skip = Math.max(0, offset || 0);
 
     const [subscriptions, total] = await Promise.all([
-      prisma.subscribedCoach.findMany({
+      prisma.subscribed_coach.findMany({
         where: {
-          userId: appUser.id,
-          endedAt: null,
+          user_id: appUser.supabase_auth_id,
+          ended_at: null,
         },
         include: {
           coach: {
             select: {
-              id: true,
-              name: true,
-              email: true,
-              avatarUrl: true,
-              bio: true,
-              yearsExperience: true,
+              user_id: true,
               certifications: true,
-              awards: true,
               specialties: true,
-              isVerified: true,
+              user: {
+                select: {
+                  full_name: true,
+                  email: true,
+                  avatar_key: true,
+                  bio: true,
+                },
+              },
             },
           },
         },
-        orderBy: { startedAt: 'desc' },
+        orderBy: { started_at: 'desc' },
         take,
         skip,
       }),
-      prisma.subscribedCoach.count({
+      prisma.subscribed_coach.count({
         where: {
-          userId: appUser.id,
-          endedAt: null,
+          user_id: appUser.supabase_auth_id,
+          ended_at: null,
         },
       }),
     ]);
 
     const coaches = subscriptions.map((sub) => ({
       ...sub.coach,
-      subscribedAt: sub.startedAt,
+      subscribedAt: sub.started_at,
     }));
 
     sendSuccess(res, {
@@ -317,8 +342,17 @@ export const subscribeToCoach = async (
     const { coachId } = res.locals.validated?.params as SubscribeCoachParams;
 
     const coach = await prisma.coach.findUnique({
-      where: { id: coachId },
-      include: { settings: true },
+      where: { user_id: coachId },
+      include: {
+        user: {
+          select: {
+            full_name: true,
+            email: true,
+            avatar_key: true,
+            bio: true,
+          },
+        },
+      },
     });
 
     if (!coach) {
@@ -326,10 +360,8 @@ export const subscribeToCoach = async (
       return;
     }
 
-    const settings = coach.settings;
-
     // Guard 1: manual intake toggle
-    if (settings && !settings.acceptingClients) {
+    if (!coach.accepting_clients) {
       sendSingleError(
         res,
         'This coach is not accepting new clients at this time',
@@ -339,29 +371,28 @@ export const subscribeToCoach = async (
     }
 
     // Guard 2: capacity cap
-    if (settings) {
-      const activeClientCount = await prisma.subscribedCoach.count({
-        where: { coachId, endedAt: null },
-      });
-      if (activeClientCount >= settings.maxClients) {
-        sendSingleError(
-          res,
-          'This coach has reached their maximum client capacity',
-          409
-        );
-        return;
-      }
+    const activeClientCount = await prisma.subscribed_coach.count({
+      where: { coach_id: coachId, ended_at: null },
+    });
+    if (activeClientCount >= coach.max_clients) {
+      sendSingleError(
+        res,
+        'This coach has reached their maximum client capacity',
+        409
+      );
+      return;
     }
 
     // Check if already subscribed
-    const existingSubscription = await prisma.subscribedCoach.findUnique({
+    const existingSubscription = await prisma.subscribed_coach.findFirst({
       where: {
-        userId_coachId: { userId: appUser.id, coachId },
+        user_id: appUser.supabase_auth_id,
+        coach_id: coachId,
       },
     });
 
     if (existingSubscription) {
-      if (!existingSubscription.endedAt) {
+      if (!existingSubscription.ended_at) {
         sendSingleError(
           res,
           'Already subscribed to this coach',
@@ -371,25 +402,23 @@ export const subscribeToCoach = async (
         return;
       }
       // Re-subscribe (reactivate)
-      await prisma.subscribedCoach.update({
+      await prisma.subscribed_coach.update({
         where: { id: existingSubscription.id },
-        data: { endedAt: null },
+        data: { ended_at: null },
       });
-      const updated = await prisma.subscribedCoach.findUnique({
+      const updated = await prisma.subscribed_coach.findUnique({
         where: { id: existingSubscription.id },
         include: {
           coach: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              avatarUrl: true,
-              bio: true,
-              yearsExperience: true,
-              certifications: true,
-              awards: true,
-              specialties: true,
-              isVerified: true,
+            include: {
+              user: {
+                select: {
+                  full_name: true,
+                  email: true,
+                  avatar_key: true,
+                  bio: true,
+                },
+              },
             },
           },
         },
@@ -399,7 +428,7 @@ export const subscribeToCoach = async (
         {
           coach: {
             ...updated!.coach,
-            subscribedAt: updated!.startedAt,
+            subscribedAt: updated!.started_at,
           },
         },
         200
@@ -408,31 +437,29 @@ export const subscribeToCoach = async (
     }
 
     // Create new subscription
-    const subscription = await prisma.subscribedCoach.create({
+    const subscription = await prisma.subscribed_coach.create({
       data: {
-        userId: appUser.id,
-        coachId,
+        user_id: appUser.supabase_auth_id,
+        coach_id: coachId,
       },
       include: {
         coach: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            avatarUrl: true,
-            bio: true,
-            yearsExperience: true,
-            certifications: true,
-            awards: true,
-            specialties: true,
-            isVerified: true,
+          include: {
+            user: {
+              select: {
+                full_name: true,
+                email: true,
+                avatar_key: true,
+                bio: true,
+              },
+            },
           },
         },
       },
     });
 
     logger.info('User subscribed to coach', {
-      userId: appUser.id,
+      userId: appUser.supabase_auth_id,
       coachId,
       subscriptionId: subscription.id,
     });
@@ -442,7 +469,7 @@ export const subscribeToCoach = async (
       {
         coach: {
           ...subscription.coach,
-          subscribedAt: subscription.startedAt,
+          subscribedAt: subscription.started_at,
         },
       },
       201
@@ -473,9 +500,10 @@ export const unsubscribeFromCoach = async (
 
     const { coachId } = res.locals.validated?.params as UnsubscribeCoachParams;
 
-    const subscription = await prisma.subscribedCoach.findUnique({
+    const subscription = await prisma.subscribed_coach.findFirst({
       where: {
-        userId_coachId: { userId: appUser.id, coachId },
+        user_id: appUser.supabase_auth_id,
+        coach_id: coachId,
       },
     });
 
@@ -484,7 +512,7 @@ export const unsubscribeFromCoach = async (
       return;
     }
 
-    if (subscription.endedAt) {
+    if (subscription.ended_at) {
       sendSingleError(
         res,
         'Already unsubscribed from this coach',
@@ -494,13 +522,13 @@ export const unsubscribeFromCoach = async (
       return;
     }
 
-    await prisma.subscribedCoach.update({
+    await prisma.subscribed_coach.update({
       where: { id: subscription.id },
-      data: { endedAt: new Date() },
+      data: { ended_at: new Date() },
     });
 
     logger.info('User unsubscribed from coach', {
-      userId: appUser.id,
+      userId: appUser.supabase_auth_id,
       coachId,
       subscriptionId: subscription.id,
     });
@@ -518,7 +546,7 @@ export const unsubscribeFromCoach = async (
 
 /**
  * Get current user profile (Flutter app contract: GET /users/profile).
- * Returns { data: { user: { id, email, name, nickname, supabaseId, createdAt, updatedAt } }, errors: [] }
+ * Returns { data: { user: { supabase_auth_id, email, full_name, nickname, created_at, updated_at } }, errors: [] }
  */
 export const getProfile = async (
   req: Request,
@@ -532,7 +560,7 @@ export const getProfile = async (
     }
 
     const user = await prisma.user.findUnique({
-      where: { id: appUser.id },
+      where: { supabase_auth_id: appUser.supabase_auth_id },
     });
 
     if (!user) {
@@ -542,13 +570,12 @@ export const getProfile = async (
 
     sendSuccess(res, {
       user: {
-        id: user.id,
+        supabase_auth_id: user.supabase_auth_id,
         email: user.email,
-        name: user.name,
+        full_name: user.full_name,
         nickname: user.nickname,
-        supabaseId: user.supabaseId,
-        createdAt: user.createdAt.toISOString(),
-        updatedAt: user.updatedAt.toISOString(),
+        created_at: user.created_at.toISOString(),
+        updated_at: user.updated_at.toISOString(),
       },
     });
   } catch (error) {
@@ -576,13 +603,13 @@ export const updateProfile = async (
     }
 
     const body = res.locals.validated?.body as UpdateProfileInput;
-    const data: { name?: string; nickname?: string } = {};
-    if (body.name !== undefined) data.name = body.name;
+    const data: { full_name?: string; nickname?: string } = {};
+    if (body.name !== undefined) data.full_name = body.name;
     if (body.nickname !== undefined) data.nickname = body.nickname;
 
     if (Object.keys(data).length === 0) {
       const user = await prisma.user.findUnique({
-        where: { id: appUser.id },
+        where: { supabase_auth_id: appUser.supabase_auth_id },
       });
       if (!user) {
         sendSingleError(res, 'User not found', 404);
@@ -590,32 +617,30 @@ export const updateProfile = async (
       }
       sendSuccess(res, {
         user: {
-          id: user.id,
+          supabase_auth_id: user.supabase_auth_id,
           email: user.email,
-          name: user.name,
+          full_name: user.full_name,
           nickname: user.nickname,
-          supabaseId: user.supabaseId,
-          createdAt: user.createdAt.toISOString(),
-          updatedAt: user.updatedAt.toISOString(),
+          created_at: user.created_at.toISOString(),
+          updated_at: user.updated_at.toISOString(),
         },
       });
       return;
     }
 
     const updated = await prisma.user.update({
-      where: { id: appUser.id },
+      where: { supabase_auth_id: appUser.supabase_auth_id },
       data,
     });
 
     sendSuccess(res, {
       user: {
-        id: updated.id,
+        supabase_auth_id: updated.supabase_auth_id,
         email: updated.email,
-        name: updated.name,
+        full_name: updated.full_name,
         nickname: updated.nickname,
-        supabaseId: updated.supabaseId,
-        createdAt: updated.createdAt.toISOString(),
-        updatedAt: updated.updatedAt.toISOString(),
+        created_at: updated.created_at.toISOString(),
+        updated_at: updated.updated_at.toISOString(),
       },
     });
   } catch (error) {

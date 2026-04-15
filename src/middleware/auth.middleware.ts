@@ -1,13 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger';
 import { sendSingleError, sendSuccess } from '../utils/response';
-import type { User as UserModel } from '@prisma/client';
-import type { Coach as CoachModel } from '@prisma/client';
+import type { user as UserModel } from '@prisma/client';
+import type { coach as CoachModel } from '@prisma/client';
 import supabase from '../config/supabase';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import prisma from '../config/database';
 import { SubscriptionStatus } from '@prisma/client';
-import { getUserBySupabaseId } from '../controllers/user.controller';
 
 /**
  * Authenticated user with subscription data
@@ -72,29 +71,29 @@ export const authenticateSupabaseUser = async (
     }
 
     // Fetch user's subscription data
-    const dbUser = await prisma.user.findFirst({
-      where: { supabaseId: user.id },
+    const dbUser = await prisma.user.findUnique({
+      where: { supabase_auth_id: user.id },
     });
 
     if (dbUser) {
       const subscription = await prisma.subscription.findFirst({
         where: {
-          userId: dbUser.id,
+          user_id: dbUser.supabase_auth_id,
           status: SubscriptionStatus.ACTIVE,
-          currentPeriodEnd: {
+          current_period_end: {
             gt: new Date(),
           },
         },
         include: {
-          plan: {
+          subscription_plan: {
             select: {
               id: true,
-              tierLevel: true,
+              tier_level: true,
             },
           },
         },
         orderBy: {
-          createdAt: 'desc',
+          created_at: 'desc',
         },
       });
 
@@ -102,11 +101,11 @@ export const authenticateSupabaseUser = async (
       (user as AuthenticatedUser).subscription = subscription
         ? {
             isSubscribed: true,
-            tierLevel: subscription.plan.tierLevel,
+            tierLevel: subscription.subscription_plan.tier_level,
             subscriptionId: subscription.id,
-            planId: subscription.planId,
+            planId: subscription.subscription_plan_id,
             status: subscription.status,
-            currentPeriodEnd: subscription.currentPeriodEnd,
+            currentPeriodEnd: subscription.current_period_end,
           }
         : {
             isSubscribed: false,
@@ -135,7 +134,7 @@ export const authenticateSupabaseUser = async (
 
 /**
  * Middleware to attach app User to request. Must run after authenticateSupabaseUser.
- * Looks up app User by supabaseId and attaches to req.appUser.
+ * Looks up app User by supabase_auth_id and attaches to req.appUser.
  * Returns 404 if user not found in database.
  */
 export const requireAppUser = async (
@@ -151,8 +150,13 @@ export const requireAppUser = async (
     }
 
     const supabaseId =
-      'supabaseId' in supabaseUser ? supabaseUser.supabaseId : supabaseUser.id;
-    const appUser = await getUserBySupabaseId(supabaseId);
+      'supabase_auth_id' in supabaseUser
+        ? supabaseUser.supabase_auth_id
+        : supabaseUser.id;
+
+    const appUser = await prisma.user.findUnique({
+      where: { supabase_auth_id: supabaseId },
+    });
 
     if (!appUser) {
       sendSingleError(res, 'User not found', 404);
@@ -174,7 +178,7 @@ export const requireAppUser = async (
 
 /**
  * Middleware to require coach profile. Must run after authenticateSupabaseUser.
- * Looks up app User by supabaseId, loads Coach, and attaches both to req.
+ * Looks up app User by supabase_auth_id, loads Coach, and attaches both to req.
  * Returns 403 if user has no Coach profile.
  */
 export const requireCoach = async (
@@ -190,8 +194,13 @@ export const requireCoach = async (
     }
 
     const supabaseId =
-      'supabaseId' in supabaseUser ? supabaseUser.supabaseId : supabaseUser.id;
-    const appUser = await getUserBySupabaseId(supabaseId);
+      'supabase_auth_id' in supabaseUser
+        ? supabaseUser.supabase_auth_id
+        : supabaseUser.id;
+
+    const appUser = await prisma.user.findUnique({
+      where: { supabase_auth_id: supabaseId },
+    });
 
     if (!appUser) {
       sendSingleError(res, 'User not found', 404);
@@ -199,7 +208,7 @@ export const requireCoach = async (
     }
 
     const coach = await prisma.coach.findUnique({
-      where: { userId: appUser.id },
+      where: { user_id: appUser.supabase_auth_id },
     });
 
     if (!coach) {

@@ -1,11 +1,7 @@
 import 'dotenv/config';
 import { google, androidpublisher_v3 } from 'googleapis';
 import { logger } from '../../utils/logger';
-import {
-  PaymentProvider,
-  SubscriptionStatus,
-  BillingCycle,
-} from '@prisma/client';
+import { Provider, SubscriptionStatus, BillingCycle } from '@prisma/client';
 import {
   IPaymentProvider,
   NormalizedSubscription,
@@ -49,7 +45,7 @@ const NOTIFICATION_TYPES: Record<number, string> = {
  * Google Play Billing provider implementation
  */
 export class GooglePlayProvider implements IPaymentProvider {
-  public readonly provider = PaymentProvider.GOOGLE_PAY;
+  public readonly provider = Provider.GOOGLE_PLAY;
   private androidPublisher: androidpublisher_v3.Androidpublisher;
   private packageName: string;
 
@@ -406,9 +402,12 @@ export class GooglePlayProvider implements IPaymentProvider {
         NOTIFICATION_TYPES[notificationType] || `UNKNOWN_${notificationType}`;
 
       return {
-        provider: PaymentProvider.GOOGLE_PAY,
+        provider: Provider.GOOGLE_PLAY,
         eventType,
         subscriptionId: null, // Will be resolved by looking up purchaseToken
+        idempotency_key:
+          message.message.messageId ??
+          `google_play_${Date.now()}_${Math.random().toString(36).slice(2)}`,
         rawPayload: payload,
         purchaseToken: subNotification.purchaseToken,
         productId: subNotification.subscriptionId,
@@ -440,7 +439,25 @@ export class GooglePlayProvider implements IPaymentProvider {
 
     // Calculate period start (use start time or last renewal)
     const currentPeriodStart = startTime;
-    const currentPeriodEnd = expiryDate;
+    let currentPeriodEnd = expiryDate;
+
+    // In development mode, Google Play test subscriptions use accelerated
+    // expiry (e.g. 1-month plan = 5 minutes). Extend short periods to 30
+    // minutes so we can actually test subscription-gated features.
+    if (process.env.NODE_ENV === 'development') {
+      const periodMs = expiryDate.getTime() - startTime.getTime();
+      const TEN_MINUTES_MS = 10 * 60 * 1000;
+      const THIRTY_MINUTES_MS = 30 * 60 * 1000;
+
+      if (periodMs > 0 && periodMs <= TEN_MINUTES_MS) {
+        currentPeriodEnd = new Date(startTime.getTime() + THIRTY_MINUTES_MS);
+        logger.info(
+          'Dev mode: extended test subscription period from ' +
+            `${Math.round(periodMs / 60000)}m to 30m`,
+          { originalExpiry: expiryDate, extendedExpiry: currentPeriodEnd }
+        );
+      }
+    }
 
     // Check for cancellation
     const canceledStateContext = subscription.canceledStateContext;
@@ -509,7 +526,7 @@ export class GooglePlayProvider implements IPaymentProvider {
       startDate: startTime,
       currentPeriodStart,
       currentPeriodEnd,
-      nextBillingDate: autoRenewEnabled ? expiryDate : currentPeriodEnd,
+      nextBillingDate: autoRenewEnabled ? currentPeriodEnd : currentPeriodEnd,
       cancelAtPeriodEnd: !autoRenewEnabled,
       canceledAt,
       trialStartDate: null, // Trial info would need separate handling

@@ -21,23 +21,23 @@ export const getClass = async (req: Request, res: Response): Promise<void> => {
     const skip = Math.max(0, offset);
 
     logger.debug('Fetching coach class', {
-      coachId: coach.id,
+      coachId: coach.user_id,
       limit: take,
       offset: skip,
     });
 
     const [clientRelations, total] = await Promise.all([
-      prisma.subscribedCoach.findMany({
+      prisma.subscribed_coach.findMany({
         where: {
-          coachId: coach.id,
-          endedAt: null,
+          coach_id: coach.user_id,
+          ended_at: null,
         },
         include: {
           user: {
             select: {
-              id: true,
+              supabase_auth_id: true,
               email: true,
-              name: true,
+              full_name: true,
               nickname: true,
               subscriptions: {
                 where: {
@@ -48,32 +48,33 @@ export const getClass = async (req: Request, res: Response): Promise<void> => {
                     ],
                   },
                 },
-                select: { currentPeriodEnd: true },
-                orderBy: { currentPeriodEnd: 'desc' },
+                select: { current_period_end: true },
+                orderBy: { current_period_end: 'desc' },
                 take: 1,
               },
             },
           },
         },
-        orderBy: { startedAt: 'desc' },
+        orderBy: { started_at: 'desc' },
         take,
         skip,
       }),
-      prisma.subscribedCoach.count({
+      prisma.subscribed_coach.count({
         where: {
-          coachId: coach.id,
-          endedAt: null,
+          coach_id: coach.user_id,
+          ended_at: null,
         },
       }),
     ]);
 
     const clients = clientRelations.map((cr) => ({
-      id: cr.user.id,
+      id: cr.user.supabase_auth_id,
       email: cr.user.email,
-      name: cr.user.name,
+      name: cr.user.full_name,
       nickname: cr.user.nickname,
-      subscribedAt: cr.startedAt,
-      subscriptionExpiresAt: cr.user.subscriptions[0]?.currentPeriodEnd ?? null,
+      subscribedAt: cr.started_at,
+      subscriptionExpiresAt:
+        cr.user.subscriptions[0]?.current_period_end ?? null,
     }));
 
     sendSuccess(res, {
@@ -111,9 +112,10 @@ export const removeClient = async (
 
     const { userId } = res.locals.validated?.params as RemoveClientParams;
 
-    const subscription = await prisma.subscribedCoach.findUnique({
+    const subscription = await prisma.subscribed_coach.findFirst({
       where: {
-        userId_coachId: { userId, coachId: coach.id },
+        user_id: userId,
+        coach_id: coach.user_id,
       },
     });
 
@@ -122,14 +124,14 @@ export const removeClient = async (
       return;
     }
 
-    if (subscription.endedAt) {
+    if (subscription.ended_at) {
       sendSingleError(res, 'Client already removed from class', 409, 'userId');
       return;
     }
 
-    await prisma.subscribedCoach.update({
+    await prisma.subscribed_coach.update({
       where: { id: subscription.id },
-      data: { endedAt: new Date() },
+      data: { ended_at: new Date() },
     });
 
     sendSuccess(res, { message: 'Client removed from class' });

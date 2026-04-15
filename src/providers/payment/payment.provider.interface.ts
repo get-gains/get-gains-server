@@ -1,8 +1,4 @@
-import {
-  PaymentProvider,
-  SubscriptionStatus,
-  BillingCycle,
-} from '@prisma/client';
+import { Provider, SubscriptionStatus, BillingCycle } from '@prisma/client';
 
 /**
  * Normalized subscription data from any payment provider
@@ -44,9 +40,10 @@ export interface NormalizedPlan {
  * Webhook event data
  */
 export interface WebhookEventData {
-  provider: PaymentProvider;
+  provider: Provider;
   eventType: string;
   subscriptionId: string | null;
+  idempotency_key: string;
   rawPayload: unknown;
   purchaseToken?: string;
   productId?: string;
@@ -66,7 +63,7 @@ export interface VerifyPurchaseResult {
  * Allows easy addition of new providers (Apple, Stripe, etc.)
  */
 export interface IPaymentProvider {
-  readonly provider: PaymentProvider;
+  readonly provider: Provider;
 
   /**
    * Verify a purchase/subscription from the client

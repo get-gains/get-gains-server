@@ -10,12 +10,12 @@ import {
   GetCoachProgramByIdSchema,
   UpdateProgramSchema,
   DeleteProgramSchema,
-  AssignRoutineSchema,
-  UpdateProgramRoutineSchema,
-  RemoveProgramRoutineSchema,
-  addRoutineExerciseSchema,
-  UpdateRoutineExerciseSchema,
-  RemoveRoutineExerciseSchema,
+  CreateRoutineSchema,
+  GetCoachRoutinesSchema,
+  GetCoachRoutineByIdSchema,
+  UpdateRoutineSchema,
+  DeleteRoutineSchema,
+  AssignProgramSchema,
 } from '../schemas/program.schema';
 import {
   createProgram,
@@ -23,23 +23,18 @@ import {
   getCoachProgramById,
   updateProgram,
   deleteProgram,
-  assignRoutineToProgram,
-  updateProgramRoutine,
-  removeProgramRoutine,
-  addExerciseToRoutine,
-  updateRoutineExercise,
-  removeRoutineExercise,
+  createRoutine,
+  getCoachRoutines,
+  getCoachRoutineById,
+  updateRoutine,
+  deleteRoutine,
+  assignProgram,
 } from '../controllers/program.controller';
 
 const router = Router();
 
 // ============== Program CRUD ==============
 
-/**
- * @route   GET /coach/programs
- * @desc    List all programs belonging to the coach
- * @access  Protected (authenticateSupabaseUser + requireCoach)
- */
 router.get(
   '/',
   authenticateSupabaseUser,
@@ -47,12 +42,6 @@ router.get(
   validateRequest(GetCoachProgramsSchema),
   getCoachPrograms
 );
-
-/**
- * @route   POST /coach/programs
- * @desc    Create a new training program
- * @access  Protected (authenticateSupabaseUser + requireCoach)
- */
 router.post(
   '/',
   authenticateSupabaseUser,
@@ -60,12 +49,6 @@ router.post(
   validateRequest(CreateProgramSchema),
   createProgram
 );
-
-/**
- * @route   GET /coach/programs/:programId
- * @desc    Get a single program with full routine/exercise tree
- * @access  Protected (authenticateSupabaseUser + requireCoach)
- */
 router.get(
   '/:programId',
   authenticateSupabaseUser,
@@ -73,12 +56,6 @@ router.get(
   validateRequest(GetCoachProgramByIdSchema),
   getCoachProgramById
 );
-
-/**
- * @route   PATCH /coach/programs/:programId
- * @desc    Update program name or description
- * @access  Protected (authenticateSupabaseUser + requireCoach)
- */
 router.patch(
   '/:programId',
   authenticateSupabaseUser,
@@ -86,12 +63,6 @@ router.patch(
   validateRequest(UpdateProgramSchema),
   updateProgram
 );
-
-/**
- * @route   DELETE /coach/programs/:programId
- * @desc    Delete a program (cascades to ProgramRoutine, NOT to Routines)
- * @access  Protected (authenticateSupabaseUser + requireCoach)
- */
 router.delete(
   '/:programId',
   authenticateSupabaseUser,
@@ -100,88 +71,52 @@ router.delete(
   deleteProgram
 );
 
-// ============== ProgramRoutine Junction ==============
+// ============== Assignment ==============
 
-/**
- * @route   POST /coach/programs/:programId/routines
- * @desc    Assign an existing routine to a program day
- * @access  Protected (authenticateSupabaseUser + requireCoach)
- */
 router.post(
-  '/:programId/routines',
+  '/:programId/assign',
   authenticateSupabaseUser,
   requireCoach,
-  validateRequest(AssignRoutineSchema),
-  assignRoutineToProgram
+  validateRequest(AssignProgramSchema),
+  assignProgram
 );
 
-/**
- * @route   PATCH /coach/programs/:programId/routines/:programRoutineId
- * @desc    Reassign a routine to a different day number
- * @access  Protected (authenticateSupabaseUser + requireCoach)
- */
-router.patch(
-  '/:programId/routines/:programRoutineId',
-  authenticateSupabaseUser,
-  requireCoach,
-  validateRequest(UpdateProgramRoutineSchema),
-  updateProgramRoutine
-);
+// ============== Routine CRUD (under /coach/programs/routines) ==============
 
-/**
- * @route   DELETE /coach/programs/:programId/routines/:programRoutineId
- * @desc    Remove a routine from a program day slot (does NOT delete the Routine)
- * @access  Protected (authenticateSupabaseUser + requireCoach)
- */
-router.delete(
-  '/:programId/routines/:programRoutineId',
-  authenticateSupabaseUser,
-  requireCoach,
-  validateRequest(RemoveProgramRoutineSchema),
-  removeProgramRoutine
-);
-
-// ============== RoutineExercise Junction ==============
-// NOTE: These are scoped to /coach/programs/routines/... for historical reasons.
-//       Exercise prescriptions on a specific routine within the program context.
-
-/**
- * @route   POST /coach/programs/routines/:routineId/exercises
- * @desc    Add an exercise to a routine
- * @access  Protected (authenticateSupabaseUser + requireCoach)
- */
 router.post(
-  '/routines/:routineId/exercises',
+  '/routines',
   authenticateSupabaseUser,
   requireCoach,
-  validateRequest(addRoutineExerciseSchema),
-  addExerciseToRoutine
+  validateRequest(CreateRoutineSchema),
+  createRoutine
 );
-
-/**
- * @route   PATCH /coach/programs/routines/:routineId/exercises/:routineExerciseId
- * @desc    Update exercise prescription (sets/reps/rest/order/notes)
- * @access  Protected (authenticateSupabaseUser + requireCoach)
- */
+router.get(
+  '/routines',
+  authenticateSupabaseUser,
+  requireCoach,
+  validateRequest(GetCoachRoutinesSchema),
+  getCoachRoutines
+);
+router.get(
+  '/routines/:routineId',
+  authenticateSupabaseUser,
+  requireCoach,
+  validateRequest(GetCoachRoutineByIdSchema),
+  getCoachRoutineById
+);
 router.patch(
-  '/routines/:routineId/exercises/:routineExerciseId',
+  '/routines/:routineId',
   authenticateSupabaseUser,
   requireCoach,
-  validateRequest(UpdateRoutineExerciseSchema),
-  updateRoutineExercise
+  validateRequest(UpdateRoutineSchema),
+  updateRoutine
 );
-
-/**
- * @route   DELETE /coach/programs/routines/:routineId/exercises/:routineExerciseId
- * @desc    Remove an exercise from a routine (does NOT delete the Exercise)
- * @access  Protected (authenticateSupabaseUser + requireCoach)
- */
 router.delete(
-  '/routines/:routineId/exercises/:routineExerciseId',
+  '/routines/:routineId',
   authenticateSupabaseUser,
   requireCoach,
-  validateRequest(RemoveRoutineExerciseSchema),
-  removeRoutineExercise
+  validateRequest(DeleteRoutineSchema),
+  deleteRoutine
 );
 
 export default router;
