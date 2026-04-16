@@ -1,5 +1,17 @@
 import { z } from 'zod';
 
+const DayOfWeek = z.enum([
+  'MONDAY',
+  'TUESDAY',
+  'WEDNESDAY',
+  'THURSDAY',
+  'FRIDAY',
+  'SATURDAY',
+  'SUNDAY',
+]);
+
+export type DayOfWeek = z.infer<typeof DayOfWeek>;
+
 // ============== Personal Exercise Schemas ==============
 
 export const CreatePersonalExerciseSchema = z.object({
