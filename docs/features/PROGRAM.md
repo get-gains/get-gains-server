@@ -100,8 +100,8 @@ model ProgramRoutine {           // Junction: routine → program day slot
   id        String @id @default(cuid())
   programId String
   routineId String
-  dayNumber Int                  // Day 1, Day 2, etc. in the program cycle
-  @@unique([programId, routineId])
+  dayOfWeek DayOfWeek            // Enum: MONDAY, TUESDAY, etc.
+  @@unique([programId, dayOfWeek])
 }
 
 model RoutineExercise {          // Junction: exercise → routine with prescription
@@ -134,7 +134,7 @@ model AssignedProgram {
 
 - **`Routine.coachId`**: Enforces ownership. Coaches can only manage their own routines.
 - **`Program.customForUserId`**: When set, the program is a custom one-off created for a specific client. Custom programs are **hidden from the reusable library** (`GET /api/coach/programs` excludes them by default). Pass `?includeCustom=true` to include them. When creating a custom program, the server validates that the target user is in the coach's class.
-- **`ProgramRoutine` junction**: Allows the same routine in multiple programs; each assignment has its own `dayNumber`.
+- **`ProgramRoutine` junction**: Allows the same routine in multiple programs; each assignment has its own `dayOfWeek`.
 - **`RoutineExercise` junction**: Stores the coach's prescription (sets/reps/rest) separately from the global `Exercise` record.
 - **Cascade rules**: Deleting a Program cascades to `ProgramRoutine` but NOT to `Routine`. Deleting a Routine cascades to `RoutineExercise` but NOT to `Exercise`.
 
@@ -297,7 +297,7 @@ Response (200):
       "routines": [
         {
           "id": "clx...(programRoutineId)",
-          "dayNumber": 1,
+          "dayOfWeek": "MONDAY",
           "routine": {
             "id": "clx...",
             "coachId": "clx...",
@@ -445,7 +445,7 @@ Response (200) — workout day:
   "data": {
     "today": {
       "programRoutineId": "clx...",
-      "dayNumber": 1,
+      "dayOfWeek": "MONDAY",
       "assignedProgramId": "clx...",
       "programName": "Push Pull Legs",
       "routine": {
@@ -467,7 +467,7 @@ Response (200) — rest day:
   "data": {
     "today": null,
     "isRestDay": true,
-    "dayNumber": 4,
+    "dayOfWeek": "THURSDAY",
     "assignedProgramId": "clx...",
     "programName": "Push Pull Legs"
   },
@@ -505,8 +505,8 @@ All schemas are defined in `src/schemas/program.schema.ts` and `src/schemas/coac
 
 | Schema                       | Validates         | Fields                                                       |
 | ---------------------------- | ----------------- | ------------------------------------------------------------ |
-| `AssignRoutineSchema`        | `params` + `body` | `programId`; `routineId` (cuid), `dayNumber` (int, positive) |
-| `UpdateProgramRoutineSchema` | `params` + `body` | `programId`, `programRoutineId`; `dayNumber`                 |
+| `AssignRoutineSchema`        | `params` + `body` | `programId`; `routineId` (cuid), `dayOfWeek` (enum) |
+| `UpdateProgramRoutineSchema` | `params` + `body` | `programId`, `programRoutineId`; `dayOfWeek`                 |
 | `RemoveProgramRoutineSchema` | `params`          | `programId`, `programRoutineId`                              |
 
 ### RoutineExercise Schemas
@@ -580,14 +580,9 @@ The `GET /api/workout/today` endpoint resolves which routine a client should do 
 
 1. Find the user's active `AssignedProgram` (optionally filtered by `assignedProgramId` query param)
 2. Load the full program tree (routines → exercises)
-3. Calculate `daysSinceStart = floor((today - startDate) / msPerDay)`
-4. If `daysSinceStart < 0` → program hasn't started yet
-5. Determine `totalCycleDays = max(dayNumber)` across all `ProgramRoutine` records
-6. Calculate `cycleDayNumber = (daysSinceStart % totalCycleDays) + 1`
-7. Find the `ProgramRoutine` with matching `dayNumber`
-8. If found → return the routine with exercises; if not → it's a rest day
-
-This cycling logic means a 3-day program (days 1, 2, 3) repeats indefinitely: day 1 → day 2 → day 3 → day 1 → ...
+3. Determine the current day of the week using `Date.getDay()` in the user's timezone mapping to `DayOfWeek` enum (e.g. 1 -> MONDAY)
+4. Find the `ProgramRoutine` with matching `dayOfWeek`
+5. If found → return the routine with exercises; if not → it's a rest day
 
 ---
 
