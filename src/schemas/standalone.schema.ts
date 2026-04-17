@@ -1,14 +1,7 @@
 import { z } from 'zod';
+import { DAY_NAMES } from '../utils/days';
 
-const DayOfWeek = z.enum([
-  'MONDAY',
-  'TUESDAY',
-  'WEDNESDAY',
-  'THURSDAY',
-  'FRIDAY',
-  'SATURDAY',
-  'SUNDAY',
-]);
+const DayOfWeek = z.enum(DAY_NAMES);
 
 export type DayOfWeek = z.infer<typeof DayOfWeek>;
 
@@ -189,19 +182,7 @@ const StandaloneAssignmentExerciseSchema = z.object({
 
 const StandaloneAssignmentRoutineSchema = z.object({
   routine_id: z.string().cuid(),
-  days_of_week: z
-    .array(
-      z.enum([
-        'MONDAY',
-        'TUESDAY',
-        'WEDNESDAY',
-        'THURSDAY',
-        'FRIDAY',
-        'SATURDAY',
-        'SUNDAY',
-      ])
-    )
-    .min(1),
+  days_of_week: z.array(DayOfWeek).min(1),
   exercises: z.array(StandaloneAssignmentExerciseSchema).min(1),
 });
 

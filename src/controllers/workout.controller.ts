@@ -24,6 +24,7 @@ import {
   GetWeeklyStatsQuery,
 } from '../schemas/workout.schema';
 import { calculateStreak } from '../utils/streak';
+import { resolveToday } from '../utils/days';
 import { calculateSessionCoins } from '../services/coin-calculation.service';
 import type { AuthenticatedUser } from '../middleware/auth.middleware';
 
@@ -1217,8 +1218,7 @@ export const getTodayWorkout = async (
 
     logger.debug('Fetching today workout', { supabaseId });
 
-    const DAY_NAMES = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-    const todayName = DAY_NAMES[new Date().getUTCDay()];
+    const todayName = resolveToday().dayName;
 
     // Find active assigned programs, most recent first
     const assignments = await prisma.assigned_program.findMany({

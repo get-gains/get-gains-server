@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import prisma from '../config/database';
 import type { AuthenticatedUser } from '../middleware/auth.middleware';
+import { resolveToday } from '../utils/days';
 import { logger } from '../utils/logger';
 import { sendSingleError, sendSuccess } from '../utils/response';
 
@@ -30,53 +31,17 @@ type AssignmentWithTodayTree = {
   }>;
 };
 
-const DAY_NAMES = [
-  'SUNDAY',
-  'MONDAY',
-  'TUESDAY',
-  'WEDNESDAY',
-  'THURSDAY',
-  'FRIDAY',
-  'SATURDAY',
-] as const;
-
-const DAY_SHORT_NAMES = [
-  'SUN',
-  'MON',
-  'TUE',
-  'WED',
-  'THU',
-  'FRI',
-  'SAT',
-] as const;
-
-const resolveToday = (): {
-  dayName: string;
-  dayShortName: string;
-  dayNumber: number;
-} => {
-  const utcDay = new Date().getUTCDay(); // 0=Sunday ... 6=Saturday
-  return {
-    dayName: DAY_NAMES[utcDay],
-    dayShortName: DAY_SHORT_NAMES[utcDay],
-    dayNumber: utcDay === 0 ? 7 : utcDay, // Monday=1 ... Sunday=7
-  };
-};
-
 const toTodayWorkoutDetails = (
   assignment: AssignmentWithTodayTree | null,
   dayName: string,
-  dayShortName: string,
   dayNumber: number
 ): TodayWorkoutDetails | null => {
   if (!assignment) {
     return null;
   }
 
-  const routineForToday = assignment.assigned_program_routines.find(
-    (apr) =>
-      apr.days_of_week.includes(dayName) ||
-      apr.days_of_week.includes(dayShortName)
+  const routineForToday = assignment.assigned_program_routines.find((apr) =>
+    apr.days_of_week.includes(dayName)
   );
 
   if (!routineForToday) {
@@ -151,7 +116,7 @@ export const getTodayStatus = async (
       return;
     }
 
-    const { dayName, dayShortName, dayNumber } = resolveToday();
+    const { dayName, dayNumber } = resolveToday();
     const now = new Date();
 
     const isSubscribed = req.subscription?.isSubscribed ?? false;
@@ -209,17 +174,11 @@ export const getTodayStatus = async (
 
     const coachToday =
       isSubscribed && hasCoach
-        ? toTodayWorkoutDetails(
-            coachAssignment,
-            dayName,
-            dayShortName,
-            dayNumber
-          )
+        ? toTodayWorkoutDetails(coachAssignment, dayName, dayNumber)
         : null;
     const standaloneToday = toTodayWorkoutDetails(
       standaloneAssignment,
       dayName,
-      dayShortName,
       dayNumber
     );
 
