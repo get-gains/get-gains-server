@@ -112,10 +112,7 @@ const assignedRoutineExerciseShape = (routineExercise: {
     : undefined,
 });
 
-const getLatestRoutineTemplateSlot = async (
-  routineId: string,
-  coachId: string
-) => {
+const findRoutineTemplateSlot = async (routineId: string, coachId: string) => {
   return prisma.assigned_program_routine.findFirst({
     where: {
       routine_id: routineId,
@@ -150,6 +147,67 @@ const getOrCreateDraftAssignment = async (
       user_id: coachId,
     },
   });
+};
+
+const getOrCreateRoutineTemplateSlot = async (
+  routineId: string,
+  coachId: string
+) => {
+  const existing = await findRoutineTemplateSlot(routineId, coachId);
+  if (existing) {
+    return existing;
+  }
+
+  const program = await prisma.program.findFirst({
+    where: {
+      user_id: coachId,
+      deleted_at: null,
+    },
+    orderBy: { created_at: 'asc' },
+  });
+  if (!program) {
+    return null;
+  }
+
+  const draftAssignment = await getOrCreateDraftAssignment(program.id, coachId);
+
+  return prisma.assigned_program_routine.create({
+    data: {
+      assigned_program_id: draftAssignment.id,
+      routine_id: routineId,
+      days_of_week: [],
+    },
+  });
+};
+
+const getLatestCoachAssignmentByProgram = async (
+  programIds: string[],
+  coachId: string
+) => {
+  if (!programIds.length) {
+    return new Map<string, string>();
+  }
+
+  const assignments = await prisma.assigned_program.findMany({
+    where: {
+      user_id: coachId,
+      program_id: { in: programIds },
+    },
+    orderBy: [{ program_id: 'asc' }, { created_at: 'desc' }],
+    select: {
+      id: true,
+      program_id: true,
+    },
+  });
+
+  const latestByProgram = new Map<string, string>();
+  for (const assignment of assignments) {
+    if (!latestByProgram.has(assignment.program_id)) {
+      latestByProgram.set(assignment.program_id, assignment.id);
+    }
+  }
+
+  return latestByProgram;
 };
 
 // ============== Program Controllers ==============
@@ -208,11 +266,50 @@ export const getCoachPrograms = async (
       prisma.program.count({ where: { user_id: appUser.supabase_auth_id } }),
     ]);
 
+    const latestAssignmentByProgram = await getLatestCoachAssignmentByProgram(
+      programs.map((program) => program.id),
+      appUser.supabase_auth_id
+    );
+
+    const assignmentIdToProgram = new Map<string, string>();
+    for (const [programId, assignmentId] of latestAssignmentByProgram) {
+      assignmentIdToProgram.set(assignmentId, programId);
+    }
+
+    const latestSnapshotRoutines = assignmentIdToProgram.size
+      ? await prisma.assigned_program_routine.findMany({
+          where: {
+            assigned_program_id: {
+              in: Array.from(assignmentIdToProgram.keys()),
+            },
+            deleted_at: null,
+          },
+          select: {
+            assigned_program_id: true,
+          },
+        })
+      : [];
+
+    const routineCountByProgram = new Map<string, number>();
+    for (const assignmentRoutine of latestSnapshotRoutines) {
+      const programId = assignmentIdToProgram.get(
+        assignmentRoutine.assigned_program_id
+      );
+      if (!programId) {
+        continue;
+      }
+      routineCountByProgram.set(
+        programId,
+        (routineCountByProgram.get(programId) ?? 0) + 1
+      );
+    }
+
     sendSuccess(res, {
       programs: programs.map((p) => ({
         id: p.id,
         name: p.name,
         description: p.description,
+        routine_count: routineCountByProgram.get(p.id) ?? 0,
         assigned_client_count: p._count.assigned_programs,
         created_at: p.created_at,
         updated_at: p.updated_at,
@@ -464,10 +561,108 @@ export const getCoachRoutines = async (
       prisma.routine.count({ where: { user_id: appUser.supabase_auth_id } }),
     ]);
 
+    const routineIds = routines.map((routine) => routine.id);
+
+    const coachPrograms = await prisma.program.findMany({
+      where: {
+        user_id: appUser.supabase_auth_id,
+        deleted_at: null,
+      },
+      select: { id: true },
+    });
+
+    const latestAssignmentByProgram = await getLatestCoachAssignmentByProgram(
+      coachPrograms.map((program) => program.id),
+      appUser.supabase_auth_id
+    );
+
+    const assignmentIdToProgram = new Map<string, string>();
+    for (const [programId, assignmentId] of latestAssignmentByProgram) {
+      assignmentIdToProgram.set(assignmentId, programId);
+    }
+
+    const currentSnapshotRoutineLinks =
+      assignmentIdToProgram.size && routineIds.length
+        ? await prisma.assigned_program_routine.findMany({
+            where: {
+              assigned_program_id: {
+                in: Array.from(assignmentIdToProgram.keys()),
+              },
+              routine_id: { in: routineIds },
+              deleted_at: null,
+            },
+            select: {
+              routine_id: true,
+              assigned_program_id: true,
+            },
+          })
+        : [];
+
+    const programsByRoutine = new Map<string, Set<string>>();
+    for (const link of currentSnapshotRoutineLinks) {
+      const programId = assignmentIdToProgram.get(link.assigned_program_id);
+      if (!programId) {
+        continue;
+      }
+      const programSet = programsByRoutine.get(link.routine_id) ?? new Set();
+      programSet.add(programId);
+      programsByRoutine.set(link.routine_id, programSet);
+    }
+
+    const templateSlots = routineIds.length
+      ? await prisma.assigned_program_routine.findMany({
+          where: {
+            routine_id: { in: routineIds },
+            deleted_at: null,
+            assigned_program: {
+              user_id: appUser.supabase_auth_id,
+            },
+          },
+          orderBy: [{ routine_id: 'asc' }, { created_at: 'desc' }],
+          select: {
+            id: true,
+            routine_id: true,
+          },
+        })
+      : [];
+
+    const latestTemplateSlotByRoutine = new Map<string, string>();
+    for (const slot of templateSlots) {
+      if (!latestTemplateSlotByRoutine.has(slot.routine_id)) {
+        latestTemplateSlotByRoutine.set(slot.routine_id, slot.id);
+      }
+    }
+
+    const exerciseCountsBySlot = latestTemplateSlotByRoutine.size
+      ? await prisma.assigned_program_routine_exercise.groupBy({
+          by: ['assigned_program_routine_id'],
+          where: {
+            assigned_program_routine_id: {
+              in: Array.from(latestTemplateSlotByRoutine.values()),
+            },
+            deleted_at: null,
+          },
+          _count: { _all: true },
+        })
+      : [];
+
+    const exerciseCountBySlot = new Map<string, number>();
+    for (const slotCount of exerciseCountsBySlot) {
+      exerciseCountBySlot.set(
+        slotCount.assigned_program_routine_id,
+        slotCount._count._all
+      );
+    }
+
     sendSuccess(res, {
       routines: routines.map((routine) => ({
         ...routineShape(routine),
         assignment_count: routine._count.assigned_program_routines,
+        exercise_count:
+          exerciseCountBySlot.get(
+            latestTemplateSlotByRoutine.get(routine.id) ?? ''
+          ) ?? 0,
+        program_count: programsByRoutine.get(routine.id)?.size ?? 0,
       })),
       pagination: {
         total,
@@ -504,7 +699,7 @@ export const getCoachRoutineById = async (
       return;
     }
 
-    const templateSlot = await getLatestRoutineTemplateSlot(
+    const templateSlot = await findRoutineTemplateSlot(
       routineId,
       appUser.supabase_auth_id
     );
@@ -873,14 +1068,14 @@ export const addRoutineExercise = async (
       return;
     }
 
-    const templateSlot = await getLatestRoutineTemplateSlot(
+    const templateSlot = await getOrCreateRoutineTemplateSlot(
       routineId,
       appUser.supabase_auth_id
     );
     if (!templateSlot) {
       sendSingleError(
         res,
-        'Assign this routine to a program before adding exercises',
+        'Create a program first before adding exercises',
         400
       );
       return;
