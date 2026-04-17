@@ -3,7 +3,6 @@
 
 generator client {
   provider = "prisma-client-js"
-  url      = env("DATABASE_URL")
 }
 
 datasource db {
@@ -153,7 +152,6 @@ model program {
 
   user              user               @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
   assigned_programs assigned_program[]
-  program_routines  program_routine[]
 
   @@index([user_id])
 }
@@ -170,27 +168,8 @@ model routine {
 
   user                      user                       @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
   assigned_program_routines assigned_program_routine[]
-  program_routines          program_routine[]
-  routine_exercises         routine_exercise[]
 
   @@index([user_id])
-}
-
-model program_routine {
-  id          String    @id @default(cuid())
-  program_id  String
-  routine_id  String
-  day_of_week String
-  deleted_at  DateTime? @db.Timestamptz
-  created_at  DateTime  @default(now()) @db.Timestamptz
-  updated_at  DateTime  @updatedAt @db.Timestamptz
-
-  program program @relation(fields: [program_id], references: [id], onDelete: Cascade)
-  routine routine @relation(fields: [routine_id], references: [id], onDelete: Cascade)
-
-  @@unique([program_id, day_of_week])
-  @@index([program_id])
-  @@index([routine_id])
 }
 
 model exercise {
@@ -208,31 +187,9 @@ model exercise {
   user                               user                                @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
   exercise_forms                     exercise_form[]
   assigned_program_routine_exercises assigned_program_routine_exercise[]
-  routine_exercises                  routine_exercise[]
 
   @@index([user_id])
   @@index([is_public])
-}
-
-model routine_exercise {
-  id               String    @id @default(cuid())
-  routine_id       String
-  exercise_id      String
-  sets             Int
-  reps_min         Int
-  reps_max         Int
-  rest_seconds     Int
-  order_in_routine Int
-  notes            String?   @db.Text
-  deleted_at       DateTime? @db.Timestamptz
-  created_at       DateTime  @default(now()) @db.Timestamptz
-  updated_at       DateTime  @updatedAt @db.Timestamptz
-
-  routine  routine  @relation(fields: [routine_id], references: [id], onDelete: Cascade)
-  exercise exercise @relation(fields: [exercise_id], references: [id], onDelete: Restrict)
-
-  @@index([routine_id])
-  @@index([exercise_id])
 }
 
 model exercise_form {
