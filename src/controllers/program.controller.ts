@@ -14,6 +14,11 @@ import type {
   UpdateProgramRoutineInput,
   UpdateProgramRoutineParams,
   RemoveProgramRoutineParams,
+  AddRoutineExerciseInput,
+  AddRoutineExerciseParams,
+  UpdateRoutineExerciseInput,
+  UpdateRoutineExerciseParams,
+  DeleteRoutineExerciseParams,
   AssignProgramInput,
   AssignProgramParams,
 } from '../schemas/program.schema';
@@ -56,6 +61,72 @@ const programRoutineShape = (
   createdAt: programRoutine.created_at,
   updatedAt: programRoutine.updated_at,
 });
+
+const assignedRoutineExerciseShape = (routineExercise: {
+  id: string;
+  assigned_program_routine_id: string;
+  assigned_program_routine?: {
+    routine_id: string;
+  };
+  routine_id?: string;
+  exercise_id: string;
+  sets: number;
+  reps_min: number;
+  reps_max: number;
+  rest_seconds: number;
+  order_in_routine: number;
+  notes?: string | null;
+  created_at: Date;
+  updated_at: Date;
+  exercise?: {
+    id: string;
+    name: string;
+    description: string;
+    target_muscles: string[];
+    created_at: Date;
+    updated_at: Date;
+  };
+}) => ({
+  id: routineExercise.id,
+  routine_id:
+    routineExercise.routine_id ??
+    routineExercise.assigned_program_routine?.routine_id,
+  exercise_id: routineExercise.exercise_id,
+  sets: routineExercise.sets,
+  reps_min: routineExercise.reps_min,
+  reps_max: routineExercise.reps_max,
+  rest_seconds: routineExercise.rest_seconds,
+  order_in_routine: routineExercise.order_in_routine,
+  notes: routineExercise.notes ?? undefined,
+  created_at: routineExercise.created_at,
+  updated_at: routineExercise.updated_at,
+  exercise: routineExercise.exercise
+    ? {
+        id: routineExercise.exercise.id,
+        name: routineExercise.exercise.name,
+        description: routineExercise.exercise.description,
+        target_muscles: routineExercise.exercise.target_muscles,
+        created_at: routineExercise.exercise.created_at,
+        updated_at: routineExercise.exercise.updated_at,
+      }
+    : undefined,
+});
+
+const getLatestRoutineTemplateSlot = async (
+  routineId: string,
+  coachId: string
+) => {
+  return prisma.assigned_program_routine.findFirst({
+    where: {
+      routine_id: routineId,
+      deleted_at: null,
+      assigned_program: {
+        user_id: coachId,
+      },
+    },
+    orderBy: { created_at: 'desc' },
+  });
+};
 
 const getOrCreateDraftAssignment = async (
   programId: string,
@@ -433,7 +504,33 @@ export const getCoachRoutineById = async (
       return;
     }
 
-    sendSuccess(res, { routine: routineShape(routine) });
+    const templateSlot = await getLatestRoutineTemplateSlot(
+      routineId,
+      appUser.supabase_auth_id
+    );
+
+    const routineExercises = templateSlot
+      ? await prisma.assigned_program_routine_exercise.findMany({
+          where: {
+            assigned_program_routine_id: templateSlot.id,
+            deleted_at: null,
+          },
+          orderBy: { order_in_routine: 'asc' },
+          include: {
+            exercise: true,
+            assigned_program_routine: {
+              select: { routine_id: true },
+            },
+          },
+        })
+      : [];
+
+    sendSuccess(res, {
+      routine: {
+        ...routineShape(routine),
+        exercises: routineExercises.map(assignedRoutineExerciseShape),
+      },
+    });
   } catch (error) {
     logger.error('Error fetching routine', error);
     sendSingleError(res, 'Failed to fetch routine', 500);
@@ -730,6 +827,264 @@ export const removeProgramRoutine = async (
   } catch (error) {
     logger.error('Error removing program routine', error);
     sendSingleError(res, 'Failed to remove program routine', 500);
+  }
+};
+
+export const addRoutineExercise = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const appUser = req.appUser;
+    if (!appUser) {
+      sendSingleError(res, 'User required', 401);
+      return;
+    }
+
+    const { routineId } = res.locals.validated
+      ?.params as AddRoutineExerciseParams;
+    const {
+      exercise_id,
+      sets,
+      reps_min,
+      reps_max,
+      rest_seconds,
+      order_in_routine,
+      notes: _notes,
+    } = res.locals.validated?.body as AddRoutineExerciseInput;
+
+    const routine = await prisma.routine.findUnique({
+      where: { id: routineId },
+    });
+    if (!routine || routine.user_id !== appUser.supabase_auth_id) {
+      sendSingleError(res, 'Routine not found or access denied', 404);
+      return;
+    }
+
+    const exercise = await prisma.exercise.findUnique({
+      where: { id: exercise_id },
+    });
+    if (!exercise || exercise.deleted_at) {
+      sendSingleError(res, 'Exercise not found', 404);
+      return;
+    }
+    if (exercise.user_id !== appUser.supabase_auth_id && !exercise.is_public) {
+      sendSingleError(res, 'Exercise not found or access denied', 404);
+      return;
+    }
+
+    const templateSlot = await getLatestRoutineTemplateSlot(
+      routineId,
+      appUser.supabase_auth_id
+    );
+    if (!templateSlot) {
+      sendSingleError(
+        res,
+        'Assign this routine to a program before adding exercises',
+        400
+      );
+      return;
+    }
+
+    const routineExercise =
+      await prisma.assigned_program_routine_exercise.create({
+        data: {
+          assigned_program_routine_id: templateSlot.id,
+          exercise_id,
+          sets,
+          reps_min,
+          reps_max,
+          rest_seconds,
+          order_in_routine,
+        },
+        include: {
+          exercise: true,
+          assigned_program_routine: {
+            select: { routine_id: true },
+          },
+        },
+      });
+
+    logger.info('Routine exercise added', {
+      routineId,
+      routineExerciseId: routineExercise.id,
+      coachId: appUser.supabase_auth_id,
+    });
+
+    sendSuccess(
+      res,
+      { routineExercise: assignedRoutineExerciseShape(routineExercise) },
+      201
+    );
+  } catch (error) {
+    logger.error('Error adding routine exercise', error);
+    sendSingleError(res, 'Failed to add exercise to routine', 500);
+  }
+};
+
+export const updateRoutineExercise = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const appUser = req.appUser;
+    if (!appUser) {
+      sendSingleError(res, 'User required', 401);
+      return;
+    }
+
+    const { routineId, routineExerciseId } = res.locals.validated
+      ?.params as UpdateRoutineExerciseParams;
+    const {
+      exercise_id,
+      sets,
+      reps_min,
+      reps_max,
+      rest_seconds,
+      order_in_routine,
+      notes: _notes,
+    } = res.locals.validated?.body as UpdateRoutineExerciseInput;
+
+    const existing = await prisma.assigned_program_routine_exercise.findUnique({
+      where: { id: routineExerciseId },
+      include: {
+        assigned_program_routine: {
+          include: {
+            assigned_program: {
+              select: { user_id: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (
+      !existing ||
+      existing.assigned_program_routine.routine_id !== routineId ||
+      existing.deleted_at
+    ) {
+      sendSingleError(res, 'Routine exercise not found', 404);
+      return;
+    }
+
+    if (
+      existing.assigned_program_routine.assigned_program.user_id !==
+      appUser.supabase_auth_id
+    ) {
+      sendSingleError(res, 'Routine not found or access denied', 404);
+      return;
+    }
+
+    if (exercise_id !== undefined) {
+      const exercise = await prisma.exercise.findUnique({
+        where: { id: exercise_id },
+      });
+      if (!exercise || exercise.deleted_at) {
+        sendSingleError(res, 'Exercise not found', 404);
+        return;
+      }
+      if (
+        exercise.user_id !== appUser.supabase_auth_id &&
+        !exercise.is_public
+      ) {
+        sendSingleError(res, 'Exercise not found or access denied', 404);
+        return;
+      }
+    }
+
+    const routineExercise =
+      await prisma.assigned_program_routine_exercise.update({
+        where: { id: routineExerciseId },
+        data: {
+          ...(exercise_id !== undefined && { exercise_id }),
+          ...(sets !== undefined && { sets }),
+          ...(reps_min !== undefined && { reps_min }),
+          ...(reps_max !== undefined && { reps_max }),
+          ...(rest_seconds !== undefined && { rest_seconds }),
+          ...(order_in_routine !== undefined && { order_in_routine }),
+        },
+        include: {
+          exercise: true,
+          assigned_program_routine: {
+            select: { routine_id: true },
+          },
+        },
+      });
+
+    logger.info('Routine exercise updated', {
+      routineId,
+      routineExerciseId,
+      coachId: appUser.supabase_auth_id,
+    });
+
+    sendSuccess(res, {
+      routineExercise: assignedRoutineExerciseShape(routineExercise),
+    });
+  } catch (error) {
+    logger.error('Error updating routine exercise', error);
+    sendSingleError(res, 'Failed to update routine exercise', 500);
+  }
+};
+
+export const deleteRoutineExercise = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const appUser = req.appUser;
+    if (!appUser) {
+      sendSingleError(res, 'User required', 401);
+      return;
+    }
+
+    const { routineId, routineExerciseId } = res.locals.validated
+      ?.params as DeleteRoutineExerciseParams;
+
+    const existing = await prisma.assigned_program_routine_exercise.findUnique({
+      where: { id: routineExerciseId },
+      include: {
+        assigned_program_routine: {
+          include: {
+            assigned_program: {
+              select: { user_id: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (
+      !existing ||
+      existing.assigned_program_routine.routine_id !== routineId ||
+      existing.deleted_at
+    ) {
+      sendSingleError(res, 'Routine exercise not found', 404);
+      return;
+    }
+
+    if (
+      existing.assigned_program_routine.assigned_program.user_id !==
+      appUser.supabase_auth_id
+    ) {
+      sendSingleError(res, 'Routine not found or access denied', 404);
+      return;
+    }
+
+    await prisma.assigned_program_routine_exercise.update({
+      where: { id: routineExerciseId },
+      data: { deleted_at: new Date() },
+    });
+
+    logger.info('Routine exercise removed', {
+      routineId,
+      routineExerciseId,
+      coachId: appUser.supabase_auth_id,
+    });
+
+    sendSuccess(res, { message: 'Routine exercise removed successfully' });
+  } catch (error) {
+    logger.error('Error deleting routine exercise', error);
+    sendSingleError(res, 'Failed to remove routine exercise', 500);
   }
 };
 

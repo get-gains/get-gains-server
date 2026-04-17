@@ -18,6 +18,9 @@ import {
   AssignRoutineToProgramSchema,
   UpdateProgramRoutineSchema,
   RemoveProgramRoutineSchema,
+  AddRoutineExerciseSchema,
+  UpdateRoutineExerciseSchema,
+  DeleteRoutineExerciseSchema,
   AssignProgramSchema,
 } from '../schemas/program.schema';
 import {
@@ -34,6 +37,9 @@ import {
   assignRoutineToProgram,
   updateProgramRoutine,
   removeProgramRoutine,
+  addRoutineExercise,
+  updateRoutineExercise,
+  deleteRoutineExercise,
   assignProgram,
 } from '../controllers/program.controller';
 
@@ -99,6 +105,28 @@ router.delete(
   requireCoach,
   validateRequest(RemoveProgramRoutineSchema),
   removeProgramRoutine
+);
+
+router.post(
+  '/routines/:routineId/exercises',
+  authenticateSupabaseUser,
+  requireCoach,
+  validateRequest(AddRoutineExerciseSchema),
+  addRoutineExercise
+);
+router.patch(
+  '/routines/:routineId/exercises/:routineExerciseId',
+  authenticateSupabaseUser,
+  requireCoach,
+  validateRequest(UpdateRoutineExerciseSchema),
+  updateRoutineExercise
+);
+router.delete(
+  '/routines/:routineId/exercises/:routineExerciseId',
+  authenticateSupabaseUser,
+  requireCoach,
+  validateRequest(DeleteRoutineExerciseSchema),
+  deleteRoutineExercise
 );
 
 router.post(
