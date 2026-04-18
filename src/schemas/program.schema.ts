@@ -1,11 +1,8 @@
 import { z } from 'zod';
-import { DAY_NAMES } from '../utils/days';
+import { DayOfWeekSchema } from './day.schema';
 
 // ============== DayOfWeek Enum (shared) ==============
-
-const DayOfWeek = z.enum(DAY_NAMES);
-
-export type DayOfWeek = z.infer<typeof DayOfWeek>;
+export type { DayOfWeek } from './day.schema';
 
 // ============== Program Schemas ==============
 
@@ -123,7 +120,7 @@ export const AssignRoutineToProgramSchema = z.object({
   }),
   body: z.object({
     routine_id: z.string().cuid(),
-    day_of_week: DayOfWeek,
+    day_of_week: DayOfWeekSchema,
   }),
 });
 
@@ -140,7 +137,7 @@ export const UpdateProgramRoutineSchema = z.object({
     programRoutineId: z.string().cuid(),
   }),
   body: z.object({
-    day_of_week: DayOfWeek,
+    day_of_week: DayOfWeekSchema,
   }),
 });
 
@@ -251,7 +248,7 @@ const AssignmentExerciseSchema = z.object({
 
 const AssignmentRoutineSchema = z.object({
   routine_id: z.string().cuid(),
-  days_of_week: z.array(DayOfWeek).min(1),
+  days_of_week: z.array(DayOfWeekSchema).min(1),
   exercises: z.array(AssignmentExerciseSchema).min(1),
 });
 

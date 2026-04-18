@@ -1,9 +1,7 @@
 import { z } from 'zod';
-import { DAY_NAMES } from '../utils/days';
+import { DayOfWeekSchema } from './day.schema';
 
-const DayOfWeek = z.enum(DAY_NAMES);
-
-export type DayOfWeek = z.infer<typeof DayOfWeek>;
+export type { DayOfWeek } from './day.schema';
 
 // ============== Personal Exercise Schemas ==============
 
@@ -182,7 +180,7 @@ const StandaloneAssignmentExerciseSchema = z.object({
 
 const StandaloneAssignmentRoutineSchema = z.object({
   routine_id: z.string().cuid(),
-  days_of_week: z.array(DayOfWeek).min(1),
+  days_of_week: z.array(DayOfWeekSchema).min(1),
   exercises: z.array(StandaloneAssignmentExerciseSchema).min(1),
 });
 
