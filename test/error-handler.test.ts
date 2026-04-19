@@ -9,6 +9,7 @@ import {
   ConflictException,
   ValidationException,
   UnexpectedException,
+  ForbiddenException,
 } from '../src/lib/errors';
 
 /**
@@ -70,6 +71,61 @@ function buildApp() {
       'UNEXPECTED_EXCEPTION',
       'Something went wrong'
     );
+  });
+
+  // ── Phase 7: Gamification error routes ──
+
+  // Shop: item not found
+  app.get('/test/shop-not-found', () => {
+    throw new NotFoundException(
+      'SHOP_ITEM_NOT_FOUND',
+      'Cosmetic not found or no longer available.'
+    );
+  });
+
+  // Shop: already owned
+  app.post('/test/shop-already-owned', () => {
+    throw new ConflictException(
+      'SHOP_ITEM_ALREADY_OWNED',
+      'You already own this cosmetic.'
+    );
+  });
+
+  // Coins: insufficient balance
+  app.post('/test/insufficient-balance', () => {
+    throw new BadRequestException(
+      'COIN_INSUFFICIENT_BALANCE',
+      'Insufficient coin balance. You need 50 more coins.'
+    );
+  });
+
+  // Cosmetic: not owned
+  app.post('/test/cosmetic-not-owned', () => {
+    throw new BadRequestException(
+      'COSMETIC_NOT_OWNED',
+      'You do not own this cosmetic.'
+    );
+  });
+
+  // Cosmetic: not equippable
+  app.post('/test/cosmetic-not-equippable', () => {
+    throw new BadRequestException(
+      'COSMETIC_NOT_EQUIPPABLE',
+      'This cosmetic is not currently equipped.'
+    );
+  });
+
+  // Leaderboard: forbidden (not subscribed)
+  app.get('/test/leaderboard-forbidden', () => {
+    throw new ForbiddenException(
+      'FORBIDDEN',
+      'You must be subscribed to this coach to view their class leaderboard.'
+    );
+  });
+
+  // Pose: form not found
+  app.get('/test/pose-form-not-found', () => {
+    throw new NotFoundException('POSE_FORM_NOT_FOUND', 'Form not found');
   });
 
   // 404 handler
@@ -150,5 +206,52 @@ describe('errorHandler middleware', () => {
     const res = await request(app).get('/test/unexpected-exc');
     expect(res.status).toBe(500);
     expect(res.body.errors[0].code).toBe('UNEXPECTED_EXCEPTION');
+  });
+
+  // ── Phase 7: Gamification error tests ──
+
+  it('returns SHOP_ITEM_NOT_FOUND for missing shop item', async () => {
+    const res = await request(app).get('/test/shop-not-found');
+    expect(res.status).toBe(404);
+    expect(res.body.errors[0].code).toBe('SHOP_ITEM_NOT_FOUND');
+  });
+
+  it('returns SHOP_ITEM_ALREADY_OWNED as 409 Conflict', async () => {
+    const res = await request(app).post('/test/shop-already-owned').send({});
+    expect(res.status).toBe(409);
+    expect(res.body.errors[0].code).toBe('SHOP_ITEM_ALREADY_OWNED');
+  });
+
+  it('returns COIN_INSUFFICIENT_BALANCE as 400', async () => {
+    const res = await request(app).post('/test/insufficient-balance').send({});
+    expect(res.status).toBe(400);
+    expect(res.body.errors[0].code).toBe('COIN_INSUFFICIENT_BALANCE');
+    expect(res.body.errors[0].message).toContain('50 more coins');
+  });
+
+  it('returns COSMETIC_NOT_OWNED as 400', async () => {
+    const res = await request(app).post('/test/cosmetic-not-owned').send({});
+    expect(res.status).toBe(400);
+    expect(res.body.errors[0].code).toBe('COSMETIC_NOT_OWNED');
+  });
+
+  it('returns COSMETIC_NOT_EQUIPPABLE as 400', async () => {
+    const res = await request(app)
+      .post('/test/cosmetic-not-equippable')
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.errors[0].code).toBe('COSMETIC_NOT_EQUIPPABLE');
+  });
+
+  it('returns 403 FORBIDDEN for leaderboard access without subscription', async () => {
+    const res = await request(app).get('/test/leaderboard-forbidden');
+    expect(res.status).toBe(403);
+    expect(res.body.errors[0].code).toBe('FORBIDDEN');
+  });
+
+  it('returns POSE_FORM_NOT_FOUND for missing form', async () => {
+    const res = await request(app).get('/test/pose-form-not-found');
+    expect(res.status).toBe(404);
+    expect(res.body.errors[0].code).toBe('POSE_FORM_NOT_FOUND');
   });
 });
