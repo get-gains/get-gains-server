@@ -4,5 +4,11 @@
     "rootDir": ".",
     "noEmit": true
   },
-  "include": ["src/**/*", "scripts/**/*.ts", "prisma/**/*.ts", "test/**/*.ts", "vitest.config.ts"]
+  "include": [
+    "src/**/*",
+    "scripts/**/*.ts",
+    "prisma/**/*.ts",
+    "test/**/*.ts",
+    "vitest.config.ts"
+  ]
 }
