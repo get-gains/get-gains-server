@@ -21,7 +21,6 @@ import {
   GetClientExerciseHistoryQuery,
 } from '../schemas/coach.schema';
 import { getUserBySupabaseId } from './user.controller';
-import { SubscriptionStatus } from '@prisma/client';
 
 /**
  * Create coach profile (become a coach). Any authenticated user can call.
@@ -159,15 +158,9 @@ export const getClients = async (
                 program: { select: { name: true } },
               },
             },
-            subscriptions: {
-              where: {
-                status: {
-                  in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE],
-                },
-              },
+            active_subscription_tier: true,
+            user_subscription: {
               select: { current_period_end: true },
-              orderBy: { current_period_end: 'desc' },
-              take: 1,
             },
           },
         },
@@ -182,7 +175,7 @@ export const getClients = async (
       nickname: cr.user.nickname,
       subscribedAt: cr.started_at,
       subscriptionExpiresAt:
-        cr.user.subscriptions[0]?.current_period_end ?? null,
+        cr.user.user_subscription?.current_period_end ?? null,
       assignedPrograms: cr.user.assigned_programs.map((ap) => ({
         programId: ap.program_id,
         program: ap.program,

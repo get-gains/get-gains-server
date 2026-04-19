@@ -120,7 +120,7 @@ export const getTodayStatus = async (
     const now = new Date();
 
     const isSubscribed = req.subscription?.isSubscribed ?? false;
-    const subscription = req.subscription?.subscription ?? null;
+    const tier = req.subscription?.tier ?? 'FREE';
 
     const [coachProfile, coachRelation] = await Promise.all([
       prisma.coach.findUnique({
@@ -197,14 +197,7 @@ export const getTodayStatus = async (
       isCoach,
       isSubscribed,
       hasCoach,
-      subscription: subscription
-        ? {
-            id: subscription.id,
-            status: subscription.status,
-            tierLevel: subscription.tierLevel,
-            currentPeriodEnd: subscription.currentPeriodEnd,
-          }
-        : null,
+      tier,
       coachToday,
       standaloneToday,
     });

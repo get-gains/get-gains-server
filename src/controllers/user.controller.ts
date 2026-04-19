@@ -577,6 +577,7 @@ export const getProfile = async (
         created_at: user.created_at.toISOString(),
         updated_at: user.updated_at.toISOString(),
       },
+      tier: user.active_subscription_tier,
     });
   } catch (error) {
     const err = error as Error;
