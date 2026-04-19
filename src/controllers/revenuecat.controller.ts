@@ -1,8 +1,9 @@
 import { Request, Response } from 'express';
 import { logger } from '../utils/logger';
-import { sendSuccess, sendSingleError } from '../utils/response';
+import { sendSuccess } from '../utils/response';
 import { REVENUECAT_WEBHOOK_AUTH_HEADER } from '../config/revenuecat';
 import { processRevenueCatWebhook } from '../services/revenuecat.service';
+import { UnauthorizedException } from '../lib/errors';
 import crypto from 'crypto';
 
 /**
@@ -16,22 +17,24 @@ export const handleRevenueCatWebhook = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    // Verify authorization header (constant-time comparison)
-    const authHeader = req.headers.authorization ?? '';
-    if (
-      !REVENUECAT_WEBHOOK_AUTH_HEADER ||
-      !constantTimeEqual(authHeader, REVENUECAT_WEBHOOK_AUTH_HEADER)
-    ) {
-      logger.warn('RC webhook auth failed', {
-        ip:
-          (req.headers['x-forwarded-for'] as string)?.split(',')[0] ||
-          req.socket.remoteAddress,
-      });
-      sendSingleError(res, 'Unauthorized', 401);
-      return;
-    }
+  // Auth check — outside try-catch so failures propagate to global error handler
+  const authHeader = req.headers.authorization ?? '';
+  if (
+    !REVENUECAT_WEBHOOK_AUTH_HEADER ||
+    !constantTimeEqual(authHeader, REVENUECAT_WEBHOOK_AUTH_HEADER)
+  ) {
+    logger.warn('RC webhook auth failed', {
+      ip:
+        (req.headers['x-forwarded-for'] as string)?.split(',')[0] ||
+        req.socket.remoteAddress,
+    });
+    throw new UnauthorizedException(
+      'REVENUECAT_INVALID_SIGNATURE',
+      'Invalid webhook signature'
+    );
+  }
 
+  try {
     const payload = req.body;
     if (!payload?.event?.id || !payload?.event?.app_user_id) {
       logger.warn('RC webhook missing required fields');
