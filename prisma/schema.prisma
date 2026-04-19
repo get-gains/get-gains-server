@@ -452,8 +452,7 @@ model raffle_entry {
 // ============== RevenueCat Subscription Domain ==============
 
 model user_subscription {
-  id      String @id @default(cuid())
-  user_id String @unique
+  user_id String @id
   user    user   @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
 
   tier   SubscriptionTier
