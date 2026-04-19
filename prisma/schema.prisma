@@ -11,39 +11,6 @@ datasource db {
 
 // ============== Enums ==============
 
-enum BillingCycle {
-  DAILY
-  WEEKLY
-  MONTHLY
-  QUARTERLY
-  SEMIANNUALLY
-  YEARLY
-}
-
-enum SubscriptionStatus {
-  PENDING
-  ACTIVE
-  PAST_DUE
-  CANCELED
-  EXPIRED
-  REVOKED
-  PAUSED
-}
-
-enum PaymentStatus {
-  COMPLETED
-  FAILED
-  PENDING
-  REFUNDED
-}
-
-enum WebhookStatus {
-  PENDING
-  PROCESSING
-  COMPLETED
-  FAILED
-}
-
 enum CameraAngle {
   FRONT
   SIDE_LEFT
@@ -68,9 +35,50 @@ enum CoinTransactionType {
   SHOP_PURCHASE
 }
 
-enum Provider {
-  GOOGLE_PLAY
-  APPLE
+// ============== RevenueCat Enums ==============
+
+enum SubscriptionTier {
+  FREE
+  PREMIUM
+}
+
+enum RcSubscriptionStatus {
+  ACTIVE
+  TRIALING
+  GRACE_PERIOD
+  PAUSED
+  EXPIRED
+  CANCELLED
+}
+
+enum SubscriptionStore {
+  APP_STORE
+  PLAY_STORE
+  STRIPE
+  PROMOTIONAL
+}
+
+enum RcEventType {
+  INITIAL_PURCHASE
+  RENEWAL
+  CANCELLATION
+  UNCANCELLATION
+  NON_RENEWING_PURCHASE
+  EXPIRATION
+  BILLING_ISSUE
+  PRODUCT_CHANGE
+  TRANSFER
+  SUBSCRIPTION_PAUSED
+  SUBSCRIPTION_EXTENDED
+  TEMPORARY_ENTITLEMENT_GRANT
+  REFUND
+  TEST
+}
+
+enum RcEventStatus {
+  PENDING
+  COMPLETED
+  FAILED
 }
 
 // ============== Identity ==============
@@ -95,17 +103,20 @@ model user {
   created_at          DateTime  @default(now()) @db.Timestamptz
   updated_at          DateTime  @updatedAt @db.Timestamptz
 
-  coach              coach?
-  subscribed_coaches subscribed_coach[]
-  programs           program[]
-  routines           routine[]
-  exercises          exercise[]
-  assigned_programs  assigned_program[]
-  subscriptions      subscription[]
-  payment_histories  payment_history[]
-  coin_transactions  coin_transactions[]
-  user_cosmetics     user_cosmetic[]
-  user_missions      user_mission[]
+  // Denormalized for O(1) tier gate checks. Updated by RC webhook handler.
+  active_subscription_tier SubscriptionTier @default(FREE)
+
+  coach                  coach?
+  subscribed_coaches     subscribed_coach[]
+  programs               program[]
+  routines               routine[]
+  exercises              exercise[]
+  assigned_programs      assigned_program[]
+  coin_transactions      coin_transactions[]
+  user_cosmetics         user_cosmetic[]
+  user_missions          user_mission[]
+  user_subscription      user_subscription?
+  rc_subscription_events rc_subscription_event[]
 }
 
 model coach {
@@ -313,7 +324,7 @@ model cosmetics {
   price             Int
   category          String
   preview_image_key String
-  unity_asset_ref   String    @default("") @unique
+  unity_asset_ref   String    @unique @default("")
   status            String    @default("ACTIVE")
   sort_order        Int       @default(0)
   deleted_at        DateTime? @db.Timestamptz
@@ -438,173 +449,61 @@ model raffle_entry {
   @@index([user_mission_id])
 }
 
-// ============== Subscription Domain ==============
+// ============== RevenueCat Subscription Domain ==============
 
-model subscription_plan {
-  id                String       @id @default(cuid())
-  name              String       @unique
-  description       String       @db.Text
-  features          String[]
-  tier_level        Int          @default(0) // 0=Free, 1=Basic, 2=Premium, 3=Pro
-  billing_cycle     BillingCycle
-  price_cents       Int
-  currency          String       @default("PHP")
-  trial_period_days Int?
-  is_active         Boolean      @default(true)
-  sort_order        Int          @default(0)
-  created_at        DateTime     @default(now()) @db.Timestamptz
-  updated_at        DateTime     @updatedAt @db.Timestamptz
+model user_subscription {
+  id      String @id @default(cuid())
+  user_id String @unique
+  user    user   @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
 
-  provider_plans              provider_plan[]
-  subscriptions               subscription[]
-  payment_histories           payment_history[]
-  subscription_plan_histories subscription_plan_history[]
+  tier   SubscriptionTier
+  status RcSubscriptionStatus
+  store  SubscriptionStore
 
-  @@index([is_active, sort_order])
+  entitlement_id    String
+  product_id        String
+  rc_original_tx_id String? @unique
+
+  current_period_start DateTime  @db.Timestamptz
+  current_period_end   DateTime  @db.Timestamptz
+  trial_ends_at        DateTime? @db.Timestamptz
+  cancel_at_period_end Boolean   @default(false)
+  will_renew           Boolean   @default(true)
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  @@index([status, current_period_end])
+  @@index([tier, status])
 }
 
-model provider_plan {
-  id                       String   @id @default(cuid())
-  subscription_plan_id     String
-  provider                 Provider
-  provider_product_id      String
-  provider_subscription_id String?
-  provider_base_plan_id    String?
-  provider_metadata        Json?
-  is_active                Boolean  @default(true)
-  created_at               DateTime @default(now()) @db.Timestamptz
-  updated_at               DateTime @updatedAt @db.Timestamptz
+model rc_subscription_event {
+  id      String @id @default(cuid())
+  user_id String
+  user    user   @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
 
-  subscription_plan subscription_plan @relation(fields: [subscription_plan_id], references: [id], onDelete: Cascade)
+  event_type RcEventType
+  status     RcEventStatus @default(PENDING)
 
-  @@unique([provider, provider_product_id])
-  @@index([provider, provider_subscription_id])
-  @@index([subscription_plan_id])
-}
+  from_tier   SubscriptionTier?
+  to_tier     SubscriptionTier?
+  from_status RcSubscriptionStatus?
+  to_status   RcSubscriptionStatus?
 
-model subscription {
-  id                       String             @id @default(cuid())
-  user_id                  String
-  subscription_plan_id     String
-  provider                 Provider
-  status                   SubscriptionStatus
-  external_subscription_id String             @unique
-  // Billing cycle tracking
-  start_date               DateTime           @db.Timestamptz
-  current_period_start     DateTime           @db.Timestamptz
-  current_period_end       DateTime           @db.Timestamptz // CRITICAL: auth middleware WHERE > now()
-  next_billing_date        DateTime           @db.Timestamptz
-  // Cancellation
-  cancel_at_period_end     Boolean            @default(false)
-  canceled_at              DateTime?          @db.Timestamptz
-  ended_at                 DateTime?          @db.Timestamptz
-  // Trial
-  trial_start_date         DateTime?          @db.Timestamptz
-  trial_end_date           DateTime?          @db.Timestamptz
-  // Provider-specific
-  purchase_token           String?
-  order_id                 String?
-  auto_renew               Boolean            @default(true)
-  provider_metadata        Json?
-  // Discount tracking
-  is_discounted            Boolean            @default(false)
-  discount_description     String?
-  created_at               DateTime           @default(now()) @db.Timestamptz
-  updated_at               DateTime           @updatedAt @db.Timestamptz
+  store          SubscriptionStore?
+  product_id     String?
+  entitlement_id String?
 
-  user                        user                        @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
-  subscription_plan           subscription_plan           @relation(fields: [subscription_plan_id], references: [id], onDelete: Restrict)
-  payment_histories           payment_history[]
-  subscription_events         subscription_event[]
-  subscription_plan_histories subscription_plan_history[]
+  rc_event_id String   @unique
+  occurred_at DateTime @db.Timestamptz
 
-  @@index([user_id, status, current_period_end]) // auth middleware hot path
-  @@index([purchase_token])
-  @@index([user_id, created_at])
-}
+  raw_payload   Json
+  error_message String?   @db.Text
+  retry_count   Int       @default(0)
+  processed_at  DateTime? @db.Timestamptz
 
-model subscription_plan_history {
-  id                   String    @id @default(cuid())
-  subscription_id      String
-  subscription_plan_id String
-  effective_from       DateTime  @db.Timestamptz
-  effective_until      DateTime? @db.Timestamptz // NULL = current plan
-  change_reason        String?
-  created_at           DateTime  @default(now()) @db.Timestamptz
+  created_at DateTime @default(now()) @db.Timestamptz
 
-  subscription      subscription      @relation(fields: [subscription_id], references: [id], onDelete: Cascade)
-  subscription_plan subscription_plan @relation(fields: [subscription_plan_id], references: [id], onDelete: Restrict)
-
-  @@index([subscription_id, effective_until])
-  @@index([subscription_id, effective_from])
-}
-
-model payment_history {
-  id                   String        @id @default(cuid())
-  user_id              String
-  subscription_id      String
-  subscription_plan_id String
-  provider             Provider
-  amount_cents         Int
-  currency             String
-  payment_date         DateTime      @db.Timestamptz
-  provider_order_id    String
-  status               PaymentStatus @default(COMPLETED)
-  payment_method       String?
-  // Refund tracking
-  refunded_at          DateTime?     @db.Timestamptz
-  refund_amount_cents  Int?
-  refund_reason        String?
-  created_at           DateTime      @default(now()) @db.Timestamptz
-  updated_at           DateTime      @updatedAt @db.Timestamptz
-
-  user              user              @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Restrict)
-  subscription      subscription      @relation(fields: [subscription_id], references: [id], onDelete: Restrict)
-  subscription_plan subscription_plan @relation(fields: [subscription_plan_id], references: [id], onDelete: Restrict)
-
-  @@unique([subscription_id, provider_order_id])
-  @@index([user_id, payment_date])
-  @@index([status])
-}
-
-model webhook_event {
-  id              String        @id @default(cuid())
-  idempotency_key String        @unique
-  provider        Provider
-  event_type      String
-  subscription_id String?
-  raw_payload     Json
-  status          WebhookStatus @default(PENDING)
-  error_message   String?       @db.Text
-  retry_count     Int           @default(0)
-  processed_at    DateTime?     @db.Timestamptz // Set on completion (not on creation)
-  ip_address      String?
-  user_agent      String?
-  created_at      DateTime      @default(now()) @db.Timestamptz
-  updated_at      DateTime      @updatedAt @db.Timestamptz
-
-  subscription_events subscription_event[]
-
+  @@index([user_id, occurred_at(sort: Desc)])
   @@index([status, created_at])
-  @@index([subscription_id])
-  @@index([provider, event_type])
-}
-
-model subscription_event {
-  id               String              @id @default(cuid())
-  subscription_id  String
-  event_type       String
-  from_status      SubscriptionStatus?
-  to_status        SubscriptionStatus?
-  triggered_by     String?
-  reason           String?             @db.Text
-  webhook_event_id String?
-  metadata         Json?
-  created_at       DateTime            @default(now()) @db.Timestamptz
-
-  subscription  subscription   @relation(fields: [subscription_id], references: [id], onDelete: Cascade)
-  webhook_event webhook_event? @relation(fields: [webhook_event_id], references: [id], onDelete: SetNull)
-
-  @@index([subscription_id, created_at])
-  @@index([webhook_event_id])
 }
