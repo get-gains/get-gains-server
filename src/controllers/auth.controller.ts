@@ -525,6 +525,7 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
         nickname: appUser.nickname,
       },
       isCoach,
+      tier: appUser.active_subscription_tier,
     });
   } catch (error) {
     const err = error as Error;
