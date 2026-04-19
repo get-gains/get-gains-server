@@ -312,6 +312,7 @@ export const getSubscribedCoaches = async (
               user_id: true,
               certifications: true,
               specialties: true,
+              created_at: true,
               user: {
                 select: {
                   full_name: true,
