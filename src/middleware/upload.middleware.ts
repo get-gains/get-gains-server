@@ -1,6 +1,6 @@
 import multer from 'multer';
 import { Request, Response, NextFunction } from 'express';
-import { sendSingleError } from '../utils/response';
+import { BadRequestException } from '../lib/errors';
 
 /** Max file size: 5 MB */
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -51,20 +51,39 @@ export const uploadAvatar = (
   handler(req, res, (err: unknown) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
-        sendSingleError(
-          res,
-          `File too large. Maximum size is ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
-          400,
-          'avatar'
+        next(
+          new BadRequestException(
+            'UPLOAD_FILE_TOO_LARGE',
+            `File too large. Maximum size is ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
+            [
+              {
+                code: 'UPLOAD_FILE_TOO_LARGE',
+                message: `File too large. Maximum size is ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
+                field: 'avatar',
+              },
+            ]
+          )
         );
         return;
       }
-      sendSingleError(res, err.message, 400, 'avatar');
+      next(
+        new BadRequestException('UPLOAD_FAILED', err.message, [
+          { code: 'UPLOAD_FAILED', message: err.message, field: 'avatar' },
+        ])
+      );
       return;
     }
 
     if (err instanceof Error) {
-      sendSingleError(res, err.message, 400, 'avatar');
+      next(
+        new BadRequestException('UPLOAD_INVALID_FILE_TYPE', err.message, [
+          {
+            code: 'UPLOAD_INVALID_FILE_TYPE',
+            message: err.message,
+            field: 'avatar',
+          },
+        ])
+      );
       return;
     }
 

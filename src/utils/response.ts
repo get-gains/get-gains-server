@@ -1,11 +1,14 @@
 import { Response } from 'express';
+import type { ErrorCode } from '../lib/errors/codes';
 
 /**
- * Standard API error structure
+ * Standard API error structure.
+ * `code` is a machine-readable SCREAMING_SNAKE_CASE identifier.
  */
 export interface ApiError {
-  field?: string;
+  code: ErrorCode;
   message: string;
+  field?: string;
 }
 
 /**
@@ -37,11 +40,12 @@ export const buildErrorResponse = (errors: ApiError[]): ApiResponse<null> => ({
  * Builds a single error response (convenience method)
  */
 export const buildSingleErrorResponse = (
+  code: ErrorCode,
   message: string,
   field?: string
 ): ApiResponse<null> => ({
   data: null,
-  errors: [{ message, field }],
+  errors: [{ code, message, field }],
 });
 
 /**
@@ -67,13 +71,60 @@ export const sendError = (
 };
 
 /**
- * Sends a single error JSON response (convenience method)
+ * Sends a single error JSON response (convenience method).
+ *
+ * Supports two call signatures during migration:
+ *  - **New:** `sendSingleError(res, code, message, status?, field?)`
+ *  - **Legacy:** `sendSingleError(res, message, status?, field?)` — auto-injects `UNEXPECTED_EXCEPTION`
+ *
+ * Once all controllers are migrated to throw `AppException`, the legacy
+ * overload (and this runtime check) will be removed.
  */
-export const sendSingleError = (
+export function sendSingleError(
+  res: Response,
+  code: ErrorCode,
+  message: string,
+  statusCode?: number,
+  field?: string
+): void;
+/** @deprecated Use the (res, code, message, status?, field?) overload */
+export function sendSingleError(
   res: Response,
   message: string,
-  statusCode: number = 400,
+  statusCode?: number,
   field?: string
-): void => {
-  res.status(statusCode).json(buildSingleErrorResponse(message, field));
-};
+): void;
+export function sendSingleError(
+  res: Response,
+  codeOrMessage: string,
+  messageOrStatus?: string | number,
+  statusOrField?: number | string,
+  maybeField?: string
+): void {
+  // Detect legacy call: second arg looks like a human message (not SCREAMING_SNAKE)
+  const isLegacy =
+    typeof messageOrStatus === 'number' || messageOrStatus === undefined;
+
+  if (isLegacy) {
+    // Legacy: sendSingleError(res, message, status?, field?)
+    const message = codeOrMessage;
+    const statusCode = (messageOrStatus as number | undefined) ?? 400;
+    const field = statusOrField as string | undefined;
+    res
+      .status(statusCode)
+      .json(
+        buildSingleErrorResponse(
+          'UNEXPECTED_EXCEPTION' as ErrorCode,
+          message,
+          field
+        )
+      );
+  } else {
+    // New: sendSingleError(res, code, message, status?, field?)
+    const code = codeOrMessage as ErrorCode;
+    const message = messageOrStatus as string;
+    const statusCode = (statusOrField as number | undefined) ?? 400;
+    const field = maybeField;
+    res.status(statusCode).json(buildSingleErrorResponse(code, message, field));
+  }
+}

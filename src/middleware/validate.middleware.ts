@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { z, ZodError } from 'zod';
 import { logger } from '../utils/logger';
-import { sendError, sendSingleError } from '../utils/response';
+import { ValidationException } from '../lib/errors';
 
 /**
  * Middleware factory that validates request against a Zod schema.
@@ -37,23 +37,23 @@ export const validateRequest = <T extends z.ZodTypeAny>(schema: T) => {
       next();
     } catch (error) {
       if (error instanceof ZodError) {
-        const errors = error.issues.map((issue) => ({
+        const details = error.issues.map((issue) => ({
           field: issue.path.join('.'),
+          code: 'VALIDATION_ERROR' as const,
           message: issue.message,
         }));
 
         logger.warn('Request validation failed', {
           path: req.path,
           method: req.method,
-          errors,
+          errors: details,
         });
 
-        sendError(res, errors, 400);
-        return;
+        throw new ValidationException(details);
       }
 
-      logger.error('Unexpected validation error', error);
-      sendSingleError(res, 'Internal server error', 500);
+      // Re-throw unexpected errors for the global handler
+      throw error;
     }
   };
 };

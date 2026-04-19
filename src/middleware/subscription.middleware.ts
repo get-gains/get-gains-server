@@ -1,8 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger';
-import { sendSingleError } from '../utils/response';
 import { SubscriptionTier } from '@prisma/client';
 import type { AuthenticatedUser } from './auth.middleware';
+import { UnauthorizedException, PaymentRequiredException } from '../lib/errors';
 
 /**
  * Tier rank for comparison. Higher = more access.
@@ -54,14 +54,18 @@ export const requireSubscription = (options?: {
     const user = req.user as AuthenticatedUser | undefined;
 
     if (!user) {
-      sendSingleError(res, 'Authentication required', 401);
-      return;
+      throw new UnauthorizedException(
+        'UNAUTHENTICATED',
+        'Authentication required'
+      );
     }
 
     const subscriptionData = user.subscription;
     if (!subscriptionData) {
-      sendSingleError(res, 'Invalid user session', 401);
-      return;
+      throw new UnauthorizedException(
+        'SUBSCRIPTION_INVALID_SESSION',
+        'Invalid user session'
+      );
     }
 
     const userTier = subscriptionData.tier;
@@ -74,8 +78,10 @@ export const requireSubscription = (options?: {
 
     if (!subscriptionData.isSubscribed) {
       logger.debug('No active subscription', { userId: user.id });
-      sendSingleError(res, 'Active subscription required', 402);
-      return;
+      throw new PaymentRequiredException(
+        'SUBSCRIPTION_REQUIRED',
+        'Active subscription required'
+      );
     }
 
     if (TIER_RANK[userTier] < TIER_RANK[minTier]) {
@@ -84,12 +90,10 @@ export const requireSubscription = (options?: {
         currentTier: userTier,
         requiredTier: minTier,
       });
-      sendSingleError(
-        res,
-        `This feature requires a ${minTier} subscription`,
-        402
+      throw new PaymentRequiredException(
+        'SUBSCRIPTION_TIER_INSUFFICIENT',
+        `This feature requires a ${minTier} subscription`
       );
-      return;
     }
 
     next();
@@ -137,25 +141,21 @@ export const checkTier = (
     const sub = req.subscription;
 
     if (!sub?.isSubscribed) {
-      sendSingleError(
-        res,
+      throw new PaymentRequiredException(
+        'SUBSCRIPTION_REQUIRED',
         featureName
           ? `"${featureName}" requires an active subscription`
-          : 'Active subscription required',
-        402
+          : 'Active subscription required'
       );
-      return;
     }
 
     if (TIER_RANK[sub.tier] < TIER_RANK[requiredTier]) {
-      sendSingleError(
-        res,
+      throw new PaymentRequiredException(
+        'SUBSCRIPTION_TIER_INSUFFICIENT',
         featureName
           ? `"${featureName}" requires a ${requiredTier} subscription`
-          : `This feature requires a ${requiredTier} subscription`,
-        402
+          : `This feature requires a ${requiredTier} subscription`
       );
-      return;
     }
 
     next();
