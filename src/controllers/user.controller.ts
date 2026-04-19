@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../config/database';
+import { resolveAvatarUrl } from '../services/upload.service';
 import { logger } from '../utils/logger';
 import { sendSuccess, sendSingleError } from '../utils/response';
 import {
@@ -12,6 +13,37 @@ import {
   UnsubscribeCoachParams,
   UpdateProfileInput,
 } from '../schemas/user.schema';
+
+/**
+ * Flatten the nested Prisma coach+user shape into the flat DTO
+ * the Flutter client expects.
+ */
+async function flattenCoach(coach: {
+  user_id: string;
+  certifications: string[];
+  specialties: string[];
+  social_links?: string[];
+  created_at: Date;
+  user: {
+    full_name: string;
+    email: string;
+    avatar_key: string | null;
+    bio: string | null;
+  };
+  [key: string]: unknown;
+}): Promise<Record<string, unknown>> {
+  const { user_id, user, social_links, created_at, ...rest } = coach;
+  return {
+    id: user_id,
+    name: user.full_name,
+    email: user.email,
+    avatarUrl: await resolveAvatarUrl(user.avatar_key),
+    bio: user.bio,
+    ...rest,
+    ...(social_links !== undefined ? { socialLinks: social_links } : {}),
+    createdAt: created_at,
+  };
+}
 
 export const createUser = async (data: CreateUserData) => {
   const { email, full_name, nickname, supabase_auth_id } = data;
@@ -183,8 +215,10 @@ export const discoverCoaches = async (
       prisma.coach.count({ where }),
     ]);
 
+    const flatCoaches = await Promise.all(coaches.map(flattenCoach));
+
     sendSuccess(res, {
-      coaches,
+      coaches: flatCoaches,
       pagination: {
         total,
         limit: take,
@@ -236,7 +270,7 @@ export const getCoachProfile = async (
       return;
     }
 
-    sendSuccess(res, { coach });
+    sendSuccess(res, { coach: await flattenCoach(coach) });
   } catch (error) {
     const err = error as Error;
     logger.error('Error fetching coach profile', {
@@ -301,10 +335,12 @@ export const getSubscribedCoaches = async (
       }),
     ]);
 
-    const coaches = subscriptions.map((sub) => ({
-      ...sub.coach,
-      subscribedAt: sub.started_at,
-    }));
+    const coaches = await Promise.all(
+      subscriptions.map(async (sub) => ({
+        ...(await flattenCoach(sub.coach)),
+        subscribedAt: sub.started_at,
+      }))
+    );
 
     sendSuccess(res, {
       coaches,
@@ -427,7 +463,7 @@ export const subscribeToCoach = async (
         res,
         {
           coach: {
-            ...updated!.coach,
+            ...(await flattenCoach(updated!.coach)),
             subscribedAt: updated!.started_at,
           },
         },
@@ -468,7 +504,7 @@ export const subscribeToCoach = async (
       res,
       {
         coach: {
-          ...subscription.coach,
+          ...(await flattenCoach(subscription.coach)),
           subscribedAt: subscription.started_at,
         },
       },
