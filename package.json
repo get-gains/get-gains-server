@@ -13,8 +13,6 @@
     "format": "prettier --write \"src/**/*.ts\"",
     "prepare": "husky",
     "postinstall": "prisma generate",
-    "sync:plans": "tsx scripts/sync-plans.ts",
-    "seed:subscription": "tsx scripts/seed-dev-subscription.ts",
     "commitlint": "commitlint --edit"
   },
   "lint-staged": {
@@ -71,8 +69,7 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
-    "google-auth-library": "^10.5.0",
-    "googleapis": "^171.0.0",
+    "google-auth-library": "^10.6.2",
     "multer": "^2.0.2",
     "pg": "^8.17.2",
     "prisma": "^7.2.0",
