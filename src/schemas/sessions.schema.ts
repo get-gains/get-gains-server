@@ -26,8 +26,8 @@ export type SessionHistoryQuery = z.infer<
  * Schema for a single session in the unified history response.
  *
  * `source` is derived from the relational path:
- *   assigned_program.program.user_id == supabaseId → "standalone"
- *   assigned_program.program.user_id != supabaseId → "coach"
+ *   assigned_program.coach_id == supabaseId → "standalone"
+ *   assigned_program.coach_id != supabaseId → "coach"
  * `programName` and `coachName` are resolved via joins and present only for
  * coach sessions.
  */

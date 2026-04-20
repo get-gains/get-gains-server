@@ -20,26 +20,38 @@ function makeMockTx(): MockTx {
       create: mock.fn(async () => ({
         id: 'ap1',
         user_id: 'u1',
-        program_id: 'p1',
+        coach_id: 'c1',
+        name: 'Test Program',
+        description: 'A test program',
         notes: null,
+        is_active: true,
         start_date: null,
         end_date: null,
+        deleted_at: null,
         created_at: new Date(),
         updated_at: new Date(),
       })),
       findUniqueOrThrow: mock.fn(async () => ({
         id: 'ap1',
         user_id: 'u1',
-        program_id: 'p1',
+        coach_id: 'c1',
+        name: 'Test Program',
+        description: 'A test program',
         notes: null,
+        is_active: true,
         start_date: null,
         end_date: null,
+        deleted_at: null,
         created_at: new Date(),
         updated_at: new Date(),
         assigned_program_routines: [
           {
             id: 'apr1',
-            routine_id: 'r1',
+            source_routine_id: null,
+            name: 'Push Day',
+            description: 'Chest + Triceps',
+            estimated_duration_minutes: 60,
+            order_in_program: 1,
             assigned_program_id: 'ap1',
             days_of_week: ['MONDAY'],
             deleted_at: null,
@@ -80,10 +92,15 @@ describe('_buildAssignmentTx', () => {
       tx as unknown as Prisma.TransactionClient,
       {
         user_id: 'u1',
-        program_id: 'p1',
+        coach_id: 'c1',
+        name: 'Test Program',
+        description: 'A test program',
         routines: [
           {
-            routine_id: 'r1',
+            name: 'Push Day',
+            description: 'Chest + Triceps',
+            estimated_duration_minutes: 60,
+            order_in_program: 1,
             days_of_week: ['MONDAY'],
             exercises: [
               {
@@ -104,7 +121,9 @@ describe('_buildAssignmentTx', () => {
     assert.deepEqual(tx.assigned_program.create.mock.calls[0].arguments[0], {
       data: {
         user_id: 'u1',
-        program_id: 'p1',
+        coach_id: 'c1',
+        name: 'Test Program',
+        description: 'A test program',
         notes: undefined,
         start_date: undefined,
         end_date: undefined,
@@ -122,10 +141,15 @@ describe('_buildAssignmentTx', () => {
     const tx = makeMockTx();
     await _buildAssignmentTx(tx as unknown as Prisma.TransactionClient, {
       user_id: 'u1',
-      program_id: 'p1',
+      coach_id: 'c1',
+      name: 'Full Split',
+      description: 'PPL split',
       routines: [
         {
-          routine_id: 'r1',
+          name: 'Push Day',
+          description: 'Chest + Triceps',
+          estimated_duration_minutes: 60,
+          order_in_program: 1,
           days_of_week: ['MONDAY', 'WEDNESDAY'],
           exercises: [
             {
@@ -147,7 +171,10 @@ describe('_buildAssignmentTx', () => {
           ],
         },
         {
-          routine_id: 'r2',
+          name: 'Leg Day',
+          description: 'Quads + Hamstrings',
+          estimated_duration_minutes: 45,
+          order_in_program: 2,
           days_of_week: ['FRIDAY'],
           exercises: [
             {

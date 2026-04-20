@@ -18,16 +18,12 @@ type TodayWorkoutDetails = {
 };
 
 type AssignmentWithTodayTree = {
-  program: {
-    name: string;
-  };
+  name: string;
   assigned_program_routines: Array<{
     id: string;
     days_of_week: string[];
-    routine: {
-      name: string;
-      estimated_duration_minutes: number;
-    };
+    name: string;
+    estimated_duration_minutes: number;
     assigned_program_routine_exercises: Array<{ id: string }>;
   }>;
 };
@@ -50,7 +46,7 @@ const toTodayWorkoutDetails = (
       isRestDay: true,
       dayOfWeek: dayName,
       dayNumber,
-      programName: assignment.program.name,
+      programName: assignment.name,
       exerciseCount: 0,
       estimatedMinutes: 0,
     };
@@ -61,27 +57,24 @@ const toTodayWorkoutDetails = (
     programRoutineId: routineForToday.id,
     dayOfWeek: dayName,
     dayNumber,
-    programName: assignment.program.name,
-    routineName: routineForToday.routine.name,
+    programName: assignment.name,
+    routineName: routineForToday.name,
     exerciseCount: routineForToday.assigned_program_routine_exercises.length,
-    estimatedMinutes: routineForToday.routine.estimated_duration_minutes,
+    estimatedMinutes: routineForToday.estimated_duration_minutes,
   };
 };
 
-const assignmentInclude = {
-  program: {
-    select: {
-      name: true,
-    },
-  },
+const assignmentSelect = {
+  id: true,
+  name: true,
+  coach_id: true,
+  user_id: true,
   assigned_program_routines: {
-    include: {
-      routine: {
-        select: {
-          name: true,
-          estimated_duration_minutes: true,
-        },
-      },
+    select: {
+      id: true,
+      name: true,
+      estimated_duration_minutes: true,
+      days_of_week: true,
       assigned_program_routine_exercises: {
         select: {
           id: true,
@@ -152,24 +145,22 @@ export const getTodayStatus = async (
       ? prisma.assigned_program.findFirst({
           where: {
             user_id: supabaseId,
-            program: {
-              user_id: coachRelation.coach_id,
-            },
+            coach_id: coachRelation.coach_id,
+            deleted_at: null,
             OR: [{ end_date: null }, { end_date: { gt: now } }],
           },
-          include: assignmentInclude,
+          select: assignmentSelect,
           orderBy: [{ start_date: 'desc' }, { created_at: 'desc' }],
         })
       : Promise.resolve(null),
     prisma.assigned_program.findFirst({
       where: {
         user_id: supabaseId,
-        program: {
-          user_id: supabaseId,
-        },
+        coach_id: supabaseId,
+        deleted_at: null,
         OR: [{ end_date: null }, { end_date: { gt: now } }],
       },
-      include: assignmentInclude,
+      select: assignmentSelect,
       orderBy: [{ start_date: 'desc' }, { created_at: 'desc' }],
     }),
   ]);

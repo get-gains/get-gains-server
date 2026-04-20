@@ -74,9 +74,8 @@ export const getWeeklyStats = async (
         select: {
           assigned_program: {
             select: {
-              program: {
-                select: { user_id: true, name: true },
-              },
+              coach_id: true,
+              name: true,
             },
           },
         },
@@ -87,12 +86,10 @@ export const getWeeklyStats = async (
 
   // Partition sessions by source
   const standaloneSessions = sessions.filter(
-    (s) =>
-      s.assigned_program_routine.assigned_program.program.user_id === supabaseId
+    (s) => s.assigned_program_routine.assigned_program.coach_id === supabaseId
   );
   const coachSessions = sessions.filter(
-    (s) =>
-      s.assigned_program_routine.assigned_program.program.user_id !== supabaseId
+    (s) => s.assigned_program_routine.assigned_program.coach_id !== supabaseId
   );
 
   // Helper: compute minutes from sessions; guard nullable started_at
@@ -128,8 +125,7 @@ export const getWeeklyStats = async (
   let coachProgramName: string | null = null;
   if (isSubscribed && coachSessions.length > 0) {
     const recent = coachSessions[coachSessions.length - 1];
-    coachProgramName =
-      recent.assigned_program_routine.assigned_program.program.name;
+    coachProgramName = recent.assigned_program_routine.assigned_program.name;
   }
 
   // Build sources array based on subscription status
