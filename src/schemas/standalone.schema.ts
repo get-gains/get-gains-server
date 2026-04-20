@@ -179,14 +179,19 @@ const StandaloneAssignmentExerciseSchema = z.object({
 });
 
 const StandaloneAssignmentRoutineSchema = z.object({
-  routine_id: z.string().cuid(),
+  source_routine_id: z.string().cuid().optional(),
+  name: z.string().min(1),
+  description: z.string().min(1),
+  estimated_duration_minutes: z.number().int().min(1),
+  order_in_program: z.number().int().min(1),
   days_of_week: z.array(DayOfWeekSchema).min(1),
   exercises: z.array(StandaloneAssignmentExerciseSchema).min(1),
 });
 
 export const CreateStandaloneAssignmentSchema = z.object({
   body: z.object({
-    program_id: z.string().cuid(),
+    name: z.string().min(1),
+    description: z.string().min(1),
     notes: z.string().optional(),
     start_date: z.coerce.date().optional(),
     end_date: z.coerce.date().optional(),

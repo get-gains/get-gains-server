@@ -338,15 +338,17 @@ export const getRoutines = async (
   const assignedPrograms = await prisma.assigned_program.findMany({
     where: {
       user_id: supabaseId,
+      deleted_at: null,
       OR: [{ end_date: null }, { end_date: { gt: new Date() } }],
-      ...(programId && { program_id: programId }),
+      ...(programId && { id: programId }),
     },
     include: {
-      program: true,
       assigned_program_routines: {
+        where: { deleted_at: null },
+        orderBy: { order_in_program: 'asc' },
         include: {
-          routine: { select: { name: true, description: true } },
           assigned_program_routine_exercises: {
+            where: { deleted_at: null },
             include: { exercise: true },
             orderBy: { order_in_routine: 'asc' },
           },
@@ -360,12 +362,11 @@ export const getRoutines = async (
   const routines = assignedPrograms.flatMap((ap) =>
     ap.assigned_program_routines.map((apr) => ({
       id: apr.id,
-      routineId: apr.routine_id,
-      routineName: apr.routine.name,
-      routineDescription: apr.routine.description,
+      routineName: apr.name,
+      routineDescription: apr.description,
       daysOfWeek: apr.days_of_week,
-      programId: ap.program_id,
-      programName: ap.program.name,
+      programId: ap.id,
+      programName: ap.name,
       exercises: apr.assigned_program_routine_exercises.map((apre) => ({
         id: apre.id,
         exerciseId: apre.exercise_id,
@@ -413,8 +414,8 @@ export const getRoutineById = async (
       assigned_program: { user_id: supabaseId },
     },
     include: {
-      routine: { select: { name: true, description: true } },
       assigned_program_routine_exercises: {
+        where: { deleted_at: null },
         include: { exercise: true },
         orderBy: { order_in_routine: 'asc' },
       },
@@ -431,8 +432,7 @@ export const getRoutineById = async (
   sendSuccess(res, {
     routine: {
       id: apr.id,
-      routineId: apr.routine_id,
-      routineName: apr.routine.name,
+      routineName: apr.name,
       daysOfWeek: apr.days_of_week,
       exercises: apr.assigned_program_routine_exercises.map((apre) => ({
         id: apre.id,
@@ -587,9 +587,16 @@ export const getActiveSession = async (
         overallScore: ps.overall_score,
         recordedFramesKey: ps.recorded_frames_key,
         completedAt: ps.completed_at,
+        exerciseNameSnapshot: ps.exercise_name_snapshot,
+        targetRepsMin: ps.target_reps_min,
+        targetRepsMax: ps.target_reps_max,
+        targetRestSeconds: ps.target_rest_seconds,
+        targetWeightKg: ps.target_weight_kg,
         exercise: {
           id: ps.assigned_program_routine_exercise.exercise.id,
-          name: ps.assigned_program_routine_exercise.exercise.name,
+          name:
+            ps.exercise_name_snapshot ??
+            ps.assigned_program_routine_exercise.exercise.name,
         },
         createdAt: ps.created_at,
         updatedAt: ps.updated_at,
@@ -823,9 +830,16 @@ export const getWorkoutSessionById = async (
         overallScore: ps.overall_score,
         recordedFramesKey: ps.recorded_frames_key,
         completedAt: ps.completed_at,
+        exerciseNameSnapshot: ps.exercise_name_snapshot,
+        targetRepsMin: ps.target_reps_min,
+        targetRepsMax: ps.target_reps_max,
+        targetRestSeconds: ps.target_rest_seconds,
+        targetWeightKg: ps.target_weight_kg,
         exercise: {
           id: ps.assigned_program_routine_exercise.exercise.id,
-          name: ps.assigned_program_routine_exercise.exercise.name,
+          name:
+            ps.exercise_name_snapshot ??
+            ps.assigned_program_routine_exercise.exercise.name,
         },
         createdAt: ps.created_at,
         updatedAt: ps.updated_at,
@@ -904,6 +918,12 @@ export const logSet = async (req: Request, res: Response): Promise<void> => {
     });
     logger.debug('Updated existing set', { setId: performedSet.id });
   } else {
+    // Snapshot: look up exercise name and targets from the assignment row
+    const apre = await prisma.assigned_program_routine_exercise.findUnique({
+      where: { id: assignedProgramRoutineExerciseId },
+      include: { exercise: { select: { name: true } } },
+    });
+
     performedSet = await prisma.performed_set.create({
       data: {
         workout_session_id: workoutSessionId,
@@ -914,9 +934,14 @@ export const logSet = async (req: Request, res: Response): Promise<void> => {
         overall_score: overallScore,
         recorded_frames_key: recordedFramesKey,
         completed_at: new Date(completedAt),
+        // Snapshot columns — frozen at creation time
+        exercise_name_snapshot: apre?.exercise?.name ?? null,
+        target_reps_min: apre?.reps_min ?? null,
+        target_reps_max: apre?.reps_max ?? null,
+        target_rest_seconds: apre?.rest_seconds ?? null,
       },
     });
-    logger.debug('Created new set', { setId: performedSet.id });
+    logger.debug('Created new set with snapshot', { setId: performedSet.id });
   }
 
   sendSuccess(
@@ -1090,6 +1115,12 @@ export const batchSyncSets = async (
           },
         });
       } else {
+        // Snapshot: look up exercise name and targets from the assignment row
+        const apre = await prisma.assigned_program_routine_exercise.findUnique({
+          where: { id: set.assignedProgramRoutineExerciseId },
+          include: { exercise: { select: { name: true } } },
+        });
+
         performedSet = await prisma.performed_set.create({
           data: {
             workout_session_id: set.workoutSessionId,
@@ -1101,6 +1132,10 @@ export const batchSyncSets = async (
             overall_score: set.overallScore,
             recorded_frames_key: set.recordedFramesKey,
             completed_at: new Date(set.completedAt),
+            exercise_name_snapshot: apre?.exercise?.name ?? null,
+            target_reps_min: apre?.reps_min ?? null,
+            target_reps_max: apre?.reps_max ?? null,
+            target_rest_seconds: apre?.rest_seconds ?? null,
           },
         });
       }
@@ -1156,14 +1191,17 @@ export const getTodayWorkout = async (
   const assignments = await prisma.assigned_program.findMany({
     where: {
       user_id: supabaseId,
+      deleted_at: null,
+      is_active: true,
       OR: [{ end_date: null }, { end_date: { gt: new Date() } }],
     },
     include: {
-      program: { select: { name: true } },
       assigned_program_routines: {
+        where: { deleted_at: null },
+        orderBy: { order_in_program: 'asc' },
         include: {
-          routine: { select: { name: true, description: true } },
           assigned_program_routine_exercises: {
+            where: { deleted_at: null },
             include: { exercise: true },
             orderBy: { order_in_routine: 'asc' },
           },
@@ -1193,7 +1231,7 @@ export const getTodayWorkout = async (
       today: null,
       isRestDay: true,
       assignedProgramId: assignment.id,
-      programName: assignment.program.name,
+      programName: assignment.name,
     });
     return;
   }
@@ -1219,11 +1257,11 @@ export const getTodayWorkout = async (
       assignedProgramRoutineId: todayRoutine.id,
       daysOfWeek: todayRoutine.days_of_week,
       assignedProgramId: assignment.id,
-      programName: assignment.program.name,
+      programName: assignment.name,
       routine: {
-        id: todayRoutine.routine_id,
-        name: todayRoutine.routine.name,
-        description: todayRoutine.routine.description,
+        id: todayRoutine.id,
+        name: todayRoutine.name,
+        description: todayRoutine.description,
         exercises: todayRoutine.assigned_program_routine_exercises.map(
           (apre) => ({
             id: apre.id,
