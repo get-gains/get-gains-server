@@ -119,10 +119,10 @@ model user {
 
   coach                  coach?
   subscribed_coaches     subscribed_coach[]
-  programs               program[]
   routines               routine[]
   exercises              exercise[]
-  assigned_programs      assigned_program[]
+  coached_programs       assigned_program[]      @relation("CoachPrograms")
+  client_programs        assigned_program[]      @relation("ClientPrograms")
   coin_transactions      coin_transactions[]
   user_cosmetics         user_cosmetic[]
   user_missions          user_mission[]
@@ -161,22 +161,7 @@ model subscribed_coach {
   @@index([coach_id])
 }
 
-// ============== Training Library ==============
-
-model program {
-  id          String    @id @default(cuid())
-  user_id     String
-  name        String
-  description String    @db.Text
-  deleted_at  DateTime? @db.Timestamptz
-  created_at  DateTime  @default(now()) @db.Timestamptz
-  updated_at  DateTime  @updatedAt @db.Timestamptz
-
-  user              user               @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
-  assigned_programs assigned_program[]
-
-  @@index([user_id])
-}
+// ============== Training Library (Coach Templates) ==============
 
 model routine {
   id                         String    @id @default(cuid())
@@ -230,39 +215,47 @@ model exercise_form {
 // ============== Assignment & Execution (Snapshot Pattern) ==============
 
 model assigned_program {
-  id         String    @id @default(cuid())
-  user_id    String
-  program_id String
-  notes      String?   @db.Text
-  start_date DateTime? @db.Timestamptz
-  end_date   DateTime? @db.Timestamptz
-  created_at DateTime  @default(now()) @db.Timestamptz
-  updated_at DateTime  @updatedAt @db.Timestamptz
+  id          String    @id @default(cuid())
+  user_id     String
+  coach_id    String
+  name        String
+  description String    @db.Text
+  notes       String?   @db.Text
+  is_active   Boolean   @default(true)
+  start_date  DateTime? @db.Timestamptz
+  end_date    DateTime? @db.Timestamptz
+  deleted_at  DateTime? @db.Timestamptz
+  created_at  DateTime  @default(now()) @db.Timestamptz
+  updated_at  DateTime  @updatedAt @db.Timestamptz
 
-  user                      user                       @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
-  program                   program                    @relation(fields: [program_id], references: [id], onDelete: Cascade)
+  user                      user                       @relation("ClientPrograms", fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
+  coach                     user                       @relation("CoachPrograms", fields: [coach_id], references: [supabase_auth_id], onDelete: Cascade)
   assigned_program_routines assigned_program_routine[]
 
   @@index([user_id])
-  @@index([program_id])
+  @@index([coach_id])
 }
 
 model assigned_program_routine {
-  id                  String    @id @default(cuid())
-  routine_id          String
-  assigned_program_id String
-  days_of_week        String[]
-  deleted_at          DateTime? @db.Timestamptz
-  created_at          DateTime  @default(now()) @db.Timestamptz
-  updated_at          DateTime  @updatedAt @db.Timestamptz
+  id                         String    @id @default(cuid())
+  assigned_program_id        String
+  source_routine_id          String?
+  name                       String
+  description                String    @db.Text
+  estimated_duration_minutes Int
+  order_in_program           Int
+  days_of_week               String[]
+  deleted_at                 DateTime? @db.Timestamptz
+  created_at                 DateTime  @default(now()) @db.Timestamptz
+  updated_at                 DateTime  @updatedAt @db.Timestamptz
 
-  routine                            routine                             @relation(fields: [routine_id], references: [id], onDelete: Cascade)
+  source_routine                     routine?                            @relation(fields: [source_routine_id], references: [id], onDelete: SetNull)
   assigned_program                   assigned_program                    @relation(fields: [assigned_program_id], references: [id], onDelete: Cascade)
   assigned_program_routine_exercises assigned_program_routine_exercise[]
   workout_sessions                   workout_session[]
 
   @@index([assigned_program_id])
-  @@index([routine_id])
+  @@index([source_routine_id])
 }
 
 model assigned_program_routine_exercise {
@@ -317,6 +310,12 @@ model performed_set {
   deleted_at                           DateTime? @db.Timestamptz
   created_at                           DateTime  @default(now()) @db.Timestamptz
   updated_at                           DateTime  @updatedAt @db.Timestamptz
+  // Snapshot columns — populated at set-creation time, never updated from upstream
+  exercise_name_snapshot               String?
+  target_reps_min                      Int?
+  target_reps_max                      Int?
+  target_rest_seconds                  Int?
+  target_weight_kg                     Float?
 
   workout_session                   workout_session                   @relation(fields: [workout_session_id], references: [id], onDelete: Cascade)
   assigned_program_routine_exercise assigned_program_routine_exercise @relation(fields: [assigned_program_routine_exercise_id], references: [id], onDelete: Cascade)
