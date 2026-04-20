@@ -82,6 +82,7 @@ export const CreateUserProfileSchema = z.object({
       z.array(z.string().max(100)).max(50).optional().default([])
     ),
     experienceLevel: experienceLevelEnum.optional(),
+    injuryHistory: z.string().max(500).optional(),
   }),
 });
 export type CreateUserProfileInput = z.infer<
@@ -107,6 +108,7 @@ export const UpdateUserProfileSchema = z.object({
       z.array(z.string().max(100)).max(50).optional()
     ),
     experienceLevel: experienceLevelEnum.optional(),
+    injuryHistory: z.string().max(500).nullish(),
   }),
 });
 export type UpdateUserProfileInput = z.infer<

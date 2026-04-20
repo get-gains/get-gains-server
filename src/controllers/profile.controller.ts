@@ -31,9 +31,61 @@ const profileSelect = {
   date_of_birth: true,
   equipment_available: true,
   experience_level: true,
+  injury_history: true,
   created_at: true,
   updated_at: true,
 } as const;
+
+/** Shape returned by profileSelect. */
+type ProfileSelectResult = {
+  supabase_auth_id: string;
+  bio: string | null;
+  avatar_key: string | null;
+  height_cm: number | null;
+  weight_kg: number | null;
+  sex: string | null;
+  date_of_birth: Date | null;
+  equipment_available: string[];
+  experience_level: string | null;
+  injury_history: string | null;
+  created_at: Date;
+  updated_at: Date;
+};
+
+/**
+ * Transforms a Prisma profile row (snake_case) into the camelCase DTO
+ * the Flutter client expects.
+ *
+ * @param raw - The Prisma select result with `avatar_key` already
+ *              resolved to a presigned URL by [withSignedAvatar].
+ * @returns The client-facing profile object.
+ */
+function toProfileDto(
+  raw: ProfileSelectResult & { avatar_key: string | null }
+) {
+  return {
+    id: raw.supabase_auth_id,
+    userId: raw.supabase_auth_id,
+    bio: raw.bio,
+    avatarUrl: raw.avatar_key,
+    heightCm: raw.height_cm,
+    weightKg: raw.weight_kg,
+    sex: raw.sex,
+    dateOfBirth: raw.date_of_birth?.toISOString() ?? null,
+    equipment: raw.equipment_available,
+    injuryHistory: raw.injury_history,
+    experienceLevel: raw.experience_level,
+    isOnboarded:
+      raw.bio != null ||
+      raw.height_cm != null ||
+      raw.weight_kg != null ||
+      raw.sex != null ||
+      raw.experience_level != null ||
+      raw.injury_history != null,
+    createdAt: raw.created_at?.toISOString() ?? null,
+    updatedAt: raw.updated_at?.toISOString() ?? null,
+  };
+}
 
 /**
  * Takes a raw profile from Prisma (with avatar_key storing an S3 key)
@@ -65,9 +117,18 @@ export const getUserProfile = async (
     select: profileSelect,
   });
 
-  // Return null data so the frontend knows onboarding is needed
-  const profile = await withSignedAvatar(raw);
-  sendSuccess(res, { profile: profile ?? null });
+  if (!raw) {
+    // Should not happen (requireAppUser already confirmed existence)
+    // but return null so the frontend triggers onboarding.
+    sendSuccess(res, { profile: null });
+    return;
+  }
+
+  const resolved = await withSignedAvatar(raw);
+  const profile = toProfileDto(
+    resolved as ProfileSelectResult & { avatar_key: string | null }
+  );
+  sendSuccess(res, { profile });
 };
 
 // ─── POST /profile — Create profile (onboarding) ───────────────────
@@ -107,7 +168,7 @@ export const createUserProfile = async (
   }
 
   // The user already exists (created at registration). Update profile fields.
-  const profile = await prisma.user.update({
+  const raw = await prisma.user.update({
     where: { supabase_auth_id: appUser.supabase_auth_id },
     data: {
       bio: body.bio ?? null,
@@ -118,6 +179,7 @@ export const createUserProfile = async (
       date_of_birth: body.dateOfBirth ? new Date(body.dateOfBirth) : null,
       equipment_available: body.equipment ?? [],
       experience_level: body.experienceLevel ?? null,
+      injury_history: body.injuryHistory ?? null,
     },
     select: profileSelect,
   });
@@ -126,8 +188,11 @@ export const createUserProfile = async (
     userId: appUser.supabase_auth_id,
   });
 
-  const resolved = await withSignedAvatar(profile);
-  sendSuccess(res, { profile: resolved }, 201);
+  const resolved = await withSignedAvatar(raw);
+  const profile = toProfileDto(
+    resolved as ProfileSelectResult & { avatar_key: string | null }
+  );
+  sendSuccess(res, { profile }, 201);
 };
 
 // ─── PATCH /profile — Update profile ────────────────────────────────
@@ -208,6 +273,8 @@ export const updateUserProfile = async (
   if (body.equipment !== undefined) data.equipment_available = body.equipment;
   if (body.experienceLevel !== undefined)
     data.experience_level = body.experienceLevel;
+  if (body.injuryHistory !== undefined)
+    data.injury_history = body.injuryHistory;
 
   // If nothing to update, return the existing profile
   if (Object.keys(data).length === 0) {
@@ -215,12 +282,18 @@ export const updateUserProfile = async (
       where: { supabase_auth_id: appUser.supabase_auth_id },
       select: profileSelect,
     });
+    if (!raw) {
+      throw new NotFoundException('USER_NOT_FOUND', 'User not found');
+    }
     const resolved = await withSignedAvatar(raw);
-    sendSuccess(res, { profile: resolved });
+    const profile = toProfileDto(
+      resolved as ProfileSelectResult & { avatar_key: string | null }
+    );
+    sendSuccess(res, { profile });
     return;
   }
 
-  const profile = await prisma.user.update({
+  const updated = await prisma.user.update({
     where: { supabase_auth_id: appUser.supabase_auth_id },
     data,
     select: profileSelect,
@@ -231,8 +304,11 @@ export const updateUserProfile = async (
     fields: Object.keys(data),
   });
 
-  const resolved = await withSignedAvatar(profile);
-  sendSuccess(res, { profile: resolved });
+  const resolved = await withSignedAvatar(updated);
+  const profile = toProfileDto(
+    resolved as ProfileSelectResult & { avatar_key: string | null }
+  );
+  sendSuccess(res, { profile });
 };
 
 // ─── Coach: GET /clients/:userId/profile ────────────────────────────
@@ -292,5 +368,15 @@ export const getClientProfile = async (
   }
 
   const resolved = await withSignedAvatar(profile);
-  sendSuccess(res, { profile: resolved });
+  const dto = toProfileDto(
+    resolved as ProfileSelectResult & { avatar_key: string | null }
+  );
+  sendSuccess(res, {
+    profile: {
+      ...dto,
+      fullName: profile.full_name,
+      nickname: profile.nickname,
+      email: profile.email,
+    },
+  });
 };

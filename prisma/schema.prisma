@@ -97,6 +97,7 @@ model user {
   date_of_birth       DateTime? @db.Timestamptz
   equipment_available String[]
   experience_level    String?
+  injury_history      String?   @db.Text
   active_weekdays     String[]
   coin_balance        Int       @default(0)
   deleted_at          DateTime? @db.Timestamptz
