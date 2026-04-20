@@ -158,6 +158,7 @@ export const getClients = async (
             },
           },
           active_subscription_tier: true,
+          active_weekdays: true,
           user_subscription: {
             select: { current_period_end: true },
           },
@@ -175,6 +176,7 @@ export const getClients = async (
     subscribedAt: cr.started_at,
     subscriptionExpiresAt:
       cr.user.user_subscription?.current_period_end ?? null,
+    activeWeekdays: cr.user.active_weekdays,
     assignedPrograms: cr.user.assigned_programs.map((ap) => ({
       programId: ap.program_id,
       program: ap.program,

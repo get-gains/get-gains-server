@@ -32,6 +32,7 @@ const profileSelect = {
   equipment_available: true,
   experience_level: true,
   injury_history: true,
+  active_weekdays: true,
   created_at: true,
   updated_at: true,
 } as const;
@@ -48,6 +49,7 @@ type ProfileSelectResult = {
   equipment_available: string[];
   experience_level: string | null;
   injury_history: string | null;
+  active_weekdays: string[];
   created_at: Date;
   updated_at: Date;
 };
@@ -75,13 +77,15 @@ function toProfileDto(
     equipment: raw.equipment_available,
     injuryHistory: raw.injury_history,
     experienceLevel: raw.experience_level,
+    activeWeekdays: raw.active_weekdays,
     isOnboarded:
       raw.bio != null ||
       raw.height_cm != null ||
       raw.weight_kg != null ||
       raw.sex != null ||
       raw.experience_level != null ||
-      raw.injury_history != null,
+      raw.injury_history != null ||
+      raw.active_weekdays.length > 0,
     createdAt: raw.created_at?.toISOString() ?? null,
     updatedAt: raw.updated_at?.toISOString() ?? null,
   };
@@ -180,6 +184,7 @@ export const createUserProfile = async (
       equipment_available: body.equipment ?? [],
       experience_level: body.experienceLevel ?? null,
       injury_history: body.injuryHistory ?? null,
+      active_weekdays: body.activeWeekdays ?? [],
     },
     select: profileSelect,
   });
@@ -275,6 +280,8 @@ export const updateUserProfile = async (
     data.experience_level = body.experienceLevel;
   if (body.injuryHistory !== undefined)
     data.injury_history = body.injuryHistory;
+  if (body.activeWeekdays !== undefined)
+    data.active_weekdays = body.activeWeekdays;
 
   // If nothing to update, return the existing profile
   if (Object.keys(data).length === 0) {
