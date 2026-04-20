@@ -5,174 +5,172 @@ import {
   requireCoach,
 } from '../middleware/auth.middleware';
 import {
-  CreateProgramSchema,
-  GetCoachProgramsSchema,
-  GetCoachProgramByIdSchema,
-  UpdateProgramSchema,
-  DeleteProgramSchema,
-  CreateRoutineSchema,
-  GetCoachRoutinesSchema,
-  GetCoachRoutineByIdSchema,
-  UpdateRoutineSchema,
-  DeleteRoutineSchema,
-  AssignRoutineToProgramSchema,
+  CreateClientProgramSchema,
+  GetClientActiveProgramSchema,
+  GetProgramByIdSchema,
+  UpdateClientProgramSchema,
+  DeleteClientProgramSchema,
+  AddProgramRoutineSchema,
   UpdateProgramRoutineSchema,
-  RemoveProgramRoutineSchema,
-  AddRoutineExerciseSchema,
-  UpdateRoutineExerciseSchema,
-  DeleteRoutineExerciseSchema,
-  AssignProgramSchema,
+  DeleteProgramRoutineSchema,
+  AddProgramRoutineExerciseSchema,
+  UpdateProgramRoutineExerciseSchema,
+  DeleteProgramRoutineExerciseSchema,
 } from '../schemas/program.schema';
 import {
-  createProgram,
-  getCoachPrograms,
-  getCoachProgramById,
-  updateProgram,
-  deleteProgram,
-  createRoutine,
-  getCoachRoutines,
-  getCoachRoutineById,
-  updateRoutine,
-  deleteRoutine,
-  assignRoutineToProgram,
+  createClientProgram,
+  getClientActiveProgram,
+  getProgramById,
+  updateClientProgram,
+  deleteClientProgram,
+  addProgramRoutine,
   updateProgramRoutine,
-  removeProgramRoutine,
-  addRoutineExercise,
-  updateRoutineExercise,
-  deleteRoutineExercise,
-  assignProgram,
+  deleteProgramRoutine,
+  addProgramRoutineExercise,
+  updateProgramRoutineExercise,
+  deleteProgramRoutineExercise,
 } from '../controllers/program.controller';
 
 const router = Router();
 
-// ============== Program CRUD ==============
+// ============== Client Programs ==============
 
-router.get(
-  '/',
-  authenticateSupabaseUser,
-  requireCoach,
-  validateRequest(GetCoachProgramsSchema),
-  getCoachPrograms
-);
+/**
+ * @route POST /coach/clients/:clientId/programs
+ * @desc  Create a new program for a client
+ */
 router.post(
-  '/',
+  '/clients/:clientId/programs',
   authenticateSupabaseUser,
   requireCoach,
-  validateRequest(CreateProgramSchema),
-  createProgram
+  validateRequest(CreateClientProgramSchema),
+  createClientProgram
 );
+
+/**
+ * @route GET /coach/clients/:clientId/program
+ * @desc  Get the active program for a client (or null)
+ */
 router.get(
-  '/:programId',
+  '/clients/:clientId/program',
   authenticateSupabaseUser,
   requireCoach,
-  validateRequest(GetCoachProgramByIdSchema),
-  getCoachProgramById
+  validateRequest(GetClientActiveProgramSchema),
+  getClientActiveProgram
 );
+
+// ============== Program CRUD (by programId) ==============
+
+/**
+ * @route GET /coach/programs/:programId
+ * @desc  Get program by ID with full tree
+ */
+router.get(
+  '/programs/:programId',
+  authenticateSupabaseUser,
+  requireCoach,
+  validateRequest(GetProgramByIdSchema),
+  getProgramById
+);
+
+/**
+ * @route PATCH /coach/programs/:programId
+ * @desc  Update program metadata (name, notes, active, dates)
+ */
 router.patch(
-  '/:programId',
+  '/programs/:programId',
   authenticateSupabaseUser,
   requireCoach,
-  validateRequest(UpdateProgramSchema),
-  updateProgram
+  validateRequest(UpdateClientProgramSchema),
+  updateClientProgram
 );
+
+/**
+ * @route DELETE /coach/programs/:programId
+ * @desc  Soft-delete a program
+ */
 router.delete(
-  '/:programId',
+  '/programs/:programId',
   authenticateSupabaseUser,
   requireCoach,
-  validateRequest(DeleteProgramSchema),
-  deleteProgram
+  validateRequest(DeleteClientProgramSchema),
+  deleteClientProgram
 );
 
-// ============== Assignment ==============
+// ============== Program Routines ==============
 
+/**
+ * @route POST /coach/programs/:programId/routines
+ * @desc  Add a routine (from template or inline)
+ */
 router.post(
-  '/:programId/routines',
+  '/programs/:programId/routines',
   authenticateSupabaseUser,
   requireCoach,
-  validateRequest(AssignRoutineToProgramSchema),
-  assignRoutineToProgram
+  validateRequest(AddProgramRoutineSchema),
+  addProgramRoutine
 );
+
+/**
+ * @route PATCH /coach/programs/:programId/routines/:aprId
+ * @desc  Update a routine within a program
+ */
 router.patch(
-  '/:programId/routines/:programRoutineId',
+  '/programs/:programId/routines/:aprId',
   authenticateSupabaseUser,
   requireCoach,
   validateRequest(UpdateProgramRoutineSchema),
   updateProgramRoutine
 );
+
+/**
+ * @route DELETE /coach/programs/:programId/routines/:aprId
+ * @desc  Soft-delete a routine from a program
+ */
 router.delete(
-  '/:programId/routines/:programRoutineId',
+  '/programs/:programId/routines/:aprId',
   authenticateSupabaseUser,
   requireCoach,
-  validateRequest(RemoveProgramRoutineSchema),
-  removeProgramRoutine
+  validateRequest(DeleteProgramRoutineSchema),
+  deleteProgramRoutine
 );
 
+// ============== Program Routine Exercises ==============
+
+/**
+ * @route POST /coach/programs/:programId/routines/:aprId/exercises
+ * @desc  Add an exercise to a program routine
+ */
 router.post(
-  '/routines/:routineId/exercises',
+  '/programs/:programId/routines/:aprId/exercises',
   authenticateSupabaseUser,
   requireCoach,
-  validateRequest(AddRoutineExerciseSchema),
-  addRoutineExercise
+  validateRequest(AddProgramRoutineExerciseSchema),
+  addProgramRoutineExercise
 );
+
+/**
+ * @route PATCH /coach/programs/:programId/routines/:aprId/exercises/:apreId
+ * @desc  Update an exercise within a program routine
+ */
 router.patch(
-  '/routines/:routineId/exercises/:routineExerciseId',
+  '/programs/:programId/routines/:aprId/exercises/:apreId',
   authenticateSupabaseUser,
   requireCoach,
-  validateRequest(UpdateRoutineExerciseSchema),
-  updateRoutineExercise
+  validateRequest(UpdateProgramRoutineExerciseSchema),
+  updateProgramRoutineExercise
 );
+
+/**
+ * @route DELETE /coach/programs/:programId/routines/:aprId/exercises/:apreId
+ * @desc  Delete an exercise from a program routine
+ */
 router.delete(
-  '/routines/:routineId/exercises/:routineExerciseId',
+  '/programs/:programId/routines/:aprId/exercises/:apreId',
   authenticateSupabaseUser,
   requireCoach,
-  validateRequest(DeleteRoutineExerciseSchema),
-  deleteRoutineExercise
-);
-
-router.post(
-  '/:programId/assign',
-  authenticateSupabaseUser,
-  requireCoach,
-  validateRequest(AssignProgramSchema),
-  assignProgram
-);
-
-// ============== Routine CRUD (under /coach/programs/routines) ==============
-
-router.post(
-  '/routines',
-  authenticateSupabaseUser,
-  requireCoach,
-  validateRequest(CreateRoutineSchema),
-  createRoutine
-);
-router.get(
-  '/routines',
-  authenticateSupabaseUser,
-  requireCoach,
-  validateRequest(GetCoachRoutinesSchema),
-  getCoachRoutines
-);
-router.get(
-  '/routines/:routineId',
-  authenticateSupabaseUser,
-  requireCoach,
-  validateRequest(GetCoachRoutineByIdSchema),
-  getCoachRoutineById
-);
-router.patch(
-  '/routines/:routineId',
-  authenticateSupabaseUser,
-  requireCoach,
-  validateRequest(UpdateRoutineSchema),
-  updateRoutine
-);
-router.delete(
-  '/routines/:routineId',
-  authenticateSupabaseUser,
-  requireCoach,
-  validateRequest(DeleteRoutineSchema),
-  deleteRoutine
+  validateRequest(DeleteProgramRoutineExerciseSchema),
+  deleteProgramRoutineExercise
 );
 
 export default router;
