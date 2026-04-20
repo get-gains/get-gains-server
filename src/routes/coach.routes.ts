@@ -8,7 +8,6 @@ import {
   CreateCoachProfileSchema,
   GetClientsSchema,
   GetPerformanceSchema,
-  AssignProgramSchema,
   GetClientProgramsSchema,
   UpdateAssignmentSchema,
   DeleteAssignmentSchema,
@@ -21,7 +20,6 @@ import {
   createCoachProfile,
   getClients,
   getPerformance,
-  assignProgram,
   getClientPrograms,
   updateAssignment,
   deleteAssignment,
@@ -33,7 +31,7 @@ import {
 } from '../controllers/coach.controller';
 import classRoutes from './class.routes';
 import programRoutes from './program.routes';
-import routineRoutes from './routine.routes';
+import routineTemplateRoutes from './routine.routes';
 
 const router = Router();
 
@@ -50,8 +48,10 @@ router.post(
 );
 
 router.use('/class', classRoutes);
-router.use('/programs', programRoutes);
-router.use('/routines', routineRoutes);
+// Program routes handles /clients/:clientId/programs, /programs/:programId, etc.
+router.use('/', programRoutes);
+// Routine templates: /routine-templates
+router.use('/routine-templates', routineTemplateRoutes);
 
 /**
  * @route   GET /coach/clients
@@ -90,19 +90,6 @@ router.get(
   requireCoach,
   validateRequest(GetPerformanceSchema),
   getPerformance
-);
-
-/**
- * @route   POST /coach/assign-program
- * @desc    Assign program to client
- * @access  Protected (authenticateSupabaseUser + requireCoach)
- */
-router.post(
-  '/assign-program',
-  authenticateSupabaseUser,
-  requireCoach,
-  validateRequest(AssignProgramSchema),
-  assignProgram
 );
 
 /**

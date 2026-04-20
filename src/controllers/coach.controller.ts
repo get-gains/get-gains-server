@@ -14,7 +14,6 @@ import {
   CreateCoachProfileInput,
   GetClientsQuery,
   GetPerformanceQuery,
-  AssignProgramInput,
   GetClientProgramsParams,
   UpdateAssignmentParams,
   UpdateAssignmentInput,
@@ -150,11 +149,12 @@ export const getClients = async (
           email: true,
           full_name: true,
           nickname: true,
-          assigned_programs: {
+          client_programs: {
+            where: { deleted_at: null },
             select: {
               id: true,
-              program_id: true,
-              program: { select: { name: true } },
+              name: true,
+              is_active: true,
             },
           },
           active_subscription_tier: true,
@@ -177,11 +177,12 @@ export const getClients = async (
     subscriptionExpiresAt:
       cr.user.user_subscription?.current_period_end ?? null,
     activeWeekdays: cr.user.active_weekdays,
-    assignedPrograms: cr.user.assigned_programs.map((ap) => ({
-      programId: ap.program_id,
-      program: ap.program,
+    assignedPrograms: cr.user.client_programs.map((ap) => ({
+      id: ap.id,
+      name: ap.name,
+      isActive: ap.is_active,
     })),
-    isAssigned: cr.user.assigned_programs.length > 0,
+    isAssigned: cr.user.client_programs.length > 0,
   }));
 
   if (filter === 'assigned') {
@@ -240,7 +241,7 @@ export const getPerformance = async (
           email: true,
           full_name: true,
           nickname: true,
-          assigned_programs: {
+          client_programs: {
             select: { id: true },
           },
         },
@@ -251,7 +252,7 @@ export const getPerformance = async (
   // TODO(B11): restore lastCompletedAt status logic via nested relational path
   // assigned_programs → assigned_program_routines → workout_sessions
   const performanceData = classRelations
-    .filter((cr) => cr.user.assigned_programs.length > 0)
+    .filter((cr) => cr.user.client_programs.length > 0)
     .map((cr) => {
       return {
         id: cr.user.supabase_auth_id,
@@ -285,104 +286,6 @@ export const getPerformance = async (
   });
 };
 
-/**
- * Assign program to client
- */
-export const assignProgram = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  const coach = req.coach;
-  if (!coach) {
-    throw new ForbiddenException('AUTH_COACH_REQUIRED', 'Coach required');
-  }
-
-  const { userId, programId, startDate, endDate, notes } = res.locals.validated
-    ?.body as AssignProgramInput;
-
-  const programRecord = await prisma.program.findUnique({
-    where: { id: programId },
-  });
-
-  if (!programRecord) {
-    throw new NotFoundException('PROGRAM_NOT_FOUND', 'Program not found');
-  }
-
-  if (programRecord.user_id !== coach.user_id) {
-    throw new ForbiddenException(
-      'PROGRAM_FORBIDDEN',
-      'Program does not belong to coach'
-    );
-  }
-
-  const isInClass = await prisma.subscribed_coach.findFirst({
-    where: {
-      user_id: userId,
-      coach_id: coach.user_id,
-      ended_at: null,
-    },
-  });
-
-  if (!isInClass) {
-    throw new ForbiddenException(
-      'COACH_CLIENT_NOT_LINKED',
-      'Client must be in class to assign program'
-    );
-  }
-
-  const existingAssignment = await prisma.assigned_program.findFirst({
-    where: {
-      user_id: userId,
-      program_id: programId,
-    },
-  });
-
-  if (existingAssignment) {
-    throw new ConflictException(
-      'ASSIGNMENT_ALREADY_EXISTS',
-      'Client already has this program assigned'
-    );
-  }
-
-  const assignment = await prisma.assigned_program.create({
-    data: {
-      user_id: userId,
-      program_id: programId,
-      start_date: new Date(startDate),
-      end_date: endDate ? new Date(endDate) : null,
-      notes: notes ?? null,
-    },
-    include: {
-      program: { select: { id: true, name: true, description: true } },
-      user: {
-        select: {
-          supabase_auth_id: true,
-          email: true,
-          full_name: true,
-          nickname: true,
-        },
-      },
-    },
-  });
-
-  sendSuccess(
-    res,
-    {
-      assignment: {
-        id: assignment.id,
-        user_id: assignment.user_id,
-        program_id: assignment.program_id,
-        start_date: assignment.start_date,
-        end_date: assignment.end_date,
-        notes: assignment.notes,
-        program: assignment.program,
-        user: assignment.user,
-      },
-    },
-    201
-  );
-};
-
 // ============== Assignment Management Controllers ==============
 
 /**
@@ -411,18 +314,15 @@ export const getClientPrograms = async (
     );
   }
 
-  // Return only assignments where the program belongs to this coach
+  // Return only assignments where this coach is the owner
   const assignments = await prisma.assigned_program.findMany({
     where: {
       user_id: userId,
-      program: { user_id: coach.user_id },
+      coach_id: coach.user_id,
+      deleted_at: null,
     },
     include: {
-      program: {
-        include: {
-          _count: { select: { assigned_programs: true } },
-        },
-      },
+      _count: { select: { assigned_program_routines: true } },
     },
     orderBy: { created_at: 'desc' },
   });
@@ -431,16 +331,14 @@ export const getClientPrograms = async (
     assignments: assignments.map((a) => ({
       id: a.id,
       user_id: a.user_id,
-      program_id: a.program_id,
+      coach_id: a.coach_id,
+      name: a.name,
+      description: a.description,
+      is_active: a.is_active,
       start_date: a.start_date,
       end_date: a.end_date,
       notes: a.notes,
-      program: {
-        id: a.program.id,
-        name: a.program.name,
-        description: a.program.description,
-        routineCount: a.program._count.assigned_programs,
-      },
+      routine_count: a._count.assigned_program_routines,
       created_at: a.created_at,
       updated_at: a.updated_at,
     })),
@@ -471,13 +369,12 @@ export const updateAssignment = async (
     );
   }
 
-  // Verify assignment exists and belongs to a program owned by this coach
+  // Verify assignment exists and belongs to this coach
   const assignment = await prisma.assigned_program.findUnique({
     where: { id: assignmentId },
-    include: { program: { select: { user_id: true } } },
   });
 
-  if (!assignment || assignment.program.user_id !== coach.user_id) {
+  if (!assignment || assignment.coach_id !== coach.user_id) {
     throw new NotFoundException(
       'ASSIGNMENT_NOT_FOUND',
       'Assignment not found or access denied'
@@ -494,7 +391,6 @@ export const updateAssignment = async (
       ...(notes !== undefined && { notes }),
     },
     include: {
-      program: { select: { id: true, name: true } },
       user: {
         select: {
           supabase_auth_id: true,
@@ -511,11 +407,12 @@ export const updateAssignment = async (
     assignment: {
       id: updated.id,
       user_id: updated.user_id,
-      program_id: updated.program_id,
+      coach_id: updated.coach_id,
+      name: updated.name,
+      description: updated.description,
       start_date: updated.start_date,
       end_date: updated.end_date,
       notes: updated.notes,
-      program: updated.program,
       user: updated.user,
       updated_at: updated.updated_at,
     },
@@ -539,17 +436,19 @@ export const deleteAssignment = async (
 
   const assignment = await prisma.assigned_program.findUnique({
     where: { id: assignmentId },
-    include: { program: { select: { user_id: true } } },
   });
 
-  if (!assignment || assignment.program.user_id !== coach.user_id) {
+  if (!assignment || assignment.coach_id !== coach.user_id) {
     throw new NotFoundException(
       'ASSIGNMENT_NOT_FOUND',
       'Assignment not found or access denied'
     );
   }
 
-  await prisma.assigned_program.delete({ where: { id: assignmentId } });
+  await prisma.assigned_program.update({
+    where: { id: assignmentId },
+    data: { deleted_at: new Date(), is_active: false },
+  });
 
   logger.info('Assignment deleted', {
     assignmentId,
@@ -633,9 +532,7 @@ export const getClientSessions = async (
         assigned_program_routine: {
           include: {
             assigned_program: {
-              include: {
-                program: { select: { id: true, name: true } },
-              },
+              select: { id: true, name: true },
             },
           },
         },
@@ -678,8 +575,7 @@ export const getClientSessions = async (
       return {
         id: s.id,
         assigned_program_routine_id: s.assigned_program_routine_id,
-        programName:
-          s.assigned_program_routine.assigned_program.program?.name ?? null,
+        programName: s.assigned_program_routine.assigned_program.name ?? null,
         started_at: s.started_at,
         completed_at: s.completed_at,
         durationMinutes,
@@ -726,9 +622,7 @@ export const getClientSessionDetail = async (
       assigned_program_routine: {
         include: {
           assigned_program: {
-            include: {
-              program: { select: { id: true, name: true } },
-            },
+            select: { id: true, name: true },
           },
         },
       },
@@ -803,7 +697,7 @@ export const getClientSessionDetail = async (
       id: session.id,
       assigned_program_routine_id: session.assigned_program_routine_id,
       programName:
-        session.assigned_program_routine.assigned_program.program?.name ?? null,
+        session.assigned_program_routine.assigned_program.name ?? null,
       started_at: session.started_at,
       completed_at: session.completed_at,
       durationMinutes,
@@ -1130,14 +1024,9 @@ export const getDetailedPerformance = async (
           email: true,
           full_name: true,
           nickname: true,
-          assigned_programs: {
+          client_programs: {
+            where: { deleted_at: null },
             include: {
-              program: {
-                select: {
-                  name: true,
-                  _count: { select: { assigned_programs: true } },
-                },
-              },
               assigned_program_routines: {
                 include: {
                   workout_sessions: {
@@ -1162,12 +1051,12 @@ export const getDetailedPerformance = async (
   });
 
   const performanceData = classRelations
-    .filter((cr) => cr.user.assigned_programs.length > 0)
+    .filter((cr) => cr.user.client_programs.length > 0)
     .map((cr) => {
       const user = cr.user;
 
       // Collect all sessions across all assigned program routines
-      const allSessions = user.assigned_programs.flatMap((ap) =>
+      const allSessions = user.client_programs.flatMap((ap) =>
         ap.assigned_program_routines.flatMap((apr) => apr.workout_sessions)
       );
 
@@ -1226,9 +1115,12 @@ export const getDetailedPerformance = async (
           ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
           : 0;
 
-      // TODO(B11): adherence requires knowing routine day slots per week
+      // Adherence: count how many distinct days-of-week are assigned
       const activeProgramDays =
-        user.assigned_programs[0]?.program?._count?.assigned_programs ?? 0;
+        user.client_programs[0]?.assigned_program_routines?.reduce(
+          (days, apr) => days + (apr.days_of_week?.length ?? 0),
+          0
+        ) ?? 0;
       const expectedSessions = activeProgramDays;
       const adherenceRate =
         expectedSessions > 0
@@ -1251,7 +1143,7 @@ export const getDetailedPerformance = async (
         totalVolume: Math.round(totalVolume * 100) / 100,
         averageSessionDuration,
         adherenceRate,
-        activeProgramName: user.assigned_programs[0]?.program?.name ?? null,
+        activeProgramName: user.client_programs[0]?.name ?? null,
       };
     });
 
