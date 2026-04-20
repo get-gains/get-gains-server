@@ -17,6 +17,22 @@ import { createUser, getUserBySupabaseId } from './user.controller';
 import googleClient from '../config/google';
 import { parseSupabaseAuthError } from '../utils/supabase-error';
 
+const resolveIsCoach = async (
+  supabaseId: string,
+  userFlag?: boolean
+): Promise<boolean> => {
+  if (userFlag) {
+    return true;
+  }
+
+  const coachProfile = await prisma.coach.findUnique({
+    where: { user_id: supabaseId },
+    select: { user_id: true },
+  });
+
+  return Boolean(coachProfile);
+};
+
 // User registration handler
 export const registerWithEmailAndPassword = async (
   req: Request,
@@ -224,7 +240,7 @@ export const loginWithEmailAndPassword = async (
       return;
     }
 
-    const isCoach = user.is_coach;
+    const isCoach = await resolveIsCoach(user.supabase_auth_id, user.is_coach);
 
     const accessToken = data.session?.access_token;
     const refreshToken = data.session?.refresh_token;
@@ -322,7 +338,10 @@ export const signInWithGoogleWithUserData = async (
       return;
     }
 
-    const isCoach = userData.is_coach;
+    const isCoach = await resolveIsCoach(
+      userData.supabase_auth_id,
+      userData.is_coach
+    );
 
     const accessToken = supabaseData.session?.access_token;
     const refreshToken = supabaseData.session?.refresh_token;
@@ -384,7 +403,10 @@ export const refreshTokenWithBody = async (
       return;
     }
 
-    const isCoach = appUser.is_coach;
+    const isCoach = await resolveIsCoach(
+      appUser.supabase_auth_id,
+      appUser.is_coach
+    );
 
     sendSuccess(
       res,
@@ -442,7 +464,10 @@ export const refreshToken = async (
       return;
     }
 
-    const isCoach = appUser.is_coach;
+    const isCoach = await resolveIsCoach(
+      appUser.supabase_auth_id,
+      appUser.is_coach
+    );
 
     sendSuccess(
       res,
@@ -487,7 +512,10 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const isCoach = appUser.is_coach;
+    const isCoach = await resolveIsCoach(
+      appUser.supabase_auth_id,
+      appUser.is_coach
+    );
 
     sendSuccess(res, {
       user: {

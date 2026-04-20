@@ -1,6 +1,10 @@
 node_modules
 dist
 
+# Agents and skills
+.agents/
+skills-lock.json
+
 .vscode
 .DS_Store
 coverage

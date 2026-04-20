@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import { DayOfWeekSchema } from './day.schema';
+
+// ============== DayOfWeek Enum (shared) ==============
+export type { DayOfWeek } from './day.schema';
 
 // ============== Program Schemas ==============
 
@@ -108,6 +112,129 @@ export const DeleteRoutineSchema = z.object({
 
 export type DeleteRoutineParams = z.infer<typeof DeleteRoutineSchema>['params'];
 
+// ============== ProgramRoutine Schemas ==============
+
+export const AssignRoutineToProgramSchema = z.object({
+  params: z.object({
+    programId: z.string().cuid(),
+  }),
+  body: z.object({
+    routine_id: z.string().cuid(),
+    day_of_week: DayOfWeekSchema,
+  }),
+});
+
+export type AssignRoutineToProgramParams = z.infer<
+  typeof AssignRoutineToProgramSchema
+>['params'];
+export type AssignRoutineToProgramInput = z.infer<
+  typeof AssignRoutineToProgramSchema
+>['body'];
+
+export const UpdateProgramRoutineSchema = z.object({
+  params: z.object({
+    programId: z.string().cuid(),
+    programRoutineId: z.string().cuid(),
+  }),
+  body: z.object({
+    day_of_week: DayOfWeekSchema,
+  }),
+});
+
+export type UpdateProgramRoutineParams = z.infer<
+  typeof UpdateProgramRoutineSchema
+>['params'];
+export type UpdateProgramRoutineInput = z.infer<
+  typeof UpdateProgramRoutineSchema
+>['body'];
+
+export const RemoveProgramRoutineSchema = z.object({
+  params: z.object({
+    programId: z.string().cuid(),
+    programRoutineId: z.string().cuid(),
+  }),
+});
+
+export type RemoveProgramRoutineParams = z.infer<
+  typeof RemoveProgramRoutineSchema
+>['params'];
+
+// ============== RoutineExercise Schemas ==============
+
+const RoutineExerciseBodySchema = z.object({
+  exercise_id: z.string().cuid(),
+  sets: z.number().int().min(1),
+  reps_min: z.number().int().min(1),
+  reps_max: z.number().int().min(1),
+  rest_seconds: z.number().int().min(0),
+  order_in_routine: z.number().int().min(1),
+  notes: z.string().max(1000).optional(),
+});
+
+const RoutineExerciseBodyUpdateSchema = z
+  .object({
+    exercise_id: z.string().cuid().optional(),
+    sets: z.number().int().min(1).optional(),
+    reps_min: z.number().int().min(1).optional(),
+    reps_max: z.number().int().min(1).optional(),
+    rest_seconds: z.number().int().min(0).optional(),
+    order_in_routine: z.number().int().min(1).optional(),
+    notes: z.string().max(1000).optional(),
+  })
+  .refine(
+    (body) =>
+      body.exercise_id !== undefined ||
+      body.sets !== undefined ||
+      body.reps_min !== undefined ||
+      body.reps_max !== undefined ||
+      body.rest_seconds !== undefined ||
+      body.order_in_routine !== undefined ||
+      body.notes !== undefined,
+    {
+      message: 'At least one field must be provided',
+    }
+  );
+
+export const AddRoutineExerciseSchema = z.object({
+  params: z.object({
+    routineId: z.string().cuid(),
+  }),
+  body: RoutineExerciseBodySchema,
+});
+
+export type AddRoutineExerciseParams = z.infer<
+  typeof AddRoutineExerciseSchema
+>['params'];
+export type AddRoutineExerciseInput = z.infer<
+  typeof AddRoutineExerciseSchema
+>['body'];
+
+export const UpdateRoutineExerciseSchema = z.object({
+  params: z.object({
+    routineId: z.string().cuid(),
+    routineExerciseId: z.string().cuid(),
+  }),
+  body: RoutineExerciseBodyUpdateSchema,
+});
+
+export type UpdateRoutineExerciseParams = z.infer<
+  typeof UpdateRoutineExerciseSchema
+>['params'];
+export type UpdateRoutineExerciseInput = z.infer<
+  typeof UpdateRoutineExerciseSchema
+>['body'];
+
+export const DeleteRoutineExerciseSchema = z.object({
+  params: z.object({
+    routineId: z.string().cuid(),
+    routineExerciseId: z.string().cuid(),
+  }),
+});
+
+export type DeleteRoutineExerciseParams = z.infer<
+  typeof DeleteRoutineExerciseSchema
+>['params'];
+
 // ============== Assignment Schema ==============
 
 const AssignmentExerciseSchema = z.object({
@@ -121,19 +248,7 @@ const AssignmentExerciseSchema = z.object({
 
 const AssignmentRoutineSchema = z.object({
   routine_id: z.string().cuid(),
-  days_of_week: z
-    .array(
-      z.enum([
-        'MONDAY',
-        'TUESDAY',
-        'WEDNESDAY',
-        'THURSDAY',
-        'FRIDAY',
-        'SATURDAY',
-        'SUNDAY',
-      ])
-    )
-    .min(1),
+  days_of_week: z.array(DayOfWeekSchema).min(1),
   exercises: z.array(AssignmentExerciseSchema).min(1),
 });
 

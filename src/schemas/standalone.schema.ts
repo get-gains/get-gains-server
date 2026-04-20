@@ -1,4 +1,7 @@
 import { z } from 'zod';
+import { DayOfWeekSchema } from './day.schema';
+
+export type { DayOfWeek } from './day.schema';
 
 // ============== Personal Exercise Schemas ==============
 
@@ -177,19 +180,7 @@ const StandaloneAssignmentExerciseSchema = z.object({
 
 const StandaloneAssignmentRoutineSchema = z.object({
   routine_id: z.string().cuid(),
-  days_of_week: z
-    .array(
-      z.enum([
-        'MONDAY',
-        'TUESDAY',
-        'WEDNESDAY',
-        'THURSDAY',
-        'FRIDAY',
-        'SATURDAY',
-        'SUNDAY',
-      ])
-    )
-    .min(1),
+  days_of_week: z.array(DayOfWeekSchema).min(1),
   exercises: z.array(StandaloneAssignmentExerciseSchema).min(1),
 });
 
