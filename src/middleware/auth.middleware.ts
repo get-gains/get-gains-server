@@ -6,19 +6,17 @@ import type { coach as CoachModel } from '@prisma/client';
 import supabase from '../config/supabase';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import prisma from '../config/database';
-import { SubscriptionStatus } from '@prisma/client';
+import { SubscriptionTier } from '@prisma/client';
 
 /**
- * Authenticated user with subscription data
+ * Authenticated user with subscription data.
+ * After the RevenueCat migration, tier comes from the denormalized
+ * `user.active_subscription_tier` column — no extra DB query.
  */
 export interface AuthenticatedUser extends SupabaseUser {
-  subscription?: {
+  subscription: {
     isSubscribed: boolean;
-    tierLevel: number;
-    subscriptionId?: string;
-    planId?: string;
-    status?: SubscriptionStatus;
-    currentPeriodEnd?: Date;
+    tier: SubscriptionTier;
   };
 }
 
@@ -70,54 +68,18 @@ export const authenticateSupabaseUser = async (
       return;
     }
 
-    // Fetch user's subscription data
+    // Fetch user's tier from denormalized column — no subscription join needed
     const dbUser = await prisma.user.findUnique({
       where: { supabase_auth_id: user.id },
+      select: { active_subscription_tier: true },
     });
 
-    if (dbUser) {
-      const subscription = await prisma.subscription.findFirst({
-        where: {
-          user_id: dbUser.supabase_auth_id,
-          status: SubscriptionStatus.ACTIVE,
-          current_period_end: {
-            gt: new Date(),
-          },
-        },
-        include: {
-          subscription_plan: {
-            select: {
-              id: true,
-              tier_level: true,
-            },
-          },
-        },
-        orderBy: {
-          created_at: 'desc',
-        },
-      });
+    const tier = dbUser?.active_subscription_tier ?? SubscriptionTier.FREE;
 
-      // Attach user with subscription data to request object
-      (user as AuthenticatedUser).subscription = subscription
-        ? {
-            isSubscribed: true,
-            tierLevel: subscription.subscription_plan.tier_level,
-            subscriptionId: subscription.id,
-            planId: subscription.subscription_plan_id,
-            status: subscription.status,
-            currentPeriodEnd: subscription.current_period_end,
-          }
-        : {
-            isSubscribed: false,
-            tierLevel: 0, // Free tier
-          };
-    } else {
-      // User not in database yet (first login), default to free tier
-      (user as AuthenticatedUser).subscription = {
-        isSubscribed: false,
-        tierLevel: 0,
-      };
-    }
+    (user as AuthenticatedUser).subscription = {
+      tier,
+      isSubscribed: tier !== SubscriptionTier.FREE,
+    };
 
     req.user = user as AuthenticatedUser;
     next();

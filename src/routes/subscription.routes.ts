@@ -5,33 +5,21 @@ import {
 } from '../middleware/auth.middleware';
 import { validateRequest } from '../middleware/validate.middleware';
 import {
-  GetPlansSchema,
-  VerifyPurchaseSchema,
   GetSubscriptionStatusSchema,
   GetSubscriptionHistorySchema,
 } from '../schemas/subscription.schema';
 import {
-  getPlans,
   getSubscriptionStatus,
   getSubscriptionHistory,
-  verifyPurchase,
 } from '../controllers/subscription.controller';
 
 const router = Router();
-
-// ============== Public Routes ==============
-
-/**
- * GET /api/subscriptions/plans
- * Get available subscription plans
- */
-router.get('/plans', validateRequest(GetPlansSchema), getPlans);
 
 // ============== Protected Routes ==============
 
 /**
  * GET /api/subscriptions/status
- * Get current user's subscription status
+ * Get current user's subscription status (RC-backed)
  */
 router.get(
   '/status',
@@ -43,7 +31,7 @@ router.get(
 
 /**
  * GET /api/subscriptions/history
- * Get user's subscription history
+ * Get user's subscription event history (RC-backed)
  */
 router.get(
   '/history',
@@ -51,18 +39,6 @@ router.get(
   requireAppUser,
   validateRequest(GetSubscriptionHistorySchema),
   getSubscriptionHistory
-);
-
-/**
- * POST /api/subscriptions/verify
- * Verify a purchase from the client
- */
-router.post(
-  '/verify',
-  authenticateSupabaseUser,
-  requireAppUser,
-  validateRequest(VerifyPurchaseSchema),
-  verifyPurchase
 );
 
 export default router;
