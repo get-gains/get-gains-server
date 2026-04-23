@@ -20,8 +20,8 @@ import {
  *   workout_session → assigned_program_routine → assigned_program → user_id
  *
  * Source distinction:
- *   standalone: assigned_program.program.user_id == supabaseId (user's own program)
- *   coach:      assigned_program.program.user_id != supabaseId (coach's program)
+ *   standalone: assigned_program.coach_id == supabaseId (user's own program)
+ *   coach:      assigned_program.coach_id != supabaseId (coach's program)
  *
  * All sessions are returned regardless of subscription status — coach
  * session history is never gated (user's own training data, FR-014).
@@ -64,7 +64,8 @@ export const getSessionHistory = async (
     assigned_program_routine: {
       assigned_program: {
         user_id: string;
-        program?: { user_id: string | { not: string } };
+        coach_id?: string | { not: string };
+        deleted_at?: null;
       };
     };
     completed_at: { not: null };
@@ -78,7 +79,7 @@ export const getSessionHistory = async (
       assigned_program_routine: {
         assigned_program: {
           user_id: supabaseId,
-          program: { user_id: supabaseId },
+          coach_id: supabaseId,
         },
       },
       completed_at: { not: null },
@@ -89,7 +90,7 @@ export const getSessionHistory = async (
       assigned_program_routine: {
         assigned_program: {
           user_id: supabaseId,
-          program: { user_id: { not: supabaseId } },
+          coach_id: { not: supabaseId },
         },
       },
       completed_at: { not: null },
@@ -111,14 +112,16 @@ export const getSessionHistory = async (
       where,
       include: {
         assigned_program_routine: {
-          include: {
-            routine: { select: { id: true, name: true } },
+          select: {
+            id: true,
+            source_routine_id: true,
+            name: true,
             assigned_program: {
-              include: {
-                program: {
-                  include: {
-                    user: { select: { full_name: true } },
-                  },
+              select: {
+                name: true,
+                coach_id: true,
+                coach: {
+                  select: { full_name: true },
                 },
               },
             },
@@ -135,23 +138,22 @@ export const getSessionHistory = async (
   // Map to unified response shape
   const mappedSessions: UnifiedSessionSummary[] = sessions.map((s) => {
     const isCoach =
-      s.assigned_program_routine.assigned_program.program.user_id !==
-      supabaseId;
+      s.assigned_program_routine.assigned_program.coach_id !== supabaseId;
 
     return {
       id: s.id,
-      routineId: s.assigned_program_routine.routine_id,
-      routineName: s.assigned_program_routine.routine.name,
+      routineId:
+        s.assigned_program_routine.source_routine_id ??
+        s.assigned_program_routine.id,
+      routineName: s.assigned_program_routine.name,
       startedAt: s.started_at?.toISOString() ?? null,
       completedAt: s.completed_at?.toISOString() ?? null,
       feedback: s.feedback ?? null,
       totalSets: 0, // filled in below via bulk set count
       source: isCoach ? 'coach' : 'standalone',
-      programName:
-        s.assigned_program_routine.assigned_program.program.name ?? null,
+      programName: s.assigned_program_routine.assigned_program.name ?? null,
       coachName: isCoach
-        ? (s.assigned_program_routine.assigned_program.program.user.full_name ??
-          null)
+        ? (s.assigned_program_routine.assigned_program.coach.full_name ?? null)
         : null,
     };
   });

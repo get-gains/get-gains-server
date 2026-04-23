@@ -410,6 +410,8 @@ export const deletePersonalRoutine = async (
 };
 
 // ============== Personal Program Controllers ==============
+// NOTE: With the program table dropped, "personal programs" are now
+// assigned_program rows where coach_id === user_id (self-assigned).
 
 export const createPersonalProgram = async (
   req: Request,
@@ -423,8 +425,13 @@ export const createPersonalProgram = async (
   const { name, description } = res.locals.validated
     ?.body as CreatePersonalProgramInput;
 
-  const program = await prisma.program.create({
-    data: { user_id: appUser.supabase_auth_id, name, description },
+  const program = await prisma.assigned_program.create({
+    data: {
+      user_id: appUser.supabase_auth_id,
+      coach_id: appUser.supabase_auth_id,
+      name,
+      description,
+    },
   });
 
   logger.info('Personal program created', {
@@ -446,14 +453,20 @@ export const getPersonalPrograms = async (
   const { limit, offset } = res.locals.validated
     ?.query as GetPersonalProgramsQuery;
 
+  const where = {
+    user_id: appUser.supabase_auth_id,
+    coach_id: appUser.supabase_auth_id,
+    deleted_at: null,
+  };
+
   const [programs, total] = await Promise.all([
-    prisma.program.findMany({
-      where: { user_id: appUser.supabase_auth_id },
+    prisma.assigned_program.findMany({
+      where,
       orderBy: { created_at: 'desc' },
       take: limit,
       skip: offset,
     }),
-    prisma.program.count({ where: { user_id: appUser.supabase_auth_id } }),
+    prisma.assigned_program.count({ where }),
   ]);
 
   sendSuccess(res, {
@@ -479,10 +492,24 @@ export const getPersonalProgramById = async (
   const { programId } = res.locals.validated
     ?.params as GetPersonalProgramByIdParams;
 
-  const program = await prisma.program.findUnique({
+  const program = await prisma.assigned_program.findUnique({
     where: { id: programId },
+    include: {
+      assigned_program_routines: {
+        where: { deleted_at: null },
+        include: {
+          assigned_program_routine_exercises: { where: { deleted_at: null } },
+        },
+        orderBy: { order_in_program: 'asc' },
+      },
+    },
   });
-  if (!program || program.user_id !== appUser.supabase_auth_id) {
+  if (
+    !program ||
+    program.user_id !== appUser.supabase_auth_id ||
+    program.coach_id !== appUser.supabase_auth_id ||
+    program.deleted_at !== null
+  ) {
     throw new NotFoundException('PROGRAM_NOT_FOUND', 'Program not found');
   }
 
@@ -510,14 +537,19 @@ export const updatePersonalProgram = async (
     );
   }
 
-  const existing = await prisma.program.findUnique({
+  const existing = await prisma.assigned_program.findUnique({
     where: { id: programId },
   });
-  if (!existing || existing.user_id !== appUser.supabase_auth_id) {
+  if (
+    !existing ||
+    existing.user_id !== appUser.supabase_auth_id ||
+    existing.coach_id !== appUser.supabase_auth_id ||
+    existing.deleted_at !== null
+  ) {
     throw new NotFoundException('PROGRAM_NOT_FOUND', 'Program not found');
   }
 
-  const program = await prisma.program.update({
+  const program = await prisma.assigned_program.update({
     where: { id: programId },
     data: {
       ...(name !== undefined && { name }),
@@ -544,14 +576,22 @@ export const deletePersonalProgram = async (
   const { programId } = res.locals.validated
     ?.params as DeletePersonalProgramParams;
 
-  const existing = await prisma.program.findUnique({
+  const existing = await prisma.assigned_program.findUnique({
     where: { id: programId },
   });
-  if (!existing || existing.user_id !== appUser.supabase_auth_id) {
+  if (
+    !existing ||
+    existing.user_id !== appUser.supabase_auth_id ||
+    existing.coach_id !== appUser.supabase_auth_id ||
+    existing.deleted_at !== null
+  ) {
     throw new NotFoundException('PROGRAM_NOT_FOUND', 'Program not found');
   }
 
-  await prisma.program.delete({ where: { id: programId } });
+  await prisma.assigned_program.update({
+    where: { id: programId },
+    data: { deleted_at: new Date() },
+  });
   logger.info('Personal program deleted', {
     programId,
     user_id: appUser.supabase_auth_id,
@@ -560,6 +600,9 @@ export const deletePersonalProgram = async (
 };
 
 // ============== Standalone Assignment Controllers ==============
+// NOTE: With the program table dropped, standalone assignments are created
+// directly. The program_id in the schema now refers to an assigned_program id
+// for backwards compat, but new flows should just create assigned_programs directly.
 
 export const createStandaloneAssignment = async (
   req: Request,
@@ -570,20 +613,14 @@ export const createStandaloneAssignment = async (
     throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
   }
 
-  const { program_id, notes, start_date, end_date, routines } = res.locals
-    .validated?.body as CreateStandaloneAssignmentInput;
-
-  // Verify user owns the program
-  const program = await prisma.program.findUnique({
-    where: { id: program_id },
-  });
-  if (!program || program.user_id !== appUser.supabase_auth_id) {
-    throw new NotFoundException('PROGRAM_NOT_FOUND', 'Program not found');
-  }
+  const { name, description, notes, start_date, end_date, routines } = res
+    .locals.validated?.body as CreateStandaloneAssignmentInput;
 
   const assignment = await createAssignment({
     user_id: appUser.supabase_auth_id,
-    program_id,
+    coach_id: appUser.supabase_auth_id,
+    name,
+    description,
     notes,
     start_date,
     end_date,
@@ -593,7 +630,6 @@ export const createStandaloneAssignment = async (
   logger.info('Standalone assignment created', {
     assignmentId: assignment.id,
     user_id: appUser.supabase_auth_id,
-    program_id,
   });
   sendSuccess(res, { assignment }, 201);
 };
@@ -610,9 +646,15 @@ export const getStandaloneAssignments = async (
   const { limit, offset } = res.locals.validated
     ?.query as GetStandaloneAssignmentsQuery;
 
+  const where = {
+    user_id: appUser.supabase_auth_id,
+    coach_id: appUser.supabase_auth_id,
+    deleted_at: null,
+  };
+
   const [assignments, total] = await Promise.all([
     prisma.assigned_program.findMany({
-      where: { user_id: appUser.supabase_auth_id },
+      where,
       include: {
         _count: { select: { assigned_program_routines: true } },
       },
@@ -620,17 +662,17 @@ export const getStandaloneAssignments = async (
       take: limit,
       skip: offset,
     }),
-    prisma.assigned_program.count({
-      where: { user_id: appUser.supabase_auth_id },
-    }),
+    prisma.assigned_program.count({ where }),
   ]);
 
   sendSuccess(res, {
     assignments: assignments.map((a) => ({
       id: a.id,
-      program_id: a.program_id,
+      name: a.name,
+      description: a.description,
       user_id: a.user_id,
       notes: a.notes,
+      is_active: a.is_active,
       start_date: a.start_date,
       end_date: a.end_date,
       routine_count: a._count.assigned_program_routines,
@@ -686,9 +728,14 @@ export const getStandaloneToday = async (
     throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
   }
 
-  // Latest assignment for user
+  // Latest standalone assignment for user (self-assigned)
   const assignment = await prisma.assigned_program.findFirst({
-    where: { user_id: appUser.supabase_auth_id },
+    where: {
+      user_id: appUser.supabase_auth_id,
+      coach_id: appUser.supabase_auth_id,
+      deleted_at: null,
+      is_active: true,
+    },
     orderBy: { created_at: 'desc' },
     include: {
       assigned_program_routines: {

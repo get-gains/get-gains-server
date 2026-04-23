@@ -48,23 +48,6 @@ export const GetPerformanceSchema = z.object({
 export type GetPerformanceQuery = z.infer<typeof GetPerformanceSchema>['query'];
 
 /**
- * Schema for assigning a program to a client
- */
-export const AssignProgramSchema = z.object({
-  body: z.object({
-    userId: z.string().min(1, 'Invalid user ID'),
-    programId: z.string().cuid('Invalid program ID'),
-    startDate: z.string().datetime('Invalid start date'),
-    endDate: z.string().datetime('Invalid end date').optional(),
-    notes: z.string().max(1000).optional(),
-  }),
-});
-
-export type AssignProgramInput = z.infer<typeof AssignProgramSchema>['body'];
-
-// ============== Assignment Management Schemas ==============
-
-/**
  * Get all program assignments for a specific client
  */
 export const GetClientProgramsSchema = z.object({

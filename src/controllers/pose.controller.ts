@@ -298,11 +298,8 @@ export const bulkDownloadProgramForms = async (
   logger.debug('Bulk download program forms', { userId, programId, since });
 
   const assignedProgram = await prisma.assigned_program.findFirst({
-    where: { user_id: userId, program_id: programId },
+    where: { id: programId, user_id: userId, deleted_at: null },
     include: {
-      program: {
-        select: { id: true, name: true },
-      },
       assigned_program_routines: {
         include: {
           assigned_program_routine_exercises: {
@@ -404,7 +401,7 @@ export const bulkDownloadProgramForms = async (
 
   sendSuccess(res, {
     programId,
-    programName: assignedProgram.program.name,
+    programName: assignedProgram.name,
     exercises,
     lastUpdatedAt,
   });

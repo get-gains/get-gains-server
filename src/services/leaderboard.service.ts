@@ -95,16 +95,9 @@ export async function computeClassLeaderboard(
   lookbackStart.setUTCDate(now.getUTCDate() - 90);
   lookbackStart.setUTCHours(0, 0, 0, 0);
 
-  // ── Get coach's program IDs (for scoping sessions to this coach) ──
-  const coachPrograms = await prisma.program.findMany({
-    where: { user_id: coachId },
-    select: { id: true },
-  });
-  const coachProgramIds = coachPrograms.map((p) => p.id);
-
-  // ── Get all assigned program IDs for coach's programs ──
+  // ── Get all assigned program IDs for this coach ──
   const assignedPrograms = await prisma.assigned_program.findMany({
-    where: { program_id: { in: coachProgramIds } },
+    where: { coach_id: coachId, deleted_at: null },
     select: { id: true, user_id: true },
   });
   const assignedProgramIdsByUser = new Map<string, string[]>();

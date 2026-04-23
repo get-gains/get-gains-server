@@ -1,6 +1,6 @@
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
-import type { assigned_program, Prisma } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 
 export interface AssignmentExerciseInput {
   exercise_id: string;
@@ -12,54 +12,45 @@ export interface AssignmentExerciseInput {
 }
 
 export interface AssignmentRoutineInput {
-  routine_id: string;
+  /** Optional: copy metadata from this template routine */
+  source_routine_id?: string;
+  name: string;
+  description: string;
+  estimated_duration_minutes: number;
+  order_in_program: number;
   days_of_week: string[];
   exercises: AssignmentExerciseInput[];
 }
 
 export interface CreateAssignmentInput {
   user_id: string;
-  program_id: string;
+  coach_id: string;
+  name: string;
+  description: string;
   notes?: string;
   start_date?: Date;
   end_date?: Date;
   routines: AssignmentRoutineInput[];
 }
 
-type AssignmentWithTree = assigned_program & {
-  assigned_program_routines: Array<{
-    id: string;
-    routine_id: string;
-    assigned_program_id: string;
-    days_of_week: string[];
-    deleted_at: Date | null;
-    created_at: Date;
-    updated_at: Date;
-    assigned_program_routine_exercises: Array<{
-      id: string;
-      assigned_program_routine_id: string;
-      exercise_id: string;
-      sets: number;
-      reps_min: number;
-      reps_max: number;
-      rest_seconds: number;
-      order_in_routine: number;
-      deleted_at: Date | null;
-      created_at: Date;
-      updated_at: Date;
-    }>;
-  }>;
-};
-
-/** @internal Exported for unit testing only. Use createAssignment in production code. */
+/**
+ * Build a full client-program assignment inside a transaction.
+ * Creates the assigned_program, its routines, and their exercises.
+ * @param tx - Prisma transaction client
+ * @param data - All data needed to build the assignment tree
+ * @returns The created assignment with full tree included
+ * @internal Exported for unit testing only. Use createAssignment in production code.
+ */
 export async function _buildAssignmentTx(
   tx: Prisma.TransactionClient,
   data: CreateAssignmentInput
-): Promise<AssignmentWithTree> {
+) {
   const assignment = await tx.assigned_program.create({
     data: {
       user_id: data.user_id,
-      program_id: data.program_id,
+      coach_id: data.coach_id,
+      name: data.name,
+      description: data.description,
       notes: data.notes,
       start_date: data.start_date,
       end_date: data.end_date,
@@ -70,7 +61,11 @@ export async function _buildAssignmentTx(
     const apr = await tx.assigned_program_routine.create({
       data: {
         assigned_program_id: assignment.id,
-        routine_id: routine.routine_id,
+        source_routine_id: routine.source_routine_id ?? null,
+        name: routine.name,
+        description: routine.description,
+        estimated_duration_minutes: routine.estimated_duration_minutes,
+        order_in_program: routine.order_in_program,
         days_of_week: routine.days_of_week,
       },
     });
@@ -95,18 +90,22 @@ export async function _buildAssignmentTx(
     include: {
       assigned_program_routines: {
         include: { assigned_program_routine_exercises: true },
-        orderBy: { created_at: 'asc' },
+        orderBy: { order_in_program: 'asc' },
       },
     },
   });
 }
 
-export async function createAssignment(
-  data: CreateAssignmentInput
-): Promise<AssignmentWithTree> {
-  logger.debug('Creating assignment snapshot', {
+/**
+ * Create a full client-program assignment with all routines and exercises.
+ * Wraps _buildAssignmentTx in a Prisma transaction.
+ * @param data - All data needed to build the assignment tree
+ * @returns The created assignment with full tree
+ */
+export async function createAssignment(data: CreateAssignmentInput) {
+  logger.debug('Creating assignment', {
     user_id: data.user_id,
-    program_id: data.program_id,
+    coach_id: data.coach_id,
     routine_count: data.routines.length,
   });
   return prisma.$transaction((tx) => _buildAssignmentTx(tx, data));
