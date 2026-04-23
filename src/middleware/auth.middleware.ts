@@ -1,12 +1,19 @@
 import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger';
-import { sendSingleError, sendSuccess } from '../utils/response';
 import type { user as UserModel } from '@prisma/client';
 import type { coach as CoachModel } from '@prisma/client';
 import supabase from '../config/supabase';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import prisma from '../config/database';
 import { SubscriptionTier } from '@prisma/client';
+import {
+  UnauthorizedException,
+  NotFoundException,
+  ForbiddenException,
+  UnexpectedException,
+} from '../lib/errors';
+import { mapSupabaseError } from '../lib/errors/supabase-error-mapper';
+import { AuthError as SupabaseAuthError } from '@supabase/supabase-js';
 
 /**
  * Authenticated user with subscription data.
@@ -54,8 +61,10 @@ export const authenticateSupabaseUser = async (
     const token = authHeader && authHeader.split(' ')[1];
 
     if (!token) {
-      sendSuccess(res, { error: 'No token provided' }, 401);
-      return;
+      throw new UnauthorizedException(
+        'AUTH_TOKEN_MISSING',
+        'No token provided'
+      );
     }
 
     const {
@@ -64,8 +73,13 @@ export const authenticateSupabaseUser = async (
     } = await supabase.auth.getUser(token);
 
     if (error || !user) {
-      sendSingleError(res, 'Invalid or expired token', 401);
-      return;
+      if (error instanceof SupabaseAuthError) {
+        throw mapSupabaseError(error, 'authentication');
+      }
+      throw new UnauthorizedException(
+        'AUTH_TOKEN_INVALID',
+        'Invalid or expired token'
+      );
     }
 
     // Fetch user's tier from denormalized column — no subscription join needed
@@ -84,13 +98,17 @@ export const authenticateSupabaseUser = async (
     req.user = user as AuthenticatedUser;
     next();
   } catch (error) {
+    // Re-throw AppExceptions (they'll be caught by global error handler)
+    if (error instanceof UnauthorizedException) throw error;
     const err = error as Error;
     logger.error('Authentication error', {
       message: err.message,
       stack: err.stack,
     });
-    sendSingleError(res, 'Authentication failed', 500);
-    return;
+    throw new UnexpectedException(
+      'UNEXPECTED_EXCEPTION',
+      'Authentication failed'
+    );
   }
 };
 
@@ -107,8 +125,10 @@ export const requireAppUser = async (
   try {
     const supabaseUser = req.user;
     if (!supabaseUser) {
-      sendSingleError(res, 'Authentication required', 401);
-      return;
+      throw new UnauthorizedException(
+        'UNAUTHENTICATED',
+        'Authentication required'
+      );
     }
 
     const supabaseId =
@@ -121,20 +141,27 @@ export const requireAppUser = async (
     });
 
     if (!appUser) {
-      sendSingleError(res, 'User not found', 404);
-      return;
+      throw new NotFoundException('AUTH_APP_USER_NOT_FOUND', 'User not found');
     }
 
     req.appUser = appUser;
     next();
   } catch (error) {
+    // Re-throw AppExceptions
+    if (
+      error instanceof UnauthorizedException ||
+      error instanceof NotFoundException
+    )
+      throw error;
     const err = error as Error;
     logger.error('requireAppUser error', {
       message: err.message,
       stack: err.stack,
     });
-    sendSingleError(res, 'Authorization failed', 500);
-    return;
+    throw new UnexpectedException(
+      'UNEXPECTED_EXCEPTION',
+      'Authorization failed'
+    );
   }
 };
 
@@ -151,8 +178,10 @@ export const requireCoach = async (
   try {
     const supabaseUser = req.user;
     if (!supabaseUser) {
-      sendSingleError(res, 'Authentication required', 401);
-      return;
+      throw new UnauthorizedException(
+        'UNAUTHENTICATED',
+        'Authentication required'
+      );
     }
 
     const supabaseId =
@@ -165,8 +194,7 @@ export const requireCoach = async (
     });
 
     if (!appUser) {
-      sendSingleError(res, 'User not found', 404);
-      return;
+      throw new NotFoundException('AUTH_APP_USER_NOT_FOUND', 'User not found');
     }
 
     const coach = await prisma.coach.findUnique({
@@ -174,20 +202,31 @@ export const requireCoach = async (
     });
 
     if (!coach) {
-      sendSingleError(res, 'Coach profile required', 403);
-      return;
+      throw new ForbiddenException(
+        'AUTH_COACH_REQUIRED',
+        'Coach profile required'
+      );
     }
 
     req.appUser = appUser;
     req.coach = coach;
     next();
   } catch (error) {
+    // Re-throw AppExceptions
+    if (
+      error instanceof UnauthorizedException ||
+      error instanceof NotFoundException ||
+      error instanceof ForbiddenException
+    )
+      throw error;
     const err = error as Error;
     logger.error('requireCoach error', {
       message: err.message,
       stack: err.stack,
     });
-    sendSingleError(res, 'Authorization failed', 500);
-    return;
+    throw new UnexpectedException(
+      'UNEXPECTED_EXCEPTION',
+      'Authorization failed'
+    );
   }
 };

@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
-import { sendSuccess, sendSingleError } from '../utils/response';
+import { sendSuccess } from '../utils/response';
 import type {
   UploadFormInput,
   UpdateFormInput,
@@ -12,6 +12,7 @@ import type {
   DownloadProgramFormsQuery,
   DownloadExerciseFormParams,
 } from '../schemas/pose.schema';
+import { NotFoundException, ForbiddenException } from '../lib/errors';
 
 // ============== Coach Form Controllers ==============
 
@@ -23,66 +24,61 @@ export const uploadCoachForm = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const coachUserId = req.coach!.user_id;
-    const { exerciseId, cameraAngle, recorded_frames_key } = res.locals
-      .validated?.body as UploadFormInput;
+  const coachUserId = req.coach!.user_id;
+  const { exerciseId, cameraAngle, recorded_frames_key } = res.locals.validated
+    ?.body as UploadFormInput;
 
-    logger.debug('Uploading coach form', {
-      coachUserId,
-      exerciseId,
-      cameraAngle,
-    });
+  logger.debug('Uploading coach form', {
+    coachUserId,
+    exerciseId,
+    cameraAngle,
+  });
 
-    const exercise = await prisma.exercise.findUnique({
-      where: { id: exerciseId },
-    });
+  const exercise = await prisma.exercise.findUnique({
+    where: { id: exerciseId },
+  });
 
-    if (!exercise) {
-      sendSingleError(res, 'Exercise not found', 404, 'exerciseId');
-      return;
-    }
-
-    if (exercise.user_id !== coachUserId) {
-      sendSingleError(
-        res,
-        'Unauthorized: exercise belongs to another coach',
-        403
-      );
-      return;
-    }
-
-    const form = await prisma.exercise_form.create({
-      data: {
-        exercise_id: exerciseId,
-        camera_angle: cameraAngle,
-        recorded_frames_key,
-      },
-    });
-
-    logger.info('Coach form uploaded', {
-      formId: form.id,
-      exerciseId,
-      coachUserId,
-    });
-
-    sendSuccess(
-      res,
-      {
-        form: {
-          id: form.id,
-          exercise_id: form.exercise_id,
-          camera_angle: form.camera_angle,
-          recorded_frames_key: form.recorded_frames_key,
-          created_at: form.created_at,
-        },
-      },
-      201
+  if (!exercise) {
+    throw new NotFoundException(
+      'WORKOUT_EXERCISE_NOT_FOUND',
+      'Exercise not found'
     );
-  } catch (error) {
-    logger.error('Error uploading coach form', error);
-    sendSingleError(res, 'Failed to upload form', 500);
   }
+
+  if (exercise.user_id !== coachUserId) {
+    throw new ForbiddenException(
+      'WORKOUT_EXERCISE_FORBIDDEN',
+      'Unauthorized: exercise belongs to another coach'
+    );
+  }
+
+  const form = await prisma.exercise_form.create({
+    data: {
+      exercise_id: exerciseId,
+      camera_angle: cameraAngle,
+      recorded_frames_key,
+    },
+  });
+
+  logger.info('Coach form uploaded', {
+    formId: form.id,
+    exerciseId,
+    coachUserId,
+  });
+
+  sendSuccess(
+    res,
+    {
+      form: {
+        id: form.id,
+        exercise_id: form.exercise_id,
+        camera_angle: form.camera_angle,
+        recorded_frames_key: form.recorded_frames_key,
+        created_at: form.created_at,
+      },
+    },
+    201
+  );
 };
 
 /**
@@ -93,49 +89,45 @@ export const getFormById = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const { formId } = res.locals.validated?.params as FormIdParams;
-    const coachUserId = req.coach!.user_id;
+  const { formId } = res.locals.validated?.params as FormIdParams;
+  const coachUserId = req.coach!.user_id;
 
-    logger.debug('Fetching form by ID', { formId, coachUserId });
+  logger.debug('Fetching form by ID', { formId, coachUserId });
 
-    const form = await prisma.exercise_form.findUnique({
-      where: { id: formId },
-      include: {
-        exercise: {
-          select: { id: true, name: true, user_id: true },
-        },
+  const form = await prisma.exercise_form.findUnique({
+    where: { id: formId },
+    include: {
+      exercise: {
+        select: { id: true, name: true, user_id: true },
       },
-    });
+    },
+  });
 
-    if (!form) {
-      sendSingleError(res, 'Form not found', 404);
-      return;
-    }
-
-    if (form.exercise.user_id !== coachUserId) {
-      sendSingleError(res, 'Unauthorized: form belongs to another coach', 403);
-      return;
-    }
-
-    sendSuccess(res, {
-      form: {
-        id: form.id,
-        exercise_id: form.exercise_id,
-        camera_angle: form.camera_angle,
-        recorded_frames_key: form.recorded_frames_key,
-        created_at: form.created_at,
-        updated_at: form.updated_at,
-        exercise: {
-          id: form.exercise.id,
-          name: form.exercise.name,
-        },
-      },
-    });
-  } catch (error) {
-    logger.error('Error fetching form', error);
-    sendSingleError(res, 'Failed to fetch form', 500);
+  if (!form) {
+    throw new NotFoundException('POSE_FORM_NOT_FOUND', 'Form not found');
   }
+
+  if (form.exercise.user_id !== coachUserId) {
+    throw new ForbiddenException(
+      'WORKOUT_EXERCISE_FORBIDDEN',
+      'Unauthorized: form belongs to another coach'
+    );
+  }
+
+  sendSuccess(res, {
+    form: {
+      id: form.id,
+      exercise_id: form.exercise_id,
+      camera_angle: form.camera_angle,
+      recorded_frames_key: form.recorded_frames_key,
+      created_at: form.created_at,
+      updated_at: form.updated_at,
+      exercise: {
+        id: form.exercise.id,
+        name: form.exercise.name,
+      },
+    },
+  });
 };
 
 /**
@@ -146,54 +138,48 @@ export const getExerciseForms = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const { exerciseId } = res.locals.validated
-      ?.params as GetExerciseFormsParams;
-    const coachUserId = req.coach!.user_id;
+  const { exerciseId } = res.locals.validated?.params as GetExerciseFormsParams;
+  const coachUserId = req.coach!.user_id;
 
-    logger.debug('Fetching exercise forms', { exerciseId, coachUserId });
+  logger.debug('Fetching exercise forms', { exerciseId, coachUserId });
 
-    const exercise = await prisma.exercise.findUnique({
-      where: { id: exerciseId },
-    });
+  const exercise = await prisma.exercise.findUnique({
+    where: { id: exerciseId },
+  });
 
-    if (!exercise) {
-      sendSingleError(res, 'Exercise not found', 404, 'exerciseId');
-      return;
-    }
-
-    if (exercise.user_id !== coachUserId) {
-      sendSingleError(
-        res,
-        'Unauthorized: exercise belongs to another coach',
-        403
-      );
-      return;
-    }
-
-    const forms = await prisma.exercise_form.findMany({
-      where: { exercise_id: exerciseId },
-      select: {
-        id: true,
-        exercise_id: true,
-        camera_angle: true,
-        recorded_frames_key: true,
-        created_at: true,
-        updated_at: true,
-      },
-      orderBy: { camera_angle: 'asc' },
-    });
-
-    sendSuccess(res, {
-      exerciseId,
-      exerciseName: exercise.name,
-      forms,
-      total: forms.length,
-    });
-  } catch (error) {
-    logger.error('Error fetching exercise forms', error);
-    sendSingleError(res, 'Failed to fetch exercise forms', 500);
+  if (!exercise) {
+    throw new NotFoundException(
+      'WORKOUT_EXERCISE_NOT_FOUND',
+      'Exercise not found'
+    );
   }
+
+  if (exercise.user_id !== coachUserId) {
+    throw new ForbiddenException(
+      'WORKOUT_EXERCISE_FORBIDDEN',
+      'Unauthorized: exercise belongs to another coach'
+    );
+  }
+
+  const forms = await prisma.exercise_form.findMany({
+    where: { exercise_id: exerciseId },
+    select: {
+      id: true,
+      exercise_id: true,
+      camera_angle: true,
+      recorded_frames_key: true,
+      created_at: true,
+      updated_at: true,
+    },
+    orderBy: { camera_angle: 'asc' },
+  });
+
+  sendSuccess(res, {
+    exerciseId,
+    exerciseName: exercise.name,
+    forms,
+    total: forms.length,
+  });
 };
 
 /**
@@ -204,57 +190,53 @@ export const updateForm = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const { formId } = res.locals.validated?.params as UpdateFormParams;
-    const coachUserId = req.coach!.user_id;
-    const updateData = res.locals.validated?.body as UpdateFormInput;
+  const { formId } = res.locals.validated?.params as UpdateFormParams;
+  const coachUserId = req.coach!.user_id;
+  const updateData = res.locals.validated?.body as UpdateFormInput;
 
-    logger.debug('Updating form', { formId, coachUserId });
+  logger.debug('Updating form', { formId, coachUserId });
 
-    const existingForm = await prisma.exercise_form.findUnique({
-      where: { id: formId },
-      include: {
-        exercise: { select: { user_id: true } },
-      },
-    });
+  const existingForm = await prisma.exercise_form.findUnique({
+    where: { id: formId },
+    include: {
+      exercise: { select: { user_id: true } },
+    },
+  });
 
-    if (!existingForm) {
-      sendSingleError(res, 'Form not found', 404);
-      return;
-    }
-
-    if (existingForm.exercise.user_id !== coachUserId) {
-      sendSingleError(res, 'Unauthorized: form belongs to another coach', 403);
-      return;
-    }
-
-    const updatedForm = await prisma.exercise_form.update({
-      where: { id: formId },
-      data: {
-        ...(updateData.cameraAngle !== undefined && {
-          camera_angle: updateData.cameraAngle,
-        }),
-        ...(updateData.recorded_frames_key !== undefined && {
-          recorded_frames_key: updateData.recorded_frames_key,
-        }),
-      },
-    });
-
-    logger.info('Form updated', { formId, coachUserId });
-
-    sendSuccess(res, {
-      form: {
-        id: updatedForm.id,
-        exercise_id: updatedForm.exercise_id,
-        camera_angle: updatedForm.camera_angle,
-        recorded_frames_key: updatedForm.recorded_frames_key,
-        updated_at: updatedForm.updated_at,
-      },
-    });
-  } catch (error) {
-    logger.error('Error updating form', error);
-    sendSingleError(res, 'Failed to update form', 500);
+  if (!existingForm) {
+    throw new NotFoundException('POSE_FORM_NOT_FOUND', 'Form not found');
   }
+
+  if (existingForm.exercise.user_id !== coachUserId) {
+    throw new ForbiddenException(
+      'WORKOUT_EXERCISE_FORBIDDEN',
+      'Unauthorized: form belongs to another coach'
+    );
+  }
+
+  const updatedForm = await prisma.exercise_form.update({
+    where: { id: formId },
+    data: {
+      ...(updateData.cameraAngle !== undefined && {
+        camera_angle: updateData.cameraAngle,
+      }),
+      ...(updateData.recorded_frames_key !== undefined && {
+        recorded_frames_key: updateData.recorded_frames_key,
+      }),
+    },
+  });
+
+  logger.info('Form updated', { formId, coachUserId });
+
+  sendSuccess(res, {
+    form: {
+      id: updatedForm.id,
+      exercise_id: updatedForm.exercise_id,
+      camera_angle: updatedForm.camera_angle,
+      recorded_frames_key: updatedForm.recorded_frames_key,
+      updated_at: updatedForm.updated_at,
+    },
+  });
 };
 
 /**
@@ -264,40 +246,36 @@ export const deleteForm = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const { formId } = res.locals.validated?.params as FormIdParams;
-    const coachUserId = req.coach!.user_id;
+  const { formId } = res.locals.validated?.params as FormIdParams;
+  const coachUserId = req.coach!.user_id;
 
-    logger.debug('Deleting form', { formId, coachUserId });
+  logger.debug('Deleting form', { formId, coachUserId });
 
-    const existingForm = await prisma.exercise_form.findUnique({
-      where: { id: formId },
-      include: {
-        exercise: { select: { user_id: true } },
-      },
-    });
+  const existingForm = await prisma.exercise_form.findUnique({
+    where: { id: formId },
+    include: {
+      exercise: { select: { user_id: true } },
+    },
+  });
 
-    if (!existingForm) {
-      sendSingleError(res, 'Form not found', 404);
-      return;
-    }
-
-    if (existingForm.exercise.user_id !== coachUserId) {
-      sendSingleError(res, 'Unauthorized: form belongs to another coach', 403);
-      return;
-    }
-
-    await prisma.exercise_form.delete({
-      where: { id: formId },
-    });
-
-    logger.info('Form deleted', { formId, coachUserId });
-
-    sendSuccess(res, { message: 'Form deleted successfully' });
-  } catch (error) {
-    logger.error('Error deleting form', error);
-    sendSingleError(res, 'Failed to delete form', 500);
+  if (!existingForm) {
+    throw new NotFoundException('POSE_FORM_NOT_FOUND', 'Form not found');
   }
+
+  if (existingForm.exercise.user_id !== coachUserId) {
+    throw new ForbiddenException(
+      'WORKOUT_EXERCISE_FORBIDDEN',
+      'Unauthorized: form belongs to another coach'
+    );
+  }
+
+  await prisma.exercise_form.delete({
+    where: { id: formId },
+  });
+
+  logger.info('Form deleted', { formId, coachUserId });
+
+  sendSuccess(res, { message: 'Form deleted successfully' });
 };
 
 // ============== Download Controllers ==============
@@ -312,127 +290,124 @@ export const bulkDownloadProgramForms = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const userId = req.appUser!.supabase_auth_id;
-    const { programId } = res.locals.validated
-      ?.params as DownloadProgramFormsParams;
-    const { since } = res.locals.validated?.query as DownloadProgramFormsQuery;
+  const userId = req.appUser!.supabase_auth_id;
+  const { programId } = res.locals.validated
+    ?.params as DownloadProgramFormsParams;
+  const { since } = res.locals.validated?.query as DownloadProgramFormsQuery;
 
-    logger.debug('Bulk download program forms', { userId, programId, since });
+  logger.debug('Bulk download program forms', { userId, programId, since });
 
-    const assignedProgram = await prisma.assigned_program.findFirst({
-      where: { user_id: userId, program_id: programId },
-      include: {
-        program: {
-          select: { id: true, name: true },
-        },
-        assigned_program_routines: {
-          include: {
-            assigned_program_routine_exercises: {
-              include: {
-                exercise: {
-                  select: {
-                    id: true,
-                    name: true,
-                    active_segments: true,
-                  },
+  const assignedProgram = await prisma.assigned_program.findFirst({
+    where: { user_id: userId, program_id: programId },
+    include: {
+      program: {
+        select: { id: true, name: true },
+      },
+      assigned_program_routines: {
+        include: {
+          assigned_program_routine_exercises: {
+            include: {
+              exercise: {
+                select: {
+                  id: true,
+                  name: true,
+                  active_segments: true,
                 },
               },
             },
           },
         },
       },
-    });
+    },
+  });
 
-    if (!assignedProgram) {
-      sendSingleError(res, 'No assigned program found', 404, 'programId');
-      return;
-    }
-
-    // Collect all unique exercise IDs from the assigned program
-    const exerciseIds = new Set<string>();
-    for (const routine of assignedProgram.assigned_program_routines) {
-      for (const routineExercise of routine.assigned_program_routine_exercises) {
-        exerciseIds.add(routineExercise.exercise_id);
-      }
-    }
-
-    const exerciseIdArray = Array.from(exerciseIds);
-
-    // Build exercise lookup from the nested include
-    const exerciseMap = new Map<
-      string,
-      { id: string; name: string; active_segments: string[] }
-    >();
-    for (const routine of assignedProgram.assigned_program_routines) {
-      for (const routineExercise of routine.assigned_program_routine_exercises) {
-        const ex = routineExercise.exercise;
-        if (!exerciseMap.has(ex.id)) {
-          exerciseMap.set(ex.id, ex);
-        }
-      }
-    }
-
-    // Fetch forms for all exercises
-    const formsWhere: Record<string, unknown> = {
-      exercise_id: { in: exerciseIdArray },
-    };
-    if (since) {
-      formsWhere.updated_at = { gte: since };
-    }
-
-    const forms = await prisma.exercise_form.findMany({
-      where: formsWhere,
-      select: {
-        id: true,
-        exercise_id: true,
-        camera_angle: true,
-        recorded_frames_key: true,
-        updated_at: true,
-      },
-    });
-
-    // Group forms by exercise
-    const formsByExercise = new Map<string, typeof forms>();
-    for (const form of forms) {
-      const existing = formsByExercise.get(form.exercise_id) ?? [];
-      existing.push(form);
-      formsByExercise.set(form.exercise_id, existing);
-    }
-
-    const exercises = exerciseIdArray.map((exId) => {
-      const ex = exerciseMap.get(exId);
-      const exerciseForms = formsByExercise.get(exId) ?? [];
-
-      return {
-        exerciseId: exId,
-        exerciseName: ex?.name ?? 'Unknown',
-        activeSegments: ex?.active_segments ?? [],
-        forms: exerciseForms.map((f) => ({
-          id: f.id,
-          camera_angle: f.camera_angle,
-          recorded_frames_key: f.recorded_frames_key,
-        })),
-      };
-    });
-
-    // Determine the last updated timestamp across all returned forms
-    const allTimestamps = forms.map((f) => f.updated_at);
-    const lastUpdatedAt =
-      allTimestamps.length > 0
-        ? new Date(Math.max(...allTimestamps.map((t) => t.getTime())))
-        : null;
-
-    sendSuccess(res, {
-      programId,
-      programName: assignedProgram.program.name,
-      exercises,
-      lastUpdatedAt,
-    });
-  } catch (error) {
-    logger.error('Error downloading program forms', error);
-    sendSingleError(res, 'Failed to download program forms', 500);
+  if (!assignedProgram) {
+    throw new NotFoundException(
+      'ASSIGNMENT_NOT_FOUND',
+      'No assigned program found'
+    );
   }
+
+  // Collect all unique exercise IDs from the assigned program
+  const exerciseIds = new Set<string>();
+  for (const routine of assignedProgram.assigned_program_routines) {
+    for (const routineExercise of routine.assigned_program_routine_exercises) {
+      exerciseIds.add(routineExercise.exercise_id);
+    }
+  }
+
+  const exerciseIdArray = Array.from(exerciseIds);
+
+  // Build exercise lookup from the nested include
+  const exerciseMap = new Map<
+    string,
+    { id: string; name: string; active_segments: string[] }
+  >();
+  for (const routine of assignedProgram.assigned_program_routines) {
+    for (const routineExercise of routine.assigned_program_routine_exercises) {
+      const ex = routineExercise.exercise;
+      if (!exerciseMap.has(ex.id)) {
+        exerciseMap.set(ex.id, ex);
+      }
+    }
+  }
+
+  // Fetch forms for all exercises
+  const formsWhere: Record<string, unknown> = {
+    exercise_id: { in: exerciseIdArray },
+  };
+  if (since) {
+    formsWhere.updated_at = { gte: since };
+  }
+
+  const forms = await prisma.exercise_form.findMany({
+    where: formsWhere,
+    select: {
+      id: true,
+      exercise_id: true,
+      camera_angle: true,
+      recorded_frames_key: true,
+      updated_at: true,
+    },
+  });
+
+  // Group forms by exercise
+  const formsByExercise = new Map<string, typeof forms>();
+  for (const form of forms) {
+    const existing = formsByExercise.get(form.exercise_id) ?? [];
+    existing.push(form);
+    formsByExercise.set(form.exercise_id, existing);
+  }
+
+  const exercises = exerciseIdArray.map((exId) => {
+    const ex = exerciseMap.get(exId);
+    const exerciseForms = formsByExercise.get(exId) ?? [];
+
+    return {
+      exerciseId: exId,
+      exerciseName: ex?.name ?? 'Unknown',
+      activeSegments: ex?.active_segments ?? [],
+      forms: exerciseForms.map((f) => ({
+        id: f.id,
+        camera_angle: f.camera_angle,
+        recorded_frames_key: f.recorded_frames_key,
+      })),
+    };
+  });
+
+  // Determine the last updated timestamp across all returned forms
+  const allTimestamps = forms.map((f) => f.updated_at);
+  const lastUpdatedAt =
+    allTimestamps.length > 0
+      ? new Date(Math.max(...allTimestamps.map((t) => t.getTime())))
+      : null;
+
+  sendSuccess(res, {
+    programId,
+    programName: assignedProgram.program.name,
+    exercises,
+    lastUpdatedAt,
+  });
 };
 
 /**
@@ -443,42 +418,39 @@ export const downloadExerciseForm = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const { exerciseId } = res.locals.validated
-      ?.params as DownloadExerciseFormParams;
+  const { exerciseId } = res.locals.validated
+    ?.params as DownloadExerciseFormParams;
 
-    logger.debug('Downloading exercise form', { exerciseId });
+  logger.debug('Downloading exercise form', { exerciseId });
 
-    const exercise = await prisma.exercise.findUnique({
-      where: { id: exerciseId },
-      include: {
-        exercise_forms: {
-          select: {
-            id: true,
-            camera_angle: true,
-            recorded_frames_key: true,
-          },
+  const exercise = await prisma.exercise.findUnique({
+    where: { id: exerciseId },
+    include: {
+      exercise_forms: {
+        select: {
+          id: true,
+          camera_angle: true,
+          recorded_frames_key: true,
         },
       },
-    });
+    },
+  });
 
-    if (!exercise) {
-      sendSingleError(res, 'Exercise not found', 404, 'exerciseId');
-      return;
-    }
-
-    sendSuccess(res, {
-      exerciseId: exercise.id,
-      exerciseName: exercise.name,
-      activeSegments: exercise.active_segments,
-      forms: exercise.exercise_forms.map((f) => ({
-        id: f.id,
-        camera_angle: f.camera_angle,
-        recorded_frames_key: f.recorded_frames_key,
-      })),
-    });
-  } catch (error) {
-    logger.error('Error downloading exercise form', error);
-    sendSingleError(res, 'Failed to download exercise form', 500);
+  if (!exercise) {
+    throw new NotFoundException(
+      'WORKOUT_EXERCISE_NOT_FOUND',
+      'Exercise not found'
+    );
   }
+
+  sendSuccess(res, {
+    exerciseId: exercise.id,
+    exerciseName: exercise.name,
+    activeSegments: exercise.active_segments,
+    forms: exercise.exercise_forms.map((f) => ({
+      id: f.id,
+      camera_angle: f.camera_angle,
+      recorded_frames_key: f.recorded_frames_key,
+    })),
+  });
 };

@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { LEADERBOARD_WEIGHTS, LeaderboardWeights } from '../config/economy';
 import { logger } from '../utils/logger';
 import { calculateStreak } from '../utils/streak';
+import { NotFoundException, ForbiddenException } from '../lib/errors';
 
 // ── Types ──
 
@@ -50,7 +51,7 @@ export async function computeClassLeaderboard(
     include: { user: true },
   });
   if (!coach) {
-    throw new LeaderboardError('Coach not found.', 404);
+    throw new NotFoundException('USER_COACH_NOT_FOUND', 'Coach not found.');
   }
 
   // ── Verify requesting user is subscribed to this coach ──
@@ -58,9 +59,9 @@ export async function computeClassLeaderboard(
     where: { user_id: requestingUserId, coach_id: coachId, ended_at: null },
   });
   if (!subscription) {
-    throw new LeaderboardError(
-      'You must be subscribed to this coach to view their class leaderboard.',
-      403
+    throw new ForbiddenException(
+      'FORBIDDEN',
+      'You must be subscribed to this coach to view their class leaderboard.'
     );
   }
 
@@ -290,16 +291,4 @@ export async function computeClassLeaderboard(
     totalClients: activeSubscribers.length,
     lastUpdated: now.toISOString(),
   };
-}
-
-// ── Error class for leaderboard-specific errors ──
-
-export class LeaderboardError extends Error {
-  public readonly statusCode: number;
-
-  constructor(message: string, statusCode: number) {
-    super(message);
-    this.name = 'LeaderboardError';
-    this.statusCode = statusCode;
-  }
 }

@@ -1,8 +1,9 @@
 import 'dotenv/config';
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { logPath } from './utils/console-message';
 import { logger } from './utils/logger';
+import { errorHandler } from './middleware/error-handler.middleware';
 import dotenv from 'dotenv';
 import authRoutes from './routes/auth.routes';
 import workoutRoutes from './routes/workout.routes';
@@ -32,8 +33,8 @@ const startServer = () => {
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    logPath(req.method, req.path, res.statusCode);
+  app.use((req, _res, next) => {
+    logPath(req.method, req.path, 0);
     next();
   });
 
@@ -70,18 +71,17 @@ const startServer = () => {
     logger.warn(`Route not found: ${req.method} ${req.path}`);
     res.status(404).json({
       data: null,
-      errors: [{ message: 'Route not found' }],
+      errors: [
+        {
+          code: 'ROUTE_NOT_FOUND',
+          message: `Route not found: ${req.method} ${req.path}`,
+        },
+      ],
     });
   });
 
-  // Error Handler (contract: data + errors envelope)
-  app.use((err: Error, req: Request, res: Response) => {
-    logger.error('Unhandled error:', err);
-    res.status(500).json({
-      data: null,
-      errors: [{ message: 'Something went wrong!' }],
-    });
-  });
+  // Global error handler — catches AppException, ZodError, Prisma, Supabase, & unknown
+  app.use(errorHandler);
 
   app.listen(PORT, () => {
     logger.info(`Server is running on http://localhost:${PORT}`);

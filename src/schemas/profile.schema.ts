@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DayOfWeekSchema } from './day.schema';
 
 // ─── Shared field schemas ────────────────────────────────────────────
 const sexEnum = z.enum(['MALE', 'FEMALE']);
@@ -82,6 +83,11 @@ export const CreateUserProfileSchema = z.object({
       z.array(z.string().max(100)).max(50).optional().default([])
     ),
     experienceLevel: experienceLevelEnum.optional(),
+    injuryHistory: z.string().max(500).optional(),
+    activeWeekdays: z.preprocess(
+      toArray,
+      z.array(DayOfWeekSchema).max(7).optional().default([])
+    ),
   }),
 });
 export type CreateUserProfileInput = z.infer<
@@ -107,6 +113,11 @@ export const UpdateUserProfileSchema = z.object({
       z.array(z.string().max(100)).max(50).optional()
     ),
     experienceLevel: experienceLevelEnum.optional(),
+    injuryHistory: z.string().max(500).nullish(),
+    activeWeekdays: z.preprocess(
+      toArray,
+      z.array(DayOfWeekSchema).max(7).optional()
+    ),
   }),
 });
 export type UpdateUserProfileInput = z.infer<

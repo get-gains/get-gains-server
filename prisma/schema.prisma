@@ -81,27 +81,38 @@ enum RcEventStatus {
   FAILED
 }
 
+enum DayOfWeek {
+  SUNDAY
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+}
+
 // ============== Identity ==============
 
 model user {
-  supabase_auth_id    String    @id
-  email               String    @unique
+  supabase_auth_id    String      @id
+  email               String      @unique
   full_name           String
   nickname            String
-  is_coach            Boolean   @default(false)
-  bio                 String?   @db.Text
+  is_coach            Boolean     @default(false)
+  bio                 String?     @db.Text
   avatar_key          String?
   height_cm           Int?
   weight_kg           Int?
   sex                 String?
-  date_of_birth       DateTime? @db.Timestamptz
+  date_of_birth       DateTime?   @db.Timestamptz
   equipment_available String[]
   experience_level    String?
-  active_weekdays     String[]
-  coin_balance        Int       @default(0)
-  deleted_at          DateTime? @db.Timestamptz
-  created_at          DateTime  @default(now()) @db.Timestamptz
-  updated_at          DateTime  @updatedAt @db.Timestamptz
+  injury_history      String?     @db.Text
+  active_weekdays     DayOfWeek[]
+  coin_balance        Int         @default(0)
+  deleted_at          DateTime?   @db.Timestamptz
+  created_at          DateTime    @default(now()) @db.Timestamptz
+  updated_at          DateTime    @updatedAt @db.Timestamptz
 
   // Denormalized for O(1) tier gate checks. Updated by RC webhook handler.
   active_subscription_tier SubscriptionTier @default(FREE)

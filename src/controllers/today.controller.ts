@@ -3,7 +3,8 @@ import prisma from '../config/database';
 import type { AuthenticatedUser } from '../middleware/auth.middleware';
 import { resolveToday } from '../utils/days';
 import { logger } from '../utils/logger';
-import { sendSingleError, sendSuccess } from '../utils/response';
+import { sendSuccess } from '../utils/response';
+import { UnauthorizedException } from '../lib/errors';
 
 type TodayWorkoutDetails = {
   isRestDay: boolean;
@@ -103,106 +104,103 @@ export const getTodayStatus = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const rawUser = req.user;
-    const supabaseId = rawUser
-      ? 'supabase_auth_id' in rawUser
-        ? rawUser.supabase_auth_id
-        : (rawUser as AuthenticatedUser).id
-      : undefined;
+  const rawUser = req.user;
+  const supabaseId = rawUser
+    ? 'supabase_auth_id' in rawUser
+      ? rawUser.supabase_auth_id
+      : (rawUser as AuthenticatedUser).id
+    : undefined;
 
-    if (!supabaseId) {
-      sendSingleError(res, 'Unauthorized', 401);
-      return;
-    }
-
-    const { dayName, dayNumber } = resolveToday();
-    const now = new Date();
-
-    const isSubscribed = req.subscription?.isSubscribed ?? false;
-    const tier = req.subscription?.tier ?? 'FREE';
-
-    const [coachProfile, coachRelation] = await Promise.all([
-      prisma.coach.findUnique({
-        where: { user_id: supabaseId },
-        select: { user_id: true },
-      }),
-      prisma.subscribed_coach.findFirst({
-        where: {
-          user_id: supabaseId,
-          ended_at: null,
-        },
-        select: {
-          coach_id: true,
-        },
-        orderBy: {
-          started_at: 'desc',
-        },
-      }),
-    ]);
-
-    const isCoach = Boolean(coachProfile) || (req.appUser?.is_coach ?? false);
-
-    const hasCoach = Boolean(coachRelation);
-
-    const [coachAssignment, standaloneAssignment] = await Promise.all([
-      isSubscribed && coachRelation
-        ? prisma.assigned_program.findFirst({
-            where: {
-              user_id: supabaseId,
-              program: {
-                user_id: coachRelation.coach_id,
-              },
-              OR: [{ end_date: null }, { end_date: { gt: now } }],
-            },
-            include: assignmentInclude,
-            orderBy: [{ start_date: 'desc' }, { created_at: 'desc' }],
-          })
-        : Promise.resolve(null),
-      prisma.assigned_program.findFirst({
-        where: {
-          user_id: supabaseId,
-          program: {
-            user_id: supabaseId,
-          },
-          OR: [{ end_date: null }, { end_date: { gt: now } }],
-        },
-        include: assignmentInclude,
-        orderBy: [{ start_date: 'desc' }, { created_at: 'desc' }],
-      }),
-    ]);
-
-    const coachToday =
-      isSubscribed && hasCoach
-        ? toTodayWorkoutDetails(coachAssignment, dayName, dayNumber)
-        : null;
-    const standaloneToday = toTodayWorkoutDetails(
-      standaloneAssignment,
-      dayName,
-      dayNumber
+  if (!supabaseId) {
+    throw new UnauthorizedException(
+      'UNAUTHENTICATED',
+      'Authentication required'
     );
-
-    logger.debug('Resolved unified today status', {
-      supabaseId,
-      isCoach,
-      isSubscribed,
-      hasCoach,
-      hasCoachAssignment: Boolean(coachAssignment),
-      hasStandaloneAssignment: Boolean(standaloneAssignment),
-      coachRestDay: coachToday?.isRestDay,
-      standaloneRestDay: standaloneToday?.isRestDay,
-    });
-
-    sendSuccess(res, {
-      isCoach,
-      isSubscribed,
-      hasCoach,
-      tier,
-      coachToday,
-      standaloneToday,
-    });
-  } catch (error) {
-    logger.error('Error fetching unified today status', error);
-    sendSingleError(res, 'Failed to fetch today status', 500);
   }
+
+  const { dayName, dayNumber } = resolveToday();
+  const now = new Date();
+
+  const isSubscribed = req.subscription?.isSubscribed ?? false;
+  const tier = req.subscription?.tier ?? 'FREE';
+
+  const [coachProfile, coachRelation] = await Promise.all([
+    prisma.coach.findUnique({
+      where: { user_id: supabaseId },
+      select: { user_id: true },
+    }),
+    prisma.subscribed_coach.findFirst({
+      where: {
+        user_id: supabaseId,
+        ended_at: null,
+      },
+      select: {
+        coach_id: true,
+      },
+      orderBy: {
+        started_at: 'desc',
+      },
+    }),
+  ]);
+
+  const isCoach = Boolean(coachProfile) || (req.appUser?.is_coach ?? false);
+
+  const hasCoach = Boolean(coachRelation);
+
+  const [coachAssignment, standaloneAssignment] = await Promise.all([
+    isSubscribed && coachRelation
+      ? prisma.assigned_program.findFirst({
+          where: {
+            user_id: supabaseId,
+            program: {
+              user_id: coachRelation.coach_id,
+            },
+            OR: [{ end_date: null }, { end_date: { gt: now } }],
+          },
+          include: assignmentInclude,
+          orderBy: [{ start_date: 'desc' }, { created_at: 'desc' }],
+        })
+      : Promise.resolve(null),
+    prisma.assigned_program.findFirst({
+      where: {
+        user_id: supabaseId,
+        program: {
+          user_id: supabaseId,
+        },
+        OR: [{ end_date: null }, { end_date: { gt: now } }],
+      },
+      include: assignmentInclude,
+      orderBy: [{ start_date: 'desc' }, { created_at: 'desc' }],
+    }),
+  ]);
+
+  const coachToday =
+    isSubscribed && hasCoach
+      ? toTodayWorkoutDetails(coachAssignment, dayName, dayNumber)
+      : null;
+  const standaloneToday = toTodayWorkoutDetails(
+    standaloneAssignment,
+    dayName,
+    dayNumber
+  );
+
+  logger.debug('Resolved unified today status', {
+    supabaseId,
+    isCoach,
+    isSubscribed,
+    hasCoach,
+    hasCoachAssignment: Boolean(coachAssignment),
+    hasStandaloneAssignment: Boolean(standaloneAssignment),
+    coachRestDay: coachToday?.isRestDay,
+    standaloneRestDay: standaloneToday?.isRestDay,
+  });
+
+  sendSuccess(res, {
+    isCoach,
+    isSubscribed,
+    hasCoach,
+    tier,
+    coachToday,
+    standaloneToday,
+  });
 };
