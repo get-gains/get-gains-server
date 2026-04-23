@@ -3,6 +3,16 @@ import prisma from '../config/database';
 import { logger } from '../utils/logger';
 import { sendSuccess, sendSingleError } from '../utils/response';
 import { EquipBody, UnequipBody } from '../schemas/cosmetics.schema';
+import { getPresignedUrl } from '../services/upload.service';
+
+async function resolvePreviewUrl(key: string): Promise<string> {
+  if (!key) return '';
+  try {
+    return await getPresignedUrl(key);
+  } catch {
+    return '';
+  }
+}
 
 /**
  * Build an equipped map keyed by category string.
@@ -47,16 +57,22 @@ export const getInventory = async (
 
     const equippedCosmeticIds = new Set(equippedRows.map((r) => r.cosmetic_id));
 
-    const owned = ownedRecords.map((uc) => ({
-      cosmeticId: uc.cosmetic_id,
-      name: uc.cosmetic.name,
-      description: uc.cosmetic.description,
-      tier: uc.cosmetic.tier,
-      category: uc.cosmetic.category,
-      preview_image_key: uc.cosmetic.preview_image_key,
-      purchasedAt: uc.created_at,
-      isEquipped: equippedCosmeticIds.has(uc.cosmetic_id),
-    }));
+    const owned = await Promise.all(
+      ownedRecords.map(async (uc) => ({
+        id: uc.cosmetic_id,
+        cosmeticId: uc.cosmetic_id,
+        name: uc.cosmetic.name,
+        description: uc.cosmetic.description,
+        tier: uc.cosmetic.tier,
+        category: uc.cosmetic.category,
+        previewImageUrl: await resolvePreviewUrl(
+          uc.cosmetic.preview_image_key ?? ''
+        ),
+        unityAssetRef: uc.cosmetic.unity_asset_ref ?? '',
+        purchasedAt: uc.created_at,
+        isEquipped: equippedCosmeticIds.has(uc.cosmetic_id),
+      }))
+    );
 
     sendSuccess(res, {
       owned,
@@ -132,7 +148,7 @@ export const equipCosmetic = async (
       where: { user_id: userId, equipped_at: { not: null } },
       include: {
         cosmetic: {
-          select: { id: true, category: true },
+          select: { id: true, category: true, unity_asset_ref: true },
         },
       },
     });
@@ -149,6 +165,7 @@ export const equipCosmetic = async (
       equippedCosmetics: equippedRecords.map((uc) => ({
         cosmeticId: uc.cosmetic_id,
         category: uc.cosmetic.category,
+        unityAssetRef: uc.cosmetic.unity_asset_ref ?? '',
         equippedAt: uc.equipped_at,
       })),
     });
@@ -205,7 +222,7 @@ export const unequipCosmetic = async (
       where: { user_id: userId, equipped_at: { not: null } },
       include: {
         cosmetic: {
-          select: { id: true, category: true },
+          select: { id: true, category: true, unity_asset_ref: true },
         },
       },
     });
@@ -222,6 +239,7 @@ export const unequipCosmetic = async (
       equippedCosmetics: equippedRecords.map((uc) => ({
         cosmeticId: uc.cosmetic_id,
         category: uc.cosmetic.category,
+        unityAssetRef: uc.cosmetic.unity_asset_ref ?? '',
         equippedAt: uc.equipped_at,
       })),
     });
@@ -246,7 +264,7 @@ export const getEquipped = async (
       where: { user_id: userId, equipped_at: { not: null } },
       include: {
         cosmetic: {
-          select: { id: true, category: true },
+          select: { id: true, category: true, unity_asset_ref: true },
         },
       },
     });
@@ -255,6 +273,7 @@ export const getEquipped = async (
       equippedCosmetics: equippedRecords.map((uc) => ({
         cosmeticId: uc.cosmetic_id,
         category: uc.cosmetic.category,
+        unityAssetRef: uc.cosmetic.unity_asset_ref ?? '',
         equippedAt: uc.equipped_at,
       })),
     });

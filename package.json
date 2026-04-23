@@ -14,6 +14,7 @@
     "prepare": "husky",
     "postinstall": "prisma generate",
     "sync:plans": "tsx scripts/sync-plans.ts",
+    "seed:subscription": "tsx scripts/seed-dev-subscription.ts",
     "commitlint": "commitlint --edit"
   },
   "lint-staged": {
@@ -34,6 +35,9 @@
   },
   "homepage": "https://github.com/get-gains/get-gains-server#readme",
   "packageManager": "pnpm@10.33.0",
+  "prisma": {
+    "seed": "npx ts-node --project tsconfig.json prisma/seed.ts"
+  },
   "devDependencies": {
     "@commitlint/cli": "^20.5.0",
     "@commitlint/config-conventional": "^20.5.0",

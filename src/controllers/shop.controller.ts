@@ -3,6 +3,16 @@ import prisma from '../config/database';
 import { logger } from '../utils/logger';
 import { sendSuccess, sendSingleError } from '../utils/response';
 import { ShopCatalogQuery, PurchaseBody } from '../schemas/shop.schema';
+import { getPresignedUrl } from '../services/upload.service';
+
+async function resolvePreviewUrl(key: string): Promise<string> {
+  if (!key) return '';
+  try {
+    return await getPresignedUrl(key);
+  } catch {
+    return '';
+  }
+}
 
 /**
  * GET /api/shop/catalog
@@ -40,15 +50,22 @@ export const getCatalog = async (
     ]);
 
     sendSuccess(res, {
-      items: items.map((item) => ({
-        id: item.id,
-        name: item.name,
-        description: item.description,
-        tier: item.tier,
-        price: item.price,
-        category: item.category,
-        previewImageKey: item.preview_image_key,
-      })),
+      items: await Promise.all(
+        items.map(async (item) => ({
+          id: item.id,
+          name: item.name,
+          description: item.description,
+          tier: item.tier,
+          coinCost: item.price,
+          category: item.category,
+          previewImageUrl: await resolvePreviewUrl(
+            item.preview_image_key ?? ''
+          ),
+          unityAssetRef: item.unity_asset_ref ?? '',
+          status: item.status ?? 'ACTIVE',
+          sortOrder: item.sort_order ?? 0,
+        }))
+      ),
       userBalance: req.appUser!.coin_balance,
       ownedCosmeticIds: ownedCosmetics.map((uc) => uc.cosmetic_id),
     });
@@ -144,7 +161,7 @@ export const purchaseCosmetic = async (
           purchase: {
             cosmeticId: cosmetic.id,
             cosmeticName: cosmetic.name,
-            price: cosmetic.price,
+            coinCost: cosmetic.price,
             purchasedAt: userCosmetic.created_at,
           },
           newBalance,
