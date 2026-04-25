@@ -11,8 +11,14 @@ import type {
   DownloadProgramFormsParams,
   DownloadProgramFormsQuery,
   DownloadExerciseFormParams,
+  FramesUploadUrlInput,
 } from '../schemas/pose.schema';
 import { NotFoundException, ForbiddenException } from '../lib/errors';
+import {
+  getPresignedPutUrl,
+  getPresignedUrl,
+  buildPoseFramesKey,
+} from '../services/upload.service';
 
 // ============== Coach Form Controllers ==============
 
@@ -449,5 +455,147 @@ export const downloadExerciseForm = async (
       camera_angle: f.camera_angle,
       recorded_frames_key: f.recorded_frames_key,
     })),
+  });
+};
+
+// ============== Presigned URL Controllers ==============
+
+const PRESIGNED_PUT_TTL = 900;
+
+/**
+ * Generate a presigned PUT URL for uploading a pose-frames JSON blob to S3.
+ * Discriminated on `kind`: `coach_form` (exercise ownership) or `client_set`
+ * (workout session ownership via assigned_program chain).
+ * @param req - Express request with validated body
+ * @param res - Express response
+ */
+export const createFramesUploadUrl = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const userId = req.appUser!.supabase_auth_id;
+  const input = res.locals.validated?.body as FramesUploadUrlInput;
+
+  if (input.kind === 'coach_form') {
+    const exercise = await prisma.exercise.findUnique({
+      where: { id: input.exerciseId },
+    });
+
+    if (!exercise) {
+      throw new NotFoundException(
+        'WORKOUT_EXERCISE_NOT_FOUND',
+        'Exercise not found'
+      );
+    }
+
+    if (exercise.user_id !== userId) {
+      throw new ForbiddenException(
+        'WORKOUT_EXERCISE_FORBIDDEN',
+        'Unauthorized: exercise belongs to another user'
+      );
+    }
+
+    const key = buildPoseFramesKey({ kind: 'coach_form', userId });
+    const url = await getPresignedPutUrl(
+      key,
+      'application/json',
+      PRESIGNED_PUT_TTL
+    );
+
+    logger.info('Presigned PUT URL generated (coach_form)', {
+      userId,
+      exerciseId: input.exerciseId,
+      key,
+    });
+
+    sendSuccess(res, { key, url, expiresInSeconds: PRESIGNED_PUT_TTL });
+    return;
+  }
+
+  // client_set branch
+  const session = await prisma.workout_session.findUnique({
+    where: { id: input.workoutSessionId },
+    include: {
+      assigned_program_routine: {
+        select: {
+          assigned_program: {
+            select: { user_id: true },
+          },
+        },
+      },
+    },
+  });
+
+  if (!session) {
+    throw new NotFoundException(
+      'WORKOUT_SESSION_NOT_FOUND',
+      'Workout session not found'
+    );
+  }
+
+  if (session.assigned_program_routine.assigned_program.user_id !== userId) {
+    throw new ForbiddenException(
+      'WORKOUT_SESSION_FORBIDDEN',
+      'Unauthorized: workout session belongs to another user'
+    );
+  }
+
+  const key = buildPoseFramesKey({
+    kind: 'client_set',
+    userId,
+    workoutSessionId: input.workoutSessionId,
+    setNumber: input.setNumber,
+  });
+  const url = await getPresignedPutUrl(
+    key,
+    'application/json',
+    PRESIGNED_PUT_TTL
+  );
+
+  logger.info('Presigned PUT URL generated (client_set)', {
+    userId,
+    workoutSessionId: input.workoutSessionId,
+    setNumber: input.setNumber,
+    key,
+  });
+
+  sendSuccess(res, { key, url, expiresInSeconds: PRESIGNED_PUT_TTL });
+};
+
+/**
+ * Generate a presigned GET URL for downloading an exercise form's frames blob.
+ * Auth: requireAppUser only — no ownership check (keys are UUID-based;
+ * presigned URL is short-lived). Clients legitimately need access to forms
+ * for any program they're enrolled in.
+ * @param req - Express request with validated params (formId)
+ * @param res - Express response
+ */
+export const getFormDownloadUrl = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const { formId } = res.locals.validated?.params as FormIdParams;
+
+  const form = await prisma.exercise_form.findUnique({
+    where: { id: formId },
+    select: { id: true, recorded_frames_key: true },
+  });
+
+  if (!form) {
+    throw new NotFoundException('POSE_FORM_NOT_FOUND', 'Form not found');
+  }
+
+  const url = await getPresignedUrl(form.recorded_frames_key);
+
+  logger.debug('Form download URL generated', {
+    formId,
+    key: form.recorded_frames_key,
+  });
+
+  sendSuccess(res, {
+    formId: form.id,
+    recorded_frames_key: form.recorded_frames_key,
+    url,
+    expiresInSeconds: 3600,
   });
 };
