@@ -19,7 +19,6 @@ async function main() {
         description: config.description,
         tier: config.tier,
         price: config.price,
-        category: config.category,
         sort_order: config.sortOrder,
         status: 'ACTIVE',
       },
@@ -28,7 +27,6 @@ async function main() {
         description: config.description,
         tier: config.tier,
         price: config.price,
-        category: config.category,
         unity_asset_ref: config.unityAssetRef,
         preview_image_key: '', // Replace with S3 key after uploading preview images
         status: 'ACTIVE',
@@ -37,7 +35,7 @@ async function main() {
     });
 
     console.log(
-      `  ✓ ${cosmetic.category} — ${cosmetic.name} (id: ${cosmetic.id}, price: ${cosmetic.price} coins)`
+      `  ✓ ${cosmetic.name} (id: ${cosmetic.id}, price: ${cosmetic.price} coins)`
     );
   }
 
