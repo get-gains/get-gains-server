@@ -26,6 +26,7 @@ import {
 import { calculateStreak } from '../utils/streak';
 import { resolveToday } from '../utils/days';
 import { calculateSessionCoins } from '../services/coin-calculation.service';
+import { recordMissionProgressAfterSession } from '../services/missions.service';
 import type { AuthenticatedUser } from '../middleware/auth.middleware';
 import {
   BadRequestException,
@@ -682,6 +683,14 @@ export const completeWorkoutSession = async (
       supabaseId,
       error: coinError,
     });
+  }
+
+  if (coinReward) {
+    await recordMissionProgressAfterSession(
+      supabaseId,
+      coinReward.total,
+      prisma
+    );
   }
 
   sendSuccess(res, {
