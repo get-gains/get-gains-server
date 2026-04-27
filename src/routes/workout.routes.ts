@@ -11,6 +11,7 @@ import {
   CreateExerciseSchema,
   UpdateExerciseSchema,
   DeleteExerciseSchema,
+  GetAssignedProgramsSchema,
   GetRoutinesSchema,
   GetRoutineByIdSchema,
   GetTodayWorkoutSchema,
@@ -29,6 +30,7 @@ import {
   createExercise,
   updateExercise,
   deleteExercise,
+  getAssignedPrograms,
   getRoutines,
   getRoutineById,
   getTodayWorkout,
@@ -97,6 +99,21 @@ router.delete(
   requireCoach,
   validateRequest(DeleteExerciseSchema),
   deleteExercise
+);
+
+// ============== Program Routes ==============
+
+/**
+ * @route   GET /workout/programs
+ * @desc    Get all assigned programs for the authenticated user
+ * @access  Protected (requires active subscription)
+ */
+router.get(
+  '/programs',
+  authenticateSupabaseUser,
+  requireSubscription(),
+  validateRequest(GetAssignedProgramsSchema),
+  getAssignedPrograms
 );
 
 // ============== Routine Routes ==============

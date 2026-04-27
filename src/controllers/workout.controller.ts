@@ -8,6 +8,7 @@ import {
   UpdateExerciseParams,
   UpdateExerciseInput,
   DeleteExerciseParams,
+  GetAssignedProgramsQuery,
   GetRoutinesQuery,
   GetRoutineByIdParams,
   StartWorkoutSessionInput,
@@ -57,14 +58,20 @@ export const getExercises = async (
   if (!supabaseId) {
     throw new UnauthorizedException('UNAUTHENTICATED', 'Unauthorized');
   }
-  const { search, limit, offset } = res.locals.validated
+  const { search, limit, offset, onlyMine } = res.locals.validated
     ?.query as GetExercisesQuery;
 
-  logger.debug('Fetching exercises', { search, limit, offset, supabaseId });
+  logger.debug('Fetching exercises', {
+    search,
+    limit,
+    offset,
+    onlyMine,
+    supabaseId,
+  });
 
-  const where: Record<string, unknown> = {
-    OR: [{ is_public: true }, { user_id: supabaseId }],
-  };
+  const where: Record<string, unknown> = onlyMine
+    ? { user_id: supabaseId }
+    : { OR: [{ is_public: true }, { user_id: supabaseId }] };
 
   if (search) {
     where.AND = [
@@ -315,6 +322,94 @@ export const deleteExercise = async (
   logger.info('Exercise deleted', { exerciseId, supabaseId });
 
   sendSuccess(res, { deleted: true });
+};
+
+// ============== Program Controllers ==============
+
+/**
+ * Get all assigned programs for the authenticated user.
+ *
+ * Returns each program with its routines (and nested exercises) so the
+ * Flutter client can cache the full tree locally.
+ *
+ * @param req - Express request (needs `req.user` from `authenticateSupabaseUser`)
+ * @param res - Express response
+ * @returns `{ programs: AssignedProgram[] }` wrapped in the standard envelope
+ */
+export const getAssignedPrograms = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const supabaseId = getSupabaseId(req);
+  if (!supabaseId) {
+    throw new UnauthorizedException('UNAUTHENTICATED', 'Unauthorized');
+  }
+  const { activeOnly } = res.locals.validated
+    ?.query as GetAssignedProgramsQuery;
+
+  logger.debug('Fetching assigned programs for user', {
+    supabaseId,
+    activeOnly,
+  });
+
+  const programs = await prisma.assigned_program.findMany({
+    where: {
+      user_id: supabaseId,
+      deleted_at: null,
+      ...(activeOnly && {
+        OR: [{ end_date: null }, { end_date: { gt: new Date() } }],
+      }),
+    },
+    include: {
+      assigned_program_routines: {
+        where: { deleted_at: null },
+        orderBy: { order_in_program: 'asc' },
+        include: {
+          assigned_program_routine_exercises: {
+            where: { deleted_at: null },
+            include: { exercise: true },
+            orderBy: { order_in_routine: 'asc' },
+          },
+        },
+      },
+    },
+    orderBy: { created_at: 'desc' },
+  });
+
+  const mapped = programs.map((ap) => ({
+    id: ap.id,
+    name: ap.name,
+    description: ap.description,
+    isActive: !ap.end_date || ap.end_date > new Date(),
+    startDate: ap.start_date,
+    endDate: ap.end_date,
+    routines: ap.assigned_program_routines.map((apr) => ({
+      id: apr.id,
+      routineName: apr.name,
+      routineDescription: apr.description,
+      daysOfWeek: apr.days_of_week,
+      exercises: apr.assigned_program_routine_exercises.map((apre) => ({
+        id: apre.id,
+        exerciseId: apre.exercise_id,
+        sets: apre.sets,
+        repsMin: apre.reps_min,
+        repsMax: apre.reps_max,
+        restSeconds: apre.rest_seconds,
+        orderInRoutine: apre.order_in_routine,
+        exercise: {
+          id: apre.exercise.id,
+          name: apre.exercise.name,
+          description: apre.exercise.description,
+        },
+      })),
+    })),
+  }));
+
+  logger.info(
+    `Fetched ${mapped.length} assigned programs for user ${supabaseId}`
+  );
+
+  sendSuccess(res, { programs: mapped });
 };
 
 // ============== Routine Controllers ==============
