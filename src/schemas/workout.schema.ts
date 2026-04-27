@@ -111,6 +111,17 @@ export type GetRoutineByIdParams = z.infer<
   typeof GetRoutineByIdSchema
 >['params'];
 
+// ============== Programs Schema ==============
+
+/**
+ * Schema for getting user's assigned programs (client-facing, active only)
+ */
+export const GetProgramsSchema = z.object({
+  query: z.object({}),
+});
+
+export type GetProgramsQuery = z.infer<typeof GetProgramsSchema>['query'];
+
 // ============== Workout Session Schemas ==============
 
 /**
