@@ -321,9 +321,10 @@ export const processRevenueCatWebhook = async (
     });
 
     // 5. Evict from coach rosters if user lost subscription
-    if (tier === SubscriptionTier.FREE) {
-      await evictUserFromCoachRosters(user.supabase_auth_id);
-    }
+    // TODO: Re-enable evictions once subscription flow is stable
+    // if (tier === SubscriptionTier.FREE) {
+    //   await evictUserFromCoachRosters(user.supabase_auth_id);
+    // }
 
     return { processed: true };
   } catch (error) {
