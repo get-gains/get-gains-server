@@ -4,6 +4,7 @@ import {
   GetObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import crypto from 'node:crypto';
 import { s3Client, BUCKET_NAME, PRESIGNED_URL_TTL } from '../config/s3';
 import { logger } from '../utils/logger';
 
@@ -82,5 +83,53 @@ export async function resolveAvatarUrl(
       error,
     });
     return null;
+  }
+}
+
+// ============== Pose Frames Upload ==============
+
+/**
+ * Generates a presigned PUT URL so the client can upload directly to S3.
+ * @param key - The S3 object key
+ * @param contentType - MIME type for the upload (e.g. 'application/json')
+ * @param expiresInSeconds - TTL for the presigned URL (default 900s / 15 min)
+ * @returns Presigned PUT URL string
+ */
+export async function getPresignedPutUrl(
+  key: string,
+  contentType: string,
+  expiresInSeconds: number = 900
+): Promise<string> {
+  const command = new PutObjectCommand({
+    Bucket: BUCKET_NAME,
+    Key: key,
+    ContentType: contentType,
+  });
+
+  return getSignedUrl(s3Client, command, { expiresIn: expiresInSeconds });
+}
+
+/** Discriminated kind for building pose-frames S3 keys. */
+export type PoseFramesKind =
+  | { kind: 'coach_form'; userId: string }
+  | {
+      kind: 'client_set';
+      userId: string;
+      workoutSessionId: string;
+      setNumber: number;
+    };
+
+/**
+ * Builds a deterministic-prefix S3 key for a pose-frames JSON blob.
+ * @param params - Discriminated union describing the upload context
+ * @returns S3 object key
+ */
+export function buildPoseFramesKey(params: PoseFramesKind): string {
+  const uuid = crypto.randomUUID();
+  switch (params.kind) {
+    case 'coach_form':
+      return `pose-frames/coach/${params.userId}/${uuid}.json`;
+    case 'client_set':
+      return `pose-frames/client/${params.userId}/${params.workoutSessionId}/set-${String(params.setNumber)}.json`;
   }
 }

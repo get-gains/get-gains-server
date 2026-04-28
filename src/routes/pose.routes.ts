@@ -13,6 +13,8 @@ import {
   deleteForm,
   bulkDownloadProgramForms,
   downloadExerciseForm,
+  createFramesUploadUrl,
+  getFormDownloadUrl,
 } from '../controllers/pose.controller';
 import {
   UploadFormSchema,
@@ -21,6 +23,7 @@ import {
   FormIdParamSchema,
   DownloadProgramFormsSchema,
   DownloadExerciseFormSchema,
+  FramesUploadUrlSchema,
 } from '../schemas/pose.schema';
 
 const router = Router();
@@ -83,6 +86,24 @@ router.get(
   requireAppUser,
   validateRequest(DownloadExerciseFormSchema),
   downloadExerciseForm
+);
+
+// ============== Presigned Upload / Download URLs ==============
+
+router.post(
+  '/uploads/frames-url',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(FramesUploadUrlSchema),
+  createFramesUploadUrl
+);
+
+router.get(
+  '/forms/:formId/download-url',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(FormIdParamSchema),
+  getFormDownloadUrl
 );
 
 export default router;

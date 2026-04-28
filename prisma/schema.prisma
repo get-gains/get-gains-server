@@ -33,6 +33,7 @@ enum BodySegment {
 enum CoinTransactionType {
   SESSION_REWARD
   SHOP_PURCHASE
+  MISSION_REWARD
 }
 
 // ============== RevenueCat Enums ==============
@@ -378,14 +379,17 @@ model coin_transactions {
   workout_session_id        String?
   user_cosmetic_user_id     String?
   user_cosmetic_cosmetic_id String?
+  user_mission_id           String?
   created_at                DateTime            @default(now()) @db.Timestamptz
 
   user            user             @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
   workout_session workout_session? @relation(fields: [workout_session_id], references: [id], onDelete: SetNull)
   user_cosmetic   user_cosmetic?   @relation(fields: [user_cosmetic_user_id, user_cosmetic_cosmetic_id], references: [user_id, cosmetic_id], onDelete: SetNull)
+  user_mission    user_mission?    @relation(fields: [user_mission_id], references: [id], onDelete: SetNull)
 
   @@index([user_id, created_at])
   @@index([workout_session_id])
+  @@index([user_mission_id])
 }
 
 // ============== Missions & Partners ==============
@@ -409,6 +413,7 @@ model mission {
   description        String    @db.Text
   goal_type          String
   goal_to_reach      Int
+  reward_coins       Int       @default(0)
   reward_title       String?
   reward_description String?   @db.Text
   reward_image_key   String?
@@ -427,17 +432,19 @@ model mission {
 }
 
 model user_mission {
-  id         String   @id @default(cuid())
-  user_id    String
-  mission_id String
-  status     String
-  progress   Int      @default(0)
-  created_at DateTime @default(now()) @db.Timestamptz
-  updated_at DateTime @updatedAt @db.Timestamptz
+  id           String    @id @default(cuid())
+  user_id      String
+  mission_id   String
+  status       String
+  progress     Int       @default(0)
+  completed_at DateTime? @db.Timestamptz
+  created_at   DateTime  @default(now()) @db.Timestamptz
+  updated_at   DateTime  @updatedAt @db.Timestamptz
 
-  user           user           @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
-  mission        mission        @relation(fields: [mission_id], references: [id], onDelete: Cascade)
-  raffle_entries raffle_entry[]
+  user               user                @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
+  mission            mission             @relation(fields: [mission_id], references: [id], onDelete: Cascade)
+  raffle_entries     raffle_entry[]
+  coin_transactions  coin_transactions[]
 
   @@unique([user_id, mission_id])
   @@index([user_id])

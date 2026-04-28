@@ -3,6 +3,7 @@ import pg from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 import { COSMETICS_CONFIG } from './cosmetics-config';
+import { seedMissions } from './seed-missions';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -40,6 +41,8 @@ async function main() {
   }
 
   console.log(`\nSeeded ${COSMETICS_CONFIG.length} cosmetics.`);
+
+  await seedMissions(prisma);
 }
 
 main()

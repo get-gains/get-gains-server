@@ -9,6 +9,7 @@ import {
   BadRequestException,
 } from '../lib/errors';
 import { calculateSessionCoins } from '../services/coin-calculation.service';
+import { recordMissionProgressAfterSession } from '../services/missions.service';
 import { createAssignment } from '../services/assignment.service';
 import type {
   CreatePersonalExerciseInput,
@@ -917,6 +918,14 @@ export const completeStandaloneSession = async (
       user_id: appUser.supabase_auth_id,
       error: coinError,
     });
+  }
+
+  if (coinReward) {
+    await recordMissionProgressAfterSession(
+      appUser.supabase_auth_id,
+      coinReward.total,
+      prisma
+    );
   }
 
   sendSuccess(res, {
