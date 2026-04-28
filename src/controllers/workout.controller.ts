@@ -942,6 +942,7 @@ export const getWorkoutSessions = async (
   sendSuccess(res, {
     sessions: sessions.map((s) => ({
       id: s.id,
+      userId: supabaseId,
       assignedProgramRoutineId: s.assigned_program_routine_id,
       startedAt: s.started_at,
       completedAt: s.completed_at,
