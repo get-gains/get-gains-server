@@ -8,6 +8,10 @@ import { z } from 'zod';
 export const GetExercisesSchema = z.object({
   query: z.object({
     search: z.string().optional(),
+    onlyMine: z.preprocess(
+      (v) => v === 'true' || v === true,
+      z.boolean().optional().default(false)
+    ),
     limit: z.coerce.number().int().min(1).max(100).optional().default(50),
     offset: z.coerce.number().int().min(0).optional().default(0),
   }),
@@ -62,6 +66,21 @@ export type DeleteExerciseParams = z.infer<
   typeof DeleteExerciseSchema
 >['params'];
 
+// ============== Program Schemas ==============
+
+/**
+ * Schema for getting the authenticated user's assigned programs
+ */
+export const GetAssignedProgramsSchema = z.object({
+  query: z.object({
+    activeOnly: z.coerce.boolean().optional().default(true),
+  }),
+});
+
+export type GetAssignedProgramsQuery = z.infer<
+  typeof GetAssignedProgramsSchema
+>['query'];
+
 // ============== Routine Schemas ==============
 
 /**
@@ -91,6 +110,17 @@ export const GetRoutineByIdSchema = z.object({
 export type GetRoutineByIdParams = z.infer<
   typeof GetRoutineByIdSchema
 >['params'];
+
+// ============== Programs Schema ==============
+
+/**
+ * Schema for getting user's assigned programs (client-facing, active only)
+ */
+export const GetProgramsSchema = z.object({
+  query: z.object({}),
+});
+
+export type GetProgramsQuery = z.infer<typeof GetProgramsSchema>['query'];
 
 // ============== Workout Session Schemas ==============
 

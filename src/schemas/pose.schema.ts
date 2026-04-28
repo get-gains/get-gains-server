@@ -75,3 +75,22 @@ export const DownloadExerciseFormSchema = z.object({
 export type DownloadExerciseFormParams = z.infer<
   typeof DownloadExerciseFormSchema
 >['params'];
+
+// ============== Presigned Upload / Download URLs ==============
+
+export const FramesUploadUrlSchema = z.object({
+  body: z.discriminatedUnion('kind', [
+    z.object({
+      kind: z.literal('coach_form'),
+      exerciseId: z.string().min(1, 'Exercise ID is required'),
+    }),
+    z.object({
+      kind: z.literal('client_set'),
+      workoutSessionId: z.string().min(1, 'Workout session ID is required'),
+      setNumber: z.number().int().min(1, 'Set number must be at least 1'),
+    }),
+  ]),
+});
+export type FramesUploadUrlInput = z.infer<
+  typeof FramesUploadUrlSchema
+>['body'];
