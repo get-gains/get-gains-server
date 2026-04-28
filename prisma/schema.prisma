@@ -333,7 +333,6 @@ model cosmetics {
   description       String    @db.Text
   tier              Int
   price             Int
-  category          String
   preview_image_key String
   unity_asset_ref   String    @unique @default("")
   status            String    @default("ACTIVE")
@@ -343,8 +342,6 @@ model cosmetics {
   updated_at        DateTime  @updatedAt @db.Timestamptz
 
   user_cosmetics user_cosmetic[]
-
-  @@index([category])
 }
 
 model user_cosmetic {

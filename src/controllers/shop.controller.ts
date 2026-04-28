@@ -28,16 +28,12 @@ export const getCatalog = async (
   res: Response
 ): Promise<void> => {
   const userId = req.appUser!.supabase_auth_id;
-  const { tier, category } = (res.locals.validated?.query ??
-    {}) as ShopCatalogQuery;
+  const { tier } = (res.locals.validated?.query ?? {}) as ShopCatalogQuery;
 
   // Build filter for active cosmetics (deleted_at null = active)
   const where: Record<string, unknown> = { deleted_at: null };
   if (tier !== undefined) {
     where.tier = tier;
-  }
-  if (category !== undefined) {
-    where.category = category;
   }
 
   // Fetch catalog and owned cosmetic IDs in parallel; balance lives on user record
@@ -60,7 +56,7 @@ export const getCatalog = async (
         description: item.description,
         tier: item.tier,
         coinCost: item.price,
-        category: item.category,
+        category: '',
         previewImageUrl: await resolvePreviewUrl(item.preview_image_key ?? ''),
         unityAssetRef: item.unity_asset_ref ?? '',
         status: item.status ?? 'ACTIVE',
