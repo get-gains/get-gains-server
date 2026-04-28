@@ -11,31 +11,19 @@ import {
   getExerciseForms,
   updateForm,
   deleteForm,
-  activateForm,
-  upsertPoseConfig,
-  getPoseConfig,
-  submitClientResult,
-  getClientHistory,
-  getResultById,
-  getResultsByExercise,
-  getResultsBySession,
   bulkDownloadProgramForms,
   downloadExerciseForm,
+  createFramesUploadUrl,
+  getFormDownloadUrl,
 } from '../controllers/pose.controller';
 import {
   UploadFormSchema,
   UpdateFormSchema,
   GetExerciseFormsSchema,
   FormIdParamSchema,
-  UpsertPoseConfigSchema,
-  GetPoseConfigSchema,
-  SubmitResultSchema,
-  ResultHistorySchema,
-  ResultIdParamSchema,
-  ResultsByExerciseSchema,
-  ResultsBySessionSchema,
   DownloadProgramFormsSchema,
   DownloadExerciseFormSchema,
+  FramesUploadUrlSchema,
 } from '../schemas/pose.schema';
 
 const router = Router();
@@ -82,74 +70,6 @@ router.delete(
   deleteForm
 );
 
-router.patch(
-  '/forms/:formId/activate',
-  authenticateSupabaseUser,
-  requireCoach,
-  validateRequest(FormIdParamSchema),
-  activateForm
-);
-
-// ============== Pose Config ==============
-
-router.put(
-  '/exercises/:exerciseId/config',
-  authenticateSupabaseUser,
-  requireCoach,
-  validateRequest(UpsertPoseConfigSchema),
-  upsertPoseConfig
-);
-
-router.get(
-  '/exercises/:exerciseId/config',
-  authenticateSupabaseUser,
-  requireAppUser,
-  validateRequest(GetPoseConfigSchema),
-  getPoseConfig
-);
-
-// ============== Client Results ==============
-
-router.post(
-  '/results',
-  authenticateSupabaseUser,
-  requireAppUser,
-  validateRequest(SubmitResultSchema),
-  submitClientResult
-);
-
-router.get(
-  '/results',
-  authenticateSupabaseUser,
-  requireAppUser,
-  validateRequest(ResultHistorySchema),
-  getClientHistory
-);
-
-router.get(
-  '/results/:resultId',
-  authenticateSupabaseUser,
-  requireAppUser,
-  validateRequest(ResultIdParamSchema),
-  getResultById
-);
-
-router.get(
-  '/results/exercise/:exerciseId',
-  authenticateSupabaseUser,
-  requireAppUser,
-  validateRequest(ResultsByExerciseSchema),
-  getResultsByExercise
-);
-
-router.get(
-  '/results/session/:sessionId',
-  authenticateSupabaseUser,
-  requireAppUser,
-  validateRequest(ResultsBySessionSchema),
-  getResultsBySession
-);
-
 // ============== Offline Download ==============
 
 router.get(
@@ -166,6 +86,24 @@ router.get(
   requireAppUser,
   validateRequest(DownloadExerciseFormSchema),
   downloadExerciseForm
+);
+
+// ============== Presigned Upload / Download URLs ==============
+
+router.post(
+  '/uploads/frames-url',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(FramesUploadUrlSchema),
+  createFramesUploadUrl
+);
+
+router.get(
+  '/forms/:formId/download-url',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(FormIdParamSchema),
+  getFormDownloadUrl
 );
 
 export default router;

@@ -1,9 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -12,168 +9,17 @@ datasource db {
   provider = "postgresql"
 }
 
-enum Sex {
-  MALE
-  FEMALE
+// ============== Enums ==============
+
+enum CameraAngle {
+  FRONT
+  SIDE_LEFT
+  SIDE_RIGHT
+  REAR
+  ANGLE_45_LEFT
+  ANGLE_45_RIGHT
 }
 
-enum ExperienceLevel {
-  BEGINNER
-  INTERMEDIATE
-  ADVANCED
-}
-
-enum MuscleGroup {
-  TRAPS
-  SHOULDERS
-  CHEST
-  ABS
-  OBLIQUES
-  UPPER_BACK
-  LATS
-  LOWER_BACK
-  BICEPS
-  TRICEPS
-  FOREARMS
-  GLUTES
-  QUADS
-  HAMSTRINGS
-  CALVES
-}
-
-enum TargetMuscle {
-  // --- TRAPS ---
-  UPPER_TRAPS // Shrugs
-  MIDDLE_TRAPS // Kelso Shrugs Rows
-  LOWER_TRAPS // Y-Raises
-
-  // --- SHOULDERS ---
-  FRONT_DELTS // Overhead Press
-  SIDE_DELTS // Lateral Raises
-  REAR_DELTS // Face Pulls (often overlaps with Upper Back)
-  ROTATOR_CUFF // External/Internal rotations (Prehab)
-
-  // --- CHEST ---
-  UPPER_PEC // Incline movements (Clavicular head)
-  MIDDLE_PEC // Flat movements (Sternal head)
-  LOWER_PEC // Decline/Dips (Costal head)
-  OUTER_PEC // Flys (Functional focus)
-
-  // --- ABS ---
-  UPPER_ABS // Crunches
-  LOWER_ABS // Leg Raises
-
-  // --- OBLIQUES ---
-  OBLIQUES // Twists/Side Bends
-  SERRATUS // Push up plus / Pullovers (The "gill" muscles)
-
-  // --- UPPER_BACK ---
-  RHOMBOIDS // Scapular retraction
-  TERES_MAJOR // The "mini lat" - width
-  TERES_MINOR // Part of rotator cuff but contributes to back look
-
-  // --- LATS ---
-  LATS // Vertical pulling / Rows (General)
-  // Note: Lats are anatomically one muscle but bodybuilders often split by:
-  // UPPER_LATS (Thoracic) vs LOWER_LATS (Iliac/Lumbar)
-
-  // --- LOWER_BACK ---
-  ERECTOR_SPINAE // Deadlifts / Extensions
-
-  // --- BICEPS ---
-  BICEP_LONG_HEAD // Outer bicep (peak)
-  BICEP_SHORT_HEAD // Inner bicep (thickness)
-  BRACHIALIS // Muscle under bicep (hammer curls)
-
-  // --- TRICEPS ---
-  TRICEP_LONG_HEAD // Overhead work (biggest head)
-  TRICEP_LATERAL_HEAD // Pushdowns (horseshoe look)
-  TRICEP_MEDIAL_HEAD // Stability / Lockout
-
-  // --- FOREARMS ---
-  BRACHIORADIALIS // Top of forearm (Hammer curls/Reverse curls)
-  WRIST_FLEXORS // Under forearm
-  WRIST_EXTENSORS // Top forearm
-
-  // --- GLUTES ---
-  GLUTE_MAX // Main butt muscle (Thrusts/Squats)
-  GLUTE_MED_MIN // Upper/Side glute (Abductions)
-
-  // --- QUADS ---
-  RECTUS_FEMORIS // Middle thigh / Hip Flexion
-  VASTUS_LATERALIS // Outer sweep
-  VASTUS_MEDIALIS // Inner teardrop
-  VASTUS_INTERMEDIUS // Deep middle
-
-  // --- HAMSTRINGS ---
-  BICEPS_FEMORIS // Outer hamstring
-  SEMITENDINOSUS // Inner hamstring
-  SEMIMEMBRANOSUS // Inner hamstring
-
-  // --- CALVES ---
-  GASTROCNEMIUS // Upper calf (diamond shape) - Straight leg
-  SOLEUS // Lower calf (width) - Bent knee
-  TIBIALIS // Front of shin (often neglected)
-}
-
-enum PaymentProvider {
-  // Add as we go
-  GOOGLE_PAY
-}
-
-enum BillingCycle {
-  DAILY
-  WEEKLY
-  MONTHLY
-  QUARTERLY
-  SEMIANNUALLY
-  YEARLY
-}
-
-// Will have an internal status mapping from different providers to database values
-enum SubscriptionStatus {
-  PENDING
-  ACTIVE
-  PAST_DUE
-  CANCELED
-  EXPIRED
-  // Could be refunded or chargeback
-  REVOKED
-}
-
-enum PaymentStatus {
-  COMPLETED
-  FAILED
-  PENDING
-}
-
-enum WebhookStatus {
-  PENDING
-  PROCESSING
-  COMPLETED
-  FAILED
-}
-
-enum SubscriptionEventType {
-  CREATED
-  RENEWED
-  CANCELED
-  EXPIRED
-  PAUSED
-  RESUMED
-  UPGRADED
-  DOWNGRADED
-  REFUNDED
-  PAYMENT_FAILED
-  PAYMENT_RECOVERED
-}
-
-enum DiscountType {
-  PERCENTAGE
-  FIXED_AMOUNT
-}
-
-// Body segment groups for limb isolation in pose detection
 enum BodySegment {
   HEAD_NECK
   LEFT_ARM
@@ -184,725 +30,493 @@ enum BodySegment {
   FULL_BODY
 }
 
-// Camera angle the form was recorded from
-enum CameraAngle {
-  FRONT
-  SIDE_LEFT
-  SIDE_RIGHT
-  REAR
-  ANGLE_45_LEFT
-  ANGLE_45_RIGHT
-}
-
-model User {
-  id                    String                 @id @default(cuid())
-  supabaseId            String                 @unique
-  email                 String                 @unique
-  name                  String
-  nickname              String
-  createdAt             DateTime               @default(now()) @db.Timestamptz
-  updatedAt             DateTime               @updatedAt @db.Timestamptz
-  profile               UserProfile?
-  coach                 Coach?
-  subscribedCoaches     SubscribedCoach[]
-  workoutSessions       WorkoutSession[]
-  assignedPrograms      AssignedProgram[]
-  customPrograms        Program[]              @relation("CustomPrograms")
-  exercises             Exercise[]             @relation("UserExercises")
-  routines              Routine[]              @relation("UserRoutines")
-  programs              Program[]              @relation("UserPrograms")
-  subscriptions         Subscription[]
-  paymentHistories      PaymentHistory[]
-  promoRedemptions      PromoRedemption[]
-  formComparisonResults FormComparisonResult[]
-  // Gains Coins relations
-  coinBalance           CoinBalance?
-  coinTransactions      CoinTransaction[]
-  userCosmetics         UserCosmetic[]
-  equippedCosmetics     EquippedCosmetic[]
-}
-
-model UserProfile {
-  id        String  @id @default(cuid())
-  userId    String  @unique
-  bio       String?
-  avatarUrl String?
-
-  // Personal Data
-  heightCm        Float?
-  weightKg        Float?
-  unitPreference  String?
-  sex             Sex?
-  dateOfBirth     DateTime?        @db.Timestamptz
-  equipment       String[]
-  injuryHistory   String?          @db.Text
-  experienceLevel ExperienceLevel?
-
-  // Availability
-  daysAvailable          Int
-  sessionDurationMinutes Int
-
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model Coach {
-  id String @id @default(cuid())
-
-  // Identity
-  name      String
-  email     String
-  avatarUrl String?
-  bio       String? @db.Text
-
-  // Credibility Fields
-  yearsExperience        Int      @default(0)
-  certifications         String[]
-  certificationImageUrls String[]
-  awards                 String[]
-  specialties            String[]
-  isVerified             Boolean  @default(false)
-  socialLinks            String[]
-
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
-
-  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId          String            @unique
-  clientRelations SubscribedCoach[]
-  programs        Program[]
-  routines        Routine[]
-  exercises       Exercise[]
-  exerciseForms   ExerciseForm[]
-  settings        CoachSettings?
-}
-
-model CoachSettings {
-  id      String @id @default(cuid())
-  coachId String @unique
-
-  // Client capacity
-  maxClients       Int     @default(40) // Hard cap on active client count
-  acceptingClients Boolean @default(true) // Manual on/off switch for new intake
-
-  // Discovery
-  isDiscoverable Boolean @default(true) // Appear in public coach search results
-
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
-
-  coach Coach @relation(fields: [coachId], references: [id], onDelete: Cascade)
-}
-
-model SubscribedCoach {
-  id        String    @id @default(cuid())
-  userId    String
-  coachId   String
-  startedAt DateTime  @default(now()) @db.Timestamptz
-  endedAt   DateTime? @db.Timestamptz
-  createdAt DateTime  @default(now()) @db.Timestamptz
-
-  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  coach Coach @relation(fields: [coachId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, coachId])
-}
-
-model Program {
-  id          String @id @default(cuid())
-  name        String
-  description String @db.Text
-
-  coachId String?
-  coach   Coach?  @relation(fields: [coachId], references: [id], onDelete: Cascade)
-
-  // User scoping: set = personal program owned by this user
-  userId String?
-  user   User?   @relation("UserPrograms", fields: [userId], references: [id], onDelete: Cascade)
-
-  // When set, this program is a custom one-off for a specific client
-  // (hidden from the coach's reusable program library)
-  customForUserId String?
-  customForUser   User?   @relation("CustomPrograms", fields: [customForUserId], references: [id], onDelete: SetNull)
-
-  createdAt        DateTime          @default(now()) @db.Timestamptz
-  updatedAt        DateTime          @updatedAt @db.Timestamptz
-  programRoutines  ProgramRoutine[]
-  assignedPrograms AssignedProgram[]
-}
-
-// Junction: Which routines belong to which program and on what day/order
-model ProgramRoutine {
-  id String @id @default(cuid())
-
-  programId String
-  routineId String
-  dayNumber Int // Day 1, Day 2, etc. in the program cycle
-
-  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
-  routine Routine @relation(fields: [routineId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
-
-  @@unique([programId, routineId])
-}
-
-model Routine {
-  id String @id @default(cuid())
-
-  coachId String?
-  coach   Coach?  @relation(fields: [coachId], references: [id], onDelete: Cascade)
-
-  // User scoping: set = personal routine owned by this user
-  userId String?
-  user   User?   @relation("UserRoutines", fields: [userId], references: [id], onDelete: Cascade)
-
-  name                     String
-  description              String        @db.Text
-  estimatedDurationMinutes Int
-  muscleGroupsTargeted     MuscleGroup[]
-
-  createdAt        DateTime          @default(now()) @db.Timestamptz
-  updatedAt        DateTime          @updatedAt @db.Timestamptz
-  routineExercises RoutineExercise[]
-  programRoutines  ProgramRoutine[]
-}
-
-// Junction: Exercises in a routine with coach-prescribed sets/reps (the template)
-model RoutineExercise {
-  id String @id @default(cuid())
-
-  routineId  String
-  exerciseId String
-
-  sets           Int
-  repsMin        Int // Minimum reps (e.g., 8 in "8-12 reps")
-  repsMax        Int // Maximum reps (e.g., 12 in "8-12 reps")
-  restSeconds    Int
-  orderInRoutine Int
-  notes          String? @db.Text // Coach notes like "slow eccentric"
-
-  routine  Routine  @relation(fields: [routineId], references: [id], onDelete: Cascade)
-  exercise Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
-
-  createdAt             DateTime               @default(now()) @db.Timestamptz
-  updatedAt             DateTime               @updatedAt @db.Timestamptz
-  performedSets         PerformedSet[]
-  formComparisonResults FormComparisonResult[]
-
-  @@unique([routineId, exerciseId])
-}
-
-model Exercise {
-  id String @id @default(cuid())
-
-  // Coach scoping: null = system/global exercise, set = coach-owned
-  coachId String?
-  coach   Coach?  @relation(fields: [coachId], references: [id], onDelete: SetNull)
-
-  // User scoping: set = personal exercise owned by this user
-  userId String?
-  user   User?   @relation("UserExercises", fields: [userId], references: [id], onDelete: SetNull)
-
-  isPublic Boolean @default(true) // false = private to the coach or user
-
-  name               String
-  description        String         @db.Text
-  targetMuscles      TargetMuscle[]
-  equipmentNeeded    String[]
-  primaryMuscleGroup MuscleGroup
-
-  createdAt        DateTime            @default(now()) @db.Timestamptz
-  updatedAt        DateTime            @updatedAt @db.Timestamptz
-  routineExercises RoutineExercise[]
-  poseConfig       ExercisePoseConfig?
-  exerciseForms    ExerciseForm[]
-}
-
-// A single workout session the user performed
-model WorkoutSession {
-  id String @id @default(cuid())
-
-  userId            String
-  assignedProgramId String?
-  startedAt         DateTime  @db.Timestamptz
-  completedAt       DateTime? @db.Timestamptz
-  notes             String?   @db.Text
-
-  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  assignedProgram AssignedProgram? @relation(fields: [assignedProgramId], references: [id], onDelete: SetNull)
-
-  createdAt             DateTime               @default(now()) @db.Timestamptz
-  updatedAt             DateTime               @updatedAt @db.Timestamptz
-  performedSets         PerformedSet[]
-  formComparisonResults FormComparisonResult[]
-  coinTransactions      CoinTransaction[]
-}
-
-// Individual set performed by user (the actual work done)
-model PerformedSet {
-  id String @id @default(cuid())
-
-  workoutSessionId  String
-  routineExerciseId String
-  setNumber         Int // Which set (1, 2, 3...)
-
-  repsCompleted Int
-  weightKg      Float?
-  rpe           Int? // Rate of Perceived Exertion (1-10)
-  notes         String? @db.Text
-
-  workoutSession  WorkoutSession  @relation(fields: [workoutSessionId], references: [id], onDelete: Cascade)
-  routineExercise RoutineExercise @relation(fields: [routineExerciseId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
-}
-
-model AssignedProgram {
-  id String @id @default(cuid())
-
-  userId    String
-  programId String
-  startDate DateTime  @db.Timestamptz
-  endDate   DateTime? @db.Timestamptz
-  isActive  Boolean   @default(true)
-
-  notes String? @db.Text
-
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
-
-  createdAt       DateTime         @default(now()) @db.Timestamptz
-  updatedAt       DateTime         @updatedAt @db.Timestamptz
-  workoutSessions WorkoutSession[]
-
-  @@unique([userId, programId])
-}
-
-model Plan {
-  id           String       @id @default(cuid())
-  name         String       @unique
-  description  String       @db.Text
-  priceCents   Int
-  currency     String       @default("PHP") // ISO 4217 currency code
-  billingCycle BillingCycle
-  features     String[]
-
-  // Tier level for access control (higher = more access)
-  // 0 = Free, 1 = Basic, 2 = Premium, 3 = Pro, etc.
-  tierLevel Int @default(0)
-
-  // Provider details
-  provider  PaymentProvider
-  productId String          @unique // Full composite: "subscriptionId:basePlanId"
-
-  // Separated IDs for reliable matching (client sends only subscriptionId)
-  // e.g., productId = "get_gains.premium:premium-subscription"
-  //       subscriptionId = "get_gains.premium"
-  //       basePlanId = "premium-subscription"
-  googleSubscriptionId String? // Just the subscription ID for matching
-  googleBasePlanId     String? // Just the base plan ID
-
-  // Trial
-  trialPeriodDays Int?
-  isActive        Boolean @default(true)
-  sortOrder       Int     @default(0)
-
-  createdAt        DateTime         @default(now()) @db.Timestamptz
-  updatedAt        DateTime         @updatedAt @db.Timestamptz
-  subscriptions    Subscription[]
-  paymentHistories PaymentHistory[]
-
-  @@index([googleSubscriptionId])
-}
-
-model Subscription {
-  id             String             @id @default(cuid())
-  userId         String
-  planId         String
-  subscriptionId String             @unique // External ID
-  status         SubscriptionStatus
-
-  // Billing Cycle Tracking
-  startDate          DateTime @db.Timestamptz
-  currentPeriodStart DateTime @db.Timestamptz
-  currentPeriodEnd   DateTime @db.Timestamptz
-  nextBillingDate    DateTime @db.Timestamptz
-
-  // Cancellation
-  cancelAtPeriodEnd Boolean   @default(false)
-  canceledAt        DateTime? @db.Timestamptz
-  endedAt           DateTime? @db.Timestamptz
-
-  // Trial tracking
-  trialStartDate DateTime? @db.Timestamptz
-  orderId        String?   @unique // Latest order ID associated with subscription
-  trialEndDate   DateTime? @db.Timestamptz
-
-  // Provider-specific data
-  purchaseToken String? // For Google Play subscriptions
-  autoRenew     Boolean @default(true)
-
-  metadata Json?
-
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
-
-  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan               Plan                @relation(fields: [planId], references: [id], onDelete: Cascade)
-  paymentHistories   PaymentHistory[]
-  subscriptionEvents SubscriptionEvent[]
-  promoRedemptions   PromoRedemption[]
-}
-
-model PaymentHistory {
-  id             String @id @default(cuid())
-  userId         String
-  planId         String
-  subscriptionId String
-
-  amountCents   Int
-  currency      String
-  paymentDate   DateTime      @db.Timestamptz
-  orderId       String        @unique
-  status        PaymentStatus @default(COMPLETED)
-  paymentMethod String?
-  receiptData   String?       @db.Text
-
-  // Refund tracking
-  refundedAt   DateTime? @db.Timestamptz
-  refundAmount Int?
-  refundReason String?
-
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
-
-  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan         Plan         @relation(fields: [planId], references: [id], onDelete: Cascade)
-}
-
-// Track all webhook events for debugging and compliance
-model WebhookEvent {
-  id             String          @id @default(cuid())
-  provider       PaymentProvider
-  eventType      String // "SUBSCRIPTION_RENEWED", "SUBSCRIPTION_CANCELED", etc.
-  subscriptionId String? // Link to subscription if applicable
-
-  // Raw payload data
-  rawPayload  Json
-  processedAt DateTime @default(now()) @db.Timestamptz
-
-  // Processing status
-  status       WebhookStatus @default(PENDING)
-  errorMessage String?       @db.Text
-  retryCount   Int           @default(0)
-
-  // Request metadata
-  ipAddress String?
-  userAgent String?
-
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
-}
-
-// Track all subscription state changes for compliance and debugging
-model SubscriptionEvent {
-  id             String                @id @default(cuid())
-  subscriptionId String
-  eventType      SubscriptionEventType
-  fromStatus     SubscriptionStatus?
-  toStatus       SubscriptionStatus?
-
-  // Context
-  triggeredBy String? // "user", "system", "webhook", "admin"
-  reason      String? @db.Text
-  metadata    Json?
-
-  createdAt DateTime @default(now()) @db.Timestamptz
-
-  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-}
-
-// Promo codes / coupons system
-model PromoCode {
-  id          String  @id @default(cuid())
-  code        String  @unique
-  description String?
-
-  // Discount details
-  discountType  DiscountType
-  discountValue Int // Percentage (0-100) or cents amount
-
-  // Validity period
-  validFrom  DateTime  @db.Timestamptz
-  validUntil DateTime? @db.Timestamptz
-
-  // Usage limits
-  maxUses     Int? // Null = unlimited
-  currentUses Int  @default(0)
-
-  // Restrictions
-  applicablePlans String[] // Plan IDs this applies to (empty = all plans)
-  firstTimeOnly   Boolean  @default(false) // Only for users with no previous subscriptions
-
-  isActive Boolean @default(true)
-
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
-
-  redemptions PromoRedemption[]
-}
-
-model PromoRedemption {
-  id             String   @id @default(cuid())
-  promoCodeId    String
-  userId         String
-  subscriptionId String?
-  redeemedAt     DateTime @default(now()) @db.Timestamptz
-
-  promoCode    PromoCode     @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
-}
-
-// ============== Pose Detection Models ==============
-
-// Per-exercise configuration for pose analysis
-// Defines WHICH body segments matter and HOW to analyze them
-model ExercisePoseConfig {
-  id         String @id @default(cuid())
-  exerciseId String @unique
-
-  // Which body segments to analyze (limb isolation)
-  // e.g., Squat = [TORSO, LEFT_LEG, RIGHT_LEG]
-  // e.g., Bicep Curl = [LEFT_ARM, RIGHT_ARM]
-  activeSegments BodySegment[]
-
-  // Recommended camera angle(s) for this exercise
-  recommendedAngles CameraAngle[]
-
-  // Which specific angles (joint angles) to track and report corrections on
-  // Stored as JSON array: [{ "name": "kneeFlexion", "landmarks": ["LEFT_HIP", "LEFT_KNEE", "LEFT_ANKLE"], "idealMin": 80, "idealMax": 100 }]
-  trackedAngles Json
-
-  // Minimum landmark confidence threshold (0.0 - 1.0)
-  // Landmarks below this are ignored during comparison
-  minLandmarkConfidence Float @default(0.5)
-
-  // Additional notes for the client UI (e.g., "Keep full body in frame")
-  setupInstructions String? @db.Text
-
-  exercise Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
-}
-
-// A single reference form recording uploaded by a coach for an exercise.
-// Contains the processed pose landmark data (NOT video — video stays on device or is discarded).
-model ExerciseForm {
-  id         String @id @default(cuid())
-  exerciseId String
-  coachId    String
-
-  // Recording metadata
-  cameraAngle CameraAngle
-  durationMs  Int // Duration of the recording in milliseconds
-  frameRate   Int // FPS the landmarks were captured at (e.g., 15 or 30)
-  totalFrames Int // Total number of valid pose frames
-
-  // The core data: processed pose landmarks per frame
-  // JSON array of frames, each frame is an object with timestamp + landmarks
-  // Structure: [{ "timestampMs": 0, "landmarks": { "LEFT_SHOULDER": { "x": 0.5, "y": 0.3, "z": 0.1, "confidence": 0.95 }, ... } }, ...]
-  landmarkFrames Json
-
-  // Pre-extracted feature vectors for faster client-side comparison
-  // Structure: [{ "timestampMs": 0, "angles": { "kneeFlexion": 92.5, "hipHinge": 78.3, ... }, "distances": { ... } }, ...]
-  featureFrames Json
-
-  // Optional: normalized/Procrustes-aligned version for direct DTW input
-  normalizedFrames Json?
-
-  // Which form version this is (coach can re-record to improve)
-  version  Int     @default(1)
-  isActive Boolean @default(true) // Only one active form per exercise per angle
-
-  // Quality metadata from the app's recording validation
-  avgLandmarkConfidence Float?
-  recordingQuality      String? // "good", "acceptable", "poor"
-
-  exercise Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
-  coach    Coach    @relation(fields: [coachId], references: [id], onDelete: Cascade)
-
-  createdAt         DateTime               @default(now()) @db.Timestamptz
-  updatedAt         DateTime               @updatedAt @db.Timestamptz
-  comparisonResults FormComparisonResult[]
-
-  @@index([exerciseId, isActive])
-  @@index([coachId])
-}
-
-// A single form comparison attempt by a client
-// The app performs DTW comparison on-device, then uploads the result here for records
-model FormComparisonResult {
-  id                String  @id @default(cuid())
-  userId            String
-  exerciseFormId    String // Which coach reference form was compared against
-  workoutSessionId  String? // Optional link to the workout session this was part of
-  routineExerciseId String? // Optional link to the specific routine exercise
-
-  // Overall similarity score (0.0 - 1.0, where 1.0 = perfect match)
-  overallScore Float
-
-  // Per-segment scores (limb isolation results)
-  // JSON: { "TORSO": 0.85, "LEFT_LEG": 0.72, "RIGHT_LEG": 0.78 }
-  segmentScores Json
-
-  // Angle corrections: specific joint angles that were off
-  // JSON array: [{ "angleName": "kneeFlexion", "segment": "LEFT_LEG", "avgDeviation": 12.5, "maxDeviation": 25.0, "direction": "too_shallow", "message": "..." }]
-  corrections Json
-
-  // Client's recording metadata
-  cameraAngle           CameraAngle
-  durationMs            Int
-  frameRate             Int
-  totalFrames           Int
-  avgLandmarkConfidence Float?
-
-  // Optional: client's landmark frames (for future replay / advanced analysis)
-  clientLandmarkFrames Json?
-
-  // Optional: client's feature frames
-  clientFeatureFrames Json?
-
-  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  exerciseForm    ExerciseForm     @relation(fields: [exerciseFormId], references: [id], onDelete: Cascade)
-  workoutSession  WorkoutSession?  @relation(fields: [workoutSessionId], references: [id], onDelete: SetNull)
-  routineExercise RoutineExercise? @relation(fields: [routineExerciseId], references: [id], onDelete: SetNull)
-
-  createdAt DateTime @default(now()) @db.Timestamptz
-
-  @@index([userId, exerciseFormId])
-  @@index([userId, createdAt])
-  @@index([workoutSessionId])
-}
-
-// ============== Gains Coins Economy Models ==============
-
 enum CoinTransactionType {
   SESSION_REWARD
   SHOP_PURCHASE
+  MISSION_REWARD
 }
 
-enum CosmeticCategory {
-  HEADWEAR
-  TOP
-  BOTTOM
-  ACCESSORY
+// ============== RevenueCat Enums ==============
+
+enum SubscriptionTier {
+  FREE
+  PREMIUM
 }
 
-enum CosmeticStatus {
+enum RcSubscriptionStatus {
   ACTIVE
-  RETIRED
+  TRIALING
+  GRACE_PERIOD
+  PAUSED
+  EXPIRED
+  CANCELLED
 }
 
-model CoinBalance {
-  id             String   @id @default(cuid())
-  userId         String   @unique
-  currentBalance Int      @default(0)
-  lifetimeEarned Int      @default(0)
-  lifetimeSpent  Int      @default(0)
-  updatedAt      DateTime @updatedAt @db.Timestamptz
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+enum SubscriptionStore {
+  APP_STORE
+  PLAY_STORE
+  STRIPE
+  PROMOTIONAL
 }
 
-model CoinTransaction {
-  id                 String              @id @default(cuid())
-  userId             String
-  type               CoinTransactionType
-  amount             Int
-  balanceAfter       Int
-  // Earning breakdown (null for spending transactions)
-  setCoins           Int?
-  accuracyMultiplier Float?
-  completionBonus    Int?
-  durationBonus      Int?
-  streakBonus        Int?
-  streakValue        Int?
-  setsCompleted      Int?
-  avgAccuracy        Float?
-  sessionDurationMin Int?
-  // References
-  workoutSessionId   String?
-  userCosmeticId     String?
-  createdAt          DateTime            @default(now()) @db.Timestamptz
-
-  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workoutSession WorkoutSession? @relation(fields: [workoutSessionId], references: [id], onDelete: SetNull)
-  userCosmetic   UserCosmetic?   @relation(fields: [userCosmeticId], references: [id], onDelete: SetNull)
-
-  @@index([userId, createdAt])
-  @@index([workoutSessionId])
+enum RcEventType {
+  INITIAL_PURCHASE
+  RENEWAL
+  CANCELLATION
+  UNCANCELLATION
+  NON_RENEWING_PURCHASE
+  EXPIRATION
+  BILLING_ISSUE
+  PRODUCT_CHANGE
+  TRANSFER
+  SUBSCRIPTION_PAUSED
+  SUBSCRIPTION_EXTENDED
+  TEMPORARY_ENTITLEMENT_GRANT
+  REFUND
+  TEST
 }
 
-model Cosmetic {
-  id              String           @id @default(cuid())
+enum RcEventStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum DayOfWeek {
+  SUNDAY
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+}
+
+// ============== Identity ==============
+
+model user {
+  supabase_auth_id    String      @id
+  email               String      @unique
+  full_name           String
+  nickname            String
+  is_coach            Boolean     @default(false)
+  bio                 String?     @db.Text
+  avatar_key          String?
+  height_cm           Int?
+  weight_kg           Int?
+  sex                 String?
+  date_of_birth       DateTime?   @db.Timestamptz
+  equipment_available String[]
+  experience_level    String?
+  injury_history      String?     @db.Text
+  active_weekdays     DayOfWeek[]
+  coin_balance        Int         @default(0)
+  deleted_at          DateTime?   @db.Timestamptz
+  created_at          DateTime    @default(now()) @db.Timestamptz
+  updated_at          DateTime    @updatedAt @db.Timestamptz
+
+  // Denormalized for O(1) tier gate checks. Updated by RC webhook handler.
+  active_subscription_tier SubscriptionTier @default(FREE)
+
+  coach                  coach?
+  subscribed_coaches     subscribed_coach[]
+  routines               routine[]
+  exercises              exercise[]
+  coached_programs       assigned_program[]      @relation("CoachPrograms")
+  client_programs        assigned_program[]      @relation("ClientPrograms")
+  coin_transactions      coin_transactions[]
+  user_cosmetics         user_cosmetic[]
+  user_missions          user_mission[]
+  user_subscription      user_subscription?
+  rc_subscription_events rc_subscription_event[]
+}
+
+model coach {
+  user_id           String   @id
+  certifications    String[]
+  specialties       String[]
+  social_links      String[]
+  max_clients       Int      @default(40)
+  accepting_clients Boolean  @default(true)
+  is_discoverable   Boolean  @default(true)
+  created_at        DateTime @default(now()) @db.Timestamptz
+  updated_at        DateTime @updatedAt @db.Timestamptz
+
+  user             user               @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
+  client_relations subscribed_coach[]
+}
+
+model subscribed_coach {
+  id         String    @id @default(cuid())
+  coach_id   String
+  user_id    String
+  started_at DateTime  @default(now()) @db.Timestamptz
+  ended_at   DateTime? @db.Timestamptz
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+
+  coach coach @relation(fields: [coach_id], references: [user_id], onDelete: Cascade)
+  user  user  @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([coach_id])
+}
+
+// ============== Training Library (Coach Templates) ==============
+
+model routine {
+  id                         String    @id @default(cuid())
+  user_id                    String
+  name                       String
+  description                String    @db.Text
+  estimated_duration_minutes Int
+  deleted_at                 DateTime? @db.Timestamptz
+  created_at                 DateTime  @default(now()) @db.Timestamptz
+  updated_at                 DateTime  @updatedAt @db.Timestamptz
+
+  user                      user                       @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
+  assigned_program_routines assigned_program_routine[]
+
+  @@index([user_id])
+}
+
+model exercise {
+  id              String    @id @default(cuid())
+  user_id         String
   name            String
-  description     String?          @db.Text
-  tier            Int
-  coinCost        Int
-  category        CosmeticCategory
-  previewImageUrl String
-  unityAssetRef   String           @unique
-  status          CosmeticStatus   @default(ACTIVE)
-  sortOrder       Int              @default(0)
-  createdAt       DateTime         @default(now()) @db.Timestamptz
-  updatedAt       DateTime         @updatedAt @db.Timestamptz
+  description     String    @db.Text
+  target_muscles  String[]
+  active_segments String[]
+  is_public       Boolean   @default(false)
+  deleted_at      DateTime? @db.Timestamptz
+  created_at      DateTime  @default(now()) @db.Timestamptz
+  updated_at      DateTime  @updatedAt @db.Timestamptz
 
-  userCosmetics     UserCosmetic[]
-  equippedCosmetics EquippedCosmetic[]
+  user                               user                                @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
+  exercise_forms                     exercise_form[]
+  assigned_program_routine_exercises assigned_program_routine_exercise[]
 
-  @@index([status, tier])
-  @@index([category, status])
+  @@index([user_id])
+  @@index([is_public])
 }
 
-model UserCosmetic {
-  id          String   @id @default(cuid())
-  userId      String
-  cosmeticId  String
-  purchasedAt DateTime @default(now()) @db.Timestamptz
+model exercise_form {
+  id                  String      @id @default(cuid())
+  exercise_id         String
+  camera_angle        CameraAngle
+  recorded_frames_key String
+  created_at          DateTime    @default(now()) @db.Timestamptz
+  updated_at          DateTime    @updatedAt @db.Timestamptz
 
-  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  cosmetic         Cosmetic          @relation(fields: [cosmeticId], references: [id], onDelete: Restrict)
-  coinTransactions CoinTransaction[]
+  exercise exercise @relation(fields: [exercise_id], references: [id], onDelete: Cascade)
 
-  @@unique([userId, cosmeticId])
-  @@index([userId])
+  @@index([exercise_id, camera_angle])
 }
 
-model EquippedCosmetic {
-  id         String           @id @default(cuid())
-  userId     String
-  cosmeticId String
-  category   CosmeticCategory
-  equippedAt DateTime         @default(now()) @db.Timestamptz
+// ============== Assignment & Execution (Snapshot Pattern) ==============
 
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  cosmetic Cosmetic @relation(fields: [cosmeticId], references: [id], onDelete: Cascade)
+model assigned_program {
+  id          String    @id @default(cuid())
+  user_id     String
+  coach_id    String
+  name        String
+  description String    @db.Text
+  notes       String?   @db.Text
+  is_active   Boolean   @default(true)
+  start_date  DateTime? @db.Timestamptz
+  end_date    DateTime? @db.Timestamptz
+  deleted_at  DateTime? @db.Timestamptz
+  created_at  DateTime  @default(now()) @db.Timestamptz
+  updated_at  DateTime  @updatedAt @db.Timestamptz
 
-  @@unique([userId, category])
-  @@index([userId])
+  user                      user                       @relation("ClientPrograms", fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
+  coach                     user                       @relation("CoachPrograms", fields: [coach_id], references: [supabase_auth_id], onDelete: Cascade)
+  assigned_program_routines assigned_program_routine[]
+
+  @@index([user_id])
+  @@index([coach_id])
 }
 
-model EconomyConfig {
-  key         String   @id
-  value       Json
-  description String?  @db.Text
-  updatedAt   DateTime @updatedAt @db.Timestamptz
+model assigned_program_routine {
+  id                         String    @id @default(cuid())
+  assigned_program_id        String
+  source_routine_id          String?
+  name                       String
+  description                String    @db.Text
+  estimated_duration_minutes Int
+  order_in_program           Int
+  days_of_week               String[]
+  deleted_at                 DateTime? @db.Timestamptz
+  created_at                 DateTime  @default(now()) @db.Timestamptz
+  updated_at                 DateTime  @updatedAt @db.Timestamptz
+
+  source_routine                     routine?                            @relation(fields: [source_routine_id], references: [id], onDelete: SetNull)
+  assigned_program                   assigned_program                    @relation(fields: [assigned_program_id], references: [id], onDelete: Cascade)
+  assigned_program_routine_exercises assigned_program_routine_exercise[]
+  workout_sessions                   workout_session[]
+
+  @@index([assigned_program_id])
+  @@index([source_routine_id])
+}
+
+model assigned_program_routine_exercise {
+  id                          String    @id @default(cuid())
+  assigned_program_routine_id String
+  exercise_id                 String
+  sets                        Int
+  reps_min                    Int
+  reps_max                    Int
+  rest_seconds                Int
+  order_in_routine            Int
+  deleted_at                  DateTime? @db.Timestamptz
+  created_at                  DateTime  @default(now()) @db.Timestamptz
+  updated_at                  DateTime  @updatedAt @db.Timestamptz
+
+  assigned_program_routine assigned_program_routine @relation(fields: [assigned_program_routine_id], references: [id], onDelete: Cascade)
+  exercise                 exercise                 @relation(fields: [exercise_id], references: [id], onDelete: Restrict)
+  performed_sets           performed_set[]
+
+  @@index([assigned_program_routine_id])
+  @@index([exercise_id])
+}
+
+model workout_session {
+  id                          String    @id @default(cuid())
+  assigned_program_routine_id String
+  started_at                  DateTime? @db.Timestamptz
+  completed_at                DateTime? @db.Timestamptz
+  feedback                    String?   @db.Text
+  deleted_at                  DateTime? @db.Timestamptz
+  created_at                  DateTime  @default(now()) @db.Timestamptz
+  updated_at                  DateTime  @updatedAt @db.Timestamptz
+
+  assigned_program_routine assigned_program_routine @relation(fields: [assigned_program_routine_id], references: [id], onDelete: Cascade)
+  performed_sets           performed_set[]
+  coin_transactions        coin_transactions[]
+
+  @@index([assigned_program_routine_id])
+  @@index([completed_at])
+}
+
+model performed_set {
+  id                                   String    @id @default(cuid())
+  workout_session_id                   String
+  assigned_program_routine_exercise_id String
+  set_number                           Int
+  reps                                 Int
+  weight                               Float
+  overall_score                        Int
+  recorded_frames_key                  String?
+  completed_at                         DateTime  @db.Timestamptz
+  deleted_at                           DateTime? @db.Timestamptz
+  created_at                           DateTime  @default(now()) @db.Timestamptz
+  updated_at                           DateTime  @updatedAt @db.Timestamptz
+  // Snapshot columns — populated at set-creation time, never updated from upstream
+  exercise_name_snapshot               String?
+  target_reps_min                      Int?
+  target_reps_max                      Int?
+  target_rest_seconds                  Int?
+  target_weight_kg                     Float?
+
+  workout_session                   workout_session                   @relation(fields: [workout_session_id], references: [id], onDelete: Cascade)
+  assigned_program_routine_exercise assigned_program_routine_exercise @relation(fields: [assigned_program_routine_exercise_id], references: [id], onDelete: Cascade)
+
+  @@index([workout_session_id])
+  @@index([assigned_program_routine_exercise_id])
+}
+
+// ============== Gamification ==============
+
+model cosmetics {
+  id                String    @id @default(cuid())
+  name              String
+  description       String    @db.Text
+  tier              Int
+  price             Int
+  preview_image_key String
+  unity_asset_ref   String    @unique @default("")
+  status            String    @default("ACTIVE")
+  sort_order        Int       @default(0)
+  deleted_at        DateTime? @db.Timestamptz
+  created_at        DateTime  @default(now()) @db.Timestamptz
+  updated_at        DateTime  @updatedAt @db.Timestamptz
+
+  user_cosmetics user_cosmetic[]
+}
+
+model user_cosmetic {
+  user_id     String
+  cosmetic_id String
+  equipped_at DateTime? @db.Timestamptz
+  created_at  DateTime  @default(now()) @db.Timestamptz
+  updated_at  DateTime  @updatedAt @db.Timestamptz
+
+  user              user                @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
+  cosmetic          cosmetics           @relation(fields: [cosmetic_id], references: [id], onDelete: Restrict)
+  coin_transactions coin_transactions[]
+
+  @@id([user_id, cosmetic_id])
+  @@index([user_id])
+}
+
+model coin_transactions {
+  id                        String              @id @default(cuid())
+  user_id                   String
+  transaction_type          CoinTransactionType
+  value                     Int
+  balance_after             Int
+  // Earning breakdown (null for spending transactions)
+  set_coins                 Int?
+  accuracy_multiplier       Float?
+  completion_bonus          Int?
+  duration_bonus            Int?
+  streak_bonus              Int?
+  streak_value              Int?
+  sets_completed            Int?
+  avg_accuracy              Float?
+  session_duration_min      Int?
+  // References
+  workout_session_id        String?
+  user_cosmetic_user_id     String?
+  user_cosmetic_cosmetic_id String?
+  user_mission_id           String?
+  created_at                DateTime            @default(now()) @db.Timestamptz
+
+  user            user             @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
+  workout_session workout_session? @relation(fields: [workout_session_id], references: [id], onDelete: SetNull)
+  user_cosmetic   user_cosmetic?   @relation(fields: [user_cosmetic_user_id, user_cosmetic_cosmetic_id], references: [user_id, cosmetic_id], onDelete: SetNull)
+  user_mission    user_mission?    @relation(fields: [user_mission_id], references: [id], onDelete: SetNull)
+
+  @@index([user_id, created_at])
+  @@index([workout_session_id])
+  @@index([user_mission_id])
+}
+
+// ============== Missions & Partners ==============
+
+model partner {
+  id           String   @id @default(cuid())
+  name         String
+  logo_key     String
+  bio          String   @db.Text
+  social_links String[]
+  created_at   DateTime @default(now()) @db.Timestamptz
+  updated_at   DateTime @updatedAt @db.Timestamptz
+
+  missions mission[]
+}
+
+model mission {
+  id                 String    @id @default(cuid())
+  partner_id         String?
+  title              String
+  description        String    @db.Text
+  goal_type          String
+  goal_to_reach      Int
+  reward_coins       Int       @default(0)
+  reward_title       String?
+  reward_description String?   @db.Text
+  reward_image_key   String?
+  max_winners        Int?
+  is_repeatable      Boolean   @default(false)
+  starts_at          DateTime? @db.Timestamptz
+  ends_at            DateTime? @db.Timestamptz
+  created_at         DateTime  @default(now()) @db.Timestamptz
+  updated_at         DateTime  @updatedAt @db.Timestamptz
+
+  partner       partner?       @relation(fields: [partner_id], references: [id], onDelete: SetNull)
+  user_missions user_mission[]
+
+  @@index([partner_id])
+  @@index([starts_at, ends_at])
+}
+
+model user_mission {
+  id           String    @id @default(cuid())
+  user_id      String
+  mission_id   String
+  status       String
+  progress     Int       @default(0)
+  completed_at DateTime? @db.Timestamptz
+  created_at   DateTime  @default(now()) @db.Timestamptz
+  updated_at   DateTime  @updatedAt @db.Timestamptz
+
+  user               user                @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
+  mission            mission             @relation(fields: [mission_id], references: [id], onDelete: Cascade)
+  raffle_entries     raffle_entry[]
+  coin_transactions  coin_transactions[]
+
+  @@unique([user_id, mission_id])
+  @@index([user_id])
+  @@index([mission_id])
+}
+
+model raffle_entry {
+  id              String   @id @default(cuid())
+  user_mission_id String
+  is_winner       Boolean  @default(false)
+  created_at      DateTime @default(now()) @db.Timestamptz
+  updated_at      DateTime @updatedAt @db.Timestamptz
+
+  user_mission user_mission @relation(fields: [user_mission_id], references: [id], onDelete: Cascade)
+
+  @@index([user_mission_id])
+}
+
+// ============== RevenueCat Subscription Domain ==============
+
+model user_subscription {
+  user_id String @id
+  user    user   @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
+
+  tier   SubscriptionTier
+  status RcSubscriptionStatus
+  store  SubscriptionStore
+
+  entitlement_id    String
+  product_id        String
+  rc_original_tx_id String? @unique
+
+  current_period_start DateTime  @db.Timestamptz
+  current_period_end   DateTime  @db.Timestamptz
+  trial_ends_at        DateTime? @db.Timestamptz
+  cancel_at_period_end Boolean   @default(false)
+  will_renew           Boolean   @default(true)
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  @@index([status, current_period_end])
+  @@index([tier, status])
+}
+
+model rc_subscription_event {
+  id      String @id @default(cuid())
+  user_id String
+  user    user   @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
+
+  event_type RcEventType
+  status     RcEventStatus @default(PENDING)
+
+  from_tier   SubscriptionTier?
+  to_tier     SubscriptionTier?
+  from_status RcSubscriptionStatus?
+  to_status   RcSubscriptionStatus?
+
+  store          SubscriptionStore?
+  product_id     String?
+  entitlement_id String?
+
+  rc_event_id String   @unique
+  occurred_at DateTime @db.Timestamptz
+
+  raw_payload   Json
+  error_message String?   @db.Text
+  retry_count   Int       @default(0)
+  processed_at  DateTime? @db.Timestamptz
+
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  @@index([user_id, occurred_at(sort: Desc)])
+  @@index([status, created_at])
 }

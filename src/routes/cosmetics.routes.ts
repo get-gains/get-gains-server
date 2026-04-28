@@ -31,7 +31,7 @@ router.get(
 
 /**
  * @route   POST /api/cosmetics/equip
- * @desc    Equip a cosmetic in its category slot (replaces existing)
+ * @desc    Equip a cosmetic (FIFO slots; oldest unequipped when at max)
  * @access  Protected
  */
 router.post(
@@ -44,7 +44,7 @@ router.post(
 
 /**
  * @route   POST /api/cosmetics/unequip
- * @desc    Unequip a cosmetic from its category slot
+ * @desc    Unequip a cosmetic by ID
  * @access  Protected
  */
 router.post(

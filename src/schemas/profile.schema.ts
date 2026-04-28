@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DayOfWeekSchema } from './day.schema';
 
 // ─── Shared field schemas ────────────────────────────────────────────
 const sexEnum = z.enum(['MALE', 'FEMALE']);
@@ -72,7 +73,6 @@ export const CreateUserProfileSchema = z.object({
     // Personal Data
     heightCm: z.preprocess(toNumber, z.number().positive().max(300).optional()),
     weightKg: z.preprocess(toNumber, z.number().positive().max(700).optional()),
-    unitPreference: z.string().max(20).optional(),
     sex: sexEnum.optional(),
     dateOfBirth: z.preprocess(
       toDatetime,
@@ -82,25 +82,11 @@ export const CreateUserProfileSchema = z.object({
       toArray,
       z.array(z.string().max(100)).max(50).optional().default([])
     ),
-    injuryHistory: z.string().max(5000).optional(),
     experienceLevel: experienceLevelEnum.optional(),
-
-    // Availability (required for onboarding)
-    daysAvailable: z.preprocess(
-      toNumber,
-      z
-        .number()
-        .int()
-        .min(1, 'Must be available at least 1 day')
-        .max(7, 'Cannot exceed 7 days')
-    ),
-    sessionDurationMinutes: z.preprocess(
-      toNumber,
-      z
-        .number()
-        .int()
-        .min(10, 'Session must be at least 10 minutes')
-        .max(300, 'Session cannot exceed 300 minutes')
+    injuryHistory: z.string().max(500).optional(),
+    activeWeekdays: z.preprocess(
+      toArray,
+      z.array(DayOfWeekSchema).max(7).optional().default([])
     ),
   }),
 });
@@ -117,7 +103,6 @@ export const UpdateUserProfileSchema = z.object({
     // Personal Data
     heightCm: z.preprocess(toNumber, z.number().positive().max(300).optional()),
     weightKg: z.preprocess(toNumber, z.number().positive().max(700).optional()),
-    unitPreference: z.string().max(20).optional(),
     sex: sexEnum.optional(),
     dateOfBirth: z.preprocess(
       toDatetime,
@@ -127,27 +112,11 @@ export const UpdateUserProfileSchema = z.object({
       toArray,
       z.array(z.string().max(100)).max(50).optional()
     ),
-    injuryHistory: z.string().max(5000).nullish(),
     experienceLevel: experienceLevelEnum.optional(),
-
-    // Availability
-    daysAvailable: z.preprocess(
-      toNumber,
-      z
-        .number()
-        .int()
-        .min(1, 'Must be available at least 1 day')
-        .max(7, 'Cannot exceed 7 days')
-        .optional()
-    ),
-    sessionDurationMinutes: z.preprocess(
-      toNumber,
-      z
-        .number()
-        .int()
-        .min(10, 'Session must be at least 10 minutes')
-        .max(300, 'Session cannot exceed 300 minutes')
-        .optional()
+    injuryHistory: z.string().max(500).nullish(),
+    activeWeekdays: z.preprocess(
+      toArray,
+      z.array(DayOfWeekSchema).max(7).optional()
     ),
   }),
 });
@@ -158,7 +127,7 @@ export type UpdateUserProfileInput = z.infer<
 // ─── Coach: Get client profile ──────────────────────────────────────
 export const GetClientProfileSchema = z.object({
   params: z.object({
-    userId: z.string().cuid('Invalid user ID'),
+    userId: z.string().min(1, 'User ID required'),
   }),
 });
 export type GetClientProfileParams = z.infer<

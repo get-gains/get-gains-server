@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
 import prisma from '../config/database';
+import { resolveAvatarUrl } from '../services/upload.service';
 import { logger } from '../utils/logger';
-import { sendSuccess, sendSingleError } from '../utils/response';
+import { sendSuccess } from '../utils/response';
 import {
   CreateUserData,
   CreateUserFromGoogleData,
@@ -12,16 +13,52 @@ import {
   UnsubscribeCoachParams,
   UpdateProfileInput,
 } from '../schemas/user.schema';
+import {
+  ConflictException,
+  NotFoundException,
+  UnauthorizedException,
+} from '../lib/errors';
+
+/**
+ * Flatten the nested Prisma coach+user shape into the flat DTO
+ * the Flutter client expects.
+ */
+async function flattenCoach(coach: {
+  user_id: string;
+  certifications: string[];
+  specialties: string[];
+  social_links?: string[];
+  created_at: Date;
+  user: {
+    full_name: string;
+    email: string;
+    avatar_key: string | null;
+    bio: string | null;
+  };
+  [key: string]: unknown;
+}): Promise<Record<string, unknown>> {
+  const { user_id, user, social_links, created_at, ...rest } = coach;
+  return {
+    id: user_id,
+    name: user.full_name,
+    email: user.email,
+    avatarUrl: await resolveAvatarUrl(user.avatar_key),
+    bio: user.bio,
+    ...rest,
+    ...(social_links !== undefined ? { socialLinks: social_links } : {}),
+    createdAt: created_at,
+  };
+}
 
 export const createUser = async (data: CreateUserData) => {
-  const { email, name, nickname, supabaseId } = data;
+  const { email, full_name, nickname, supabase_auth_id } = data;
   // Create user in database
   const user = await prisma.user.create({
     data: {
       email: email.toLowerCase(),
-      name,
+      full_name,
       nickname,
-      supabaseId,
+      supabase_auth_id,
     },
   });
 
@@ -30,7 +67,7 @@ export const createUser = async (data: CreateUserData) => {
 
 export const getUserBySupabaseId = async (supabaseId: string) => {
   return await prisma.user.findUnique({
-    where: { supabaseId },
+    where: { supabase_auth_id: supabaseId },
   });
 };
 
@@ -44,61 +81,72 @@ export const createUserFromGoogle = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const { email, name, nickname, supabaseId }: CreateUserFromGoogleData = res
-      .locals.validated?.body as CreateUserFromGoogleData;
+  const {
+    email,
+    full_name,
+    nickname,
+    supabase_auth_id,
+  }: CreateUserFromGoogleData = res.locals.validated
+    ?.body as CreateUserFromGoogleData;
 
-    logger.debug('Creating user from Google OAuth', { email, supabaseId });
+  logger.debug('Creating user from Google OAuth', {
+    email,
+    supabase_auth_id,
+  });
 
-    // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
-    });
+  // Check if user already exists
+  const existingUser = await prisma.user.findUnique({
+    where: { email: email.toLowerCase() },
+  });
 
-    if (existingUser) {
-      logger.debug('User already exists', { email });
-      sendSingleError(res, 'User already exists', 409, 'email');
-      return;
-    }
-
-    // Also check by supabaseId
-    const existingBySupabase = await prisma.user.findUnique({
-      where: { supabaseId },
-    });
-
-    if (existingBySupabase) {
-      logger.debug('User already exists with this Supabase ID', { supabaseId });
-      sendSingleError(res, 'User already exists', 409);
-      return;
-    }
-
-    // Create user
-    const user = await createUser({ email, name, nickname, supabaseId });
-
-    logger.info('User created from Google OAuth', {
-      userId: user.id,
-      email: user.email,
-    });
-
-    sendSuccess(
-      res,
+  if (existingUser) {
+    logger.debug('User already exists', { email });
+    throw new ConflictException('USER_ALREADY_EXISTS', 'User already exists', [
       {
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          nickname: user.nickname,
-          supabaseId: user.supabaseId,
-        },
+        code: 'USER_EMAIL_TAKEN',
+        message: 'User already exists',
+        field: 'email',
       },
-      201
-    );
-    return;
-  } catch (error) {
-    logger.error('Error creating user from Google', error);
-    sendSingleError(res, 'Internal server error', 500);
-    return;
+    ]);
   }
+
+  // Also check by supabase_auth_id
+  const existingBySupabase = await prisma.user.findUnique({
+    where: { supabase_auth_id },
+  });
+
+  if (existingBySupabase) {
+    logger.debug('User already exists with this Supabase ID', {
+      supabase_auth_id,
+    });
+    throw new ConflictException('USER_ALREADY_EXISTS', 'User already exists');
+  }
+
+  // Create user
+  const user = await createUser({
+    email,
+    full_name,
+    nickname,
+    supabase_auth_id,
+  });
+
+  logger.info('User created from Google OAuth', {
+    userId: user.supabase_auth_id,
+    email: user.email,
+  });
+
+  sendSuccess(
+    res,
+    {
+      user: {
+        supabase_auth_id: user.supabase_auth_id,
+        email: user.email,
+        full_name: user.full_name,
+        nickname: user.nickname,
+      },
+    },
+    201
+  );
 };
 
 /**
@@ -108,75 +156,77 @@ export const discoverCoaches = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const { search, limit, offset } = res.locals.validated
-      ?.query as DiscoverCoachesQuery;
-    const take = Math.min(Math.max(1, limit || 50), 100);
-    const skip = Math.max(0, offset || 0);
+  const { search, limit, offset } = res.locals.validated
+    ?.query as DiscoverCoachesQuery;
+  const take = Math.min(Math.max(1, limit || 50), 100);
+  const skip = Math.max(0, offset || 0);
 
-    // Coaches with no settings row are treated as discoverable (backward-compatible).
-    const where: any = {
-      AND: [
-        {
-          OR: [{ settings: null }, { settings: { isDiscoverable: true } }],
-        },
-      ],
-    };
-    if (search) {
-      const searchLower = search.toLowerCase();
-      where.AND.push({
+  // Only show coaches that are discoverable (is_discoverable defaults to true)
+  const where: {
+    is_discoverable: boolean;
+    AND?: {
+      OR: (
+        | { user: { full_name: { contains: string; mode: 'insensitive' } } }
+        | { user: { bio: { contains: string; mode: 'insensitive' } } }
+        | { specialties: { hasSome: string[] } }
+      )[];
+    }[];
+  } = {
+    is_discoverable: true,
+  };
+
+  if (search) {
+    const searchLower = search.toLowerCase();
+    where.AND = [
+      {
         OR: [
-          { name: { contains: searchLower, mode: 'insensitive' } },
-          { bio: { contains: searchLower, mode: 'insensitive' } },
+          {
+            user: {
+              full_name: { contains: searchLower, mode: 'insensitive' },
+            },
+          },
+          { user: { bio: { contains: searchLower, mode: 'insensitive' } } },
           { specialties: { hasSome: [searchLower] } },
         ],
-      });
-    }
-
-    const [coaches, total] = await Promise.all([
-      prisma.coach.findMany({
-        where,
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          avatarUrl: true,
-          bio: true,
-          yearsExperience: true,
-          certifications: true,
-          awards: true,
-          specialties: true,
-          isVerified: true,
-          createdAt: true,
-        },
-        orderBy: [
-          { isVerified: 'desc' },
-          { yearsExperience: 'desc' },
-          { createdAt: 'desc' },
-        ],
-        take,
-        skip,
-      }),
-      prisma.coach.count({ where }),
-    ]);
-
-    sendSuccess(res, {
-      coaches,
-      pagination: {
-        total,
-        limit: take,
-        offset: skip,
-        hasMore: skip + coaches.length < total,
       },
-    });
-  } catch (error) {
-    const err = error as Error;
-    logger.error('Error discovering coaches', {
-      message: err.message,
-      stack: err.stack,
-    });
-    sendSingleError(res, 'Failed to discover coaches', 500);
+    ];
   }
+
+  const [coaches, total] = await Promise.all([
+    prisma.coach.findMany({
+      where,
+      select: {
+        user_id: true,
+        certifications: true,
+        specialties: true,
+        created_at: true,
+        user: {
+          select: {
+            full_name: true,
+            email: true,
+            avatar_key: true,
+            bio: true,
+          },
+        },
+      },
+      orderBy: [{ created_at: 'desc' }],
+      take,
+      skip,
+    }),
+    prisma.coach.count({ where }),
+  ]);
+
+  const flatCoaches = await Promise.all(coaches.map(flattenCoach));
+
+  sendSuccess(res, {
+    coaches: flatCoaches,
+    pagination: {
+      total,
+      limit: take,
+      offset: skip,
+      hasMore: skip + coaches.length < total,
+    },
+  });
 };
 
 /**
@@ -186,41 +236,38 @@ export const getCoachProfile = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const { coachId } = req.params as unknown as GetCoachProfileParams;
+  const { coachId } = res.locals.validated?.params as GetCoachProfileParams;
 
-    const coach = await prisma.coach.findUnique({
-      where: { id: coachId },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        avatarUrl: true,
-        bio: true,
-        yearsExperience: true,
-        certifications: true,
-        awards: true,
-        specialties: true,
-        isVerified: true,
-        socialLinks: true,
-        createdAt: true,
+  const coach = await prisma.coach.findUnique({
+    where: { user_id: coachId },
+    select: {
+      user_id: true,
+      certifications: true,
+      specialties: true,
+      social_links: true,
+      created_at: true,
+      user: {
+        select: {
+          full_name: true,
+          email: true,
+          avatar_key: true,
+          bio: true,
+        },
       },
-    });
+    },
+  });
 
-    if (!coach) {
-      sendSingleError(res, 'Coach not found', 404, 'coachId');
-      return;
-    }
-
-    sendSuccess(res, { coach });
-  } catch (error) {
-    const err = error as Error;
-    logger.error('Error fetching coach profile', {
-      message: err.message,
-      stack: err.stack,
-    });
-    sendSingleError(res, 'Failed to fetch coach profile', 500);
+  if (!coach) {
+    throw new NotFoundException('USER_COACH_NOT_FOUND', 'Coach not found', [
+      {
+        code: 'USER_COACH_NOT_FOUND',
+        message: 'Coach not found',
+        field: 'coachId',
+      },
+    ]);
   }
+
+  sendSuccess(res, { coach: await flattenCoach(coach) });
 };
 
 /**
@@ -230,74 +277,71 @@ export const getSubscribedCoaches = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const appUser = req.appUser;
-    if (!appUser) {
-      sendSingleError(res, 'Authentication required', 401);
-      return;
-    }
+  const appUser = req.appUser;
+  if (!appUser) {
+    throw new UnauthorizedException(
+      'UNAUTHENTICATED',
+      'Authentication required'
+    );
+  }
 
-    const { limit, offset } = res.locals.validated
-      ?.query as GetSubscribedCoachesQuery;
-    const take = Math.min(Math.max(1, limit || 50), 100);
-    const skip = Math.max(0, offset || 0);
+  const { limit, offset } = res.locals.validated
+    ?.query as GetSubscribedCoachesQuery;
+  const take = Math.min(Math.max(1, limit || 50), 100);
+  const skip = Math.max(0, offset || 0);
 
-    const [subscriptions, total] = await Promise.all([
-      prisma.subscribedCoach.findMany({
-        where: {
-          userId: appUser.id,
-          endedAt: null,
-        },
-        include: {
-          coach: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              avatarUrl: true,
-              bio: true,
-              yearsExperience: true,
-              certifications: true,
-              awards: true,
-              specialties: true,
-              isVerified: true,
+  const [subscriptions, total] = await Promise.all([
+    prisma.subscribed_coach.findMany({
+      where: {
+        user_id: appUser.supabase_auth_id,
+        ended_at: null,
+      },
+      include: {
+        coach: {
+          select: {
+            user_id: true,
+            certifications: true,
+            specialties: true,
+            created_at: true,
+            user: {
+              select: {
+                full_name: true,
+                email: true,
+                avatar_key: true,
+                bio: true,
+              },
             },
           },
         },
-        orderBy: { startedAt: 'desc' },
-        take,
-        skip,
-      }),
-      prisma.subscribedCoach.count({
-        where: {
-          userId: appUser.id,
-          endedAt: null,
-        },
-      }),
-    ]);
-
-    const coaches = subscriptions.map((sub) => ({
-      ...sub.coach,
-      subscribedAt: sub.startedAt,
-    }));
-
-    sendSuccess(res, {
-      coaches,
-      pagination: {
-        total,
-        limit: take,
-        offset: skip,
-        hasMore: skip + coaches.length < total,
       },
-    });
-  } catch (error) {
-    const err = error as Error;
-    logger.error('Error fetching subscribed coaches', {
-      message: err.message,
-      stack: err.stack,
-    });
-    sendSingleError(res, 'Failed to fetch subscribed coaches', 500);
-  }
+      orderBy: { started_at: 'desc' },
+      take,
+      skip,
+    }),
+    prisma.subscribed_coach.count({
+      where: {
+        user_id: appUser.supabase_auth_id,
+        ended_at: null,
+      },
+    }),
+  ]);
+
+  const coaches = await Promise.all(
+    subscriptions.map(async (sub) => ({
+      ...(await flattenCoach(sub.coach)),
+      subscribedAt: sub.started_at,
+    }))
+  );
+
+  sendSuccess(res, {
+    coaches,
+    pagination: {
+      total,
+      limit: take,
+      offset: skip,
+      hasMore: skip + coaches.length < total,
+    },
+  });
 };
 
 /**
@@ -307,154 +351,154 @@ export const subscribeToCoach = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const appUser = req.appUser;
-    if (!appUser) {
-      sendSingleError(res, 'Authentication required', 401);
-      return;
-    }
+  const appUser = req.appUser;
+  if (!appUser) {
+    throw new UnauthorizedException(
+      'UNAUTHENTICATED',
+      'Authentication required'
+    );
+  }
 
-    const { coachId } = res.locals.validated?.params as SubscribeCoachParams;
+  const { coachId } = res.locals.validated?.params as SubscribeCoachParams;
 
-    const coach = await prisma.coach.findUnique({
-      where: { id: coachId },
-      include: { settings: true },
-    });
-
-    if (!coach) {
-      sendSingleError(res, 'Coach not found', 404, 'coachId');
-      return;
-    }
-
-    const settings = coach.settings;
-
-    // Guard 1: manual intake toggle
-    if (settings && !settings.acceptingClients) {
-      sendSingleError(
-        res,
-        'This coach is not accepting new clients at this time',
-        409
-      );
-      return;
-    }
-
-    // Guard 2: capacity cap
-    if (settings) {
-      const activeClientCount = await prisma.subscribedCoach.count({
-        where: { coachId, endedAt: null },
-      });
-      if (activeClientCount >= settings.maxClients) {
-        sendSingleError(
-          res,
-          'This coach has reached their maximum client capacity',
-          409
-        );
-        return;
-      }
-    }
-
-    // Check if already subscribed
-    const existingSubscription = await prisma.subscribedCoach.findUnique({
-      where: {
-        userId_coachId: { userId: appUser.id, coachId },
+  const coach = await prisma.coach.findUnique({
+    where: { user_id: coachId },
+    include: {
+      user: {
+        select: {
+          full_name: true,
+          email: true,
+          avatar_key: true,
+          bio: true,
+        },
       },
-    });
+    },
+  });
 
-    if (existingSubscription) {
-      if (!existingSubscription.endedAt) {
-        sendSingleError(
-          res,
-          'Already subscribed to this coach',
-          409,
-          'coachId'
-        );
-        return;
-      }
-      // Re-subscribe (reactivate)
-      await prisma.subscribedCoach.update({
-        where: { id: existingSubscription.id },
-        data: { endedAt: null },
-      });
-      const updated = await prisma.subscribedCoach.findUnique({
-        where: { id: existingSubscription.id },
-        include: {
-          coach: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              avatarUrl: true,
-              bio: true,
-              yearsExperience: true,
-              certifications: true,
-              awards: true,
-              specialties: true,
-              isVerified: true,
+  if (!coach) {
+    throw new NotFoundException('USER_COACH_NOT_FOUND', 'Coach not found', [
+      {
+        code: 'USER_COACH_NOT_FOUND',
+        message: 'Coach not found',
+        field: 'coachId',
+      },
+    ]);
+  }
+
+  // Guard 1: manual intake toggle
+  if (!coach.accepting_clients) {
+    throw new ConflictException(
+      'USER_COACH_NOT_ACCEPTING',
+      'This coach is not accepting new clients at this time'
+    );
+  }
+
+  // Guard 2: capacity cap
+  const activeClientCount = await prisma.subscribed_coach.count({
+    where: { coach_id: coachId, ended_at: null },
+  });
+  if (activeClientCount >= coach.max_clients) {
+    throw new ConflictException(
+      'USER_COACH_AT_CAPACITY',
+      'This coach has reached their maximum client capacity'
+    );
+  }
+
+  // Check if already subscribed
+  const existingSubscription = await prisma.subscribed_coach.findFirst({
+    where: {
+      user_id: appUser.supabase_auth_id,
+      coach_id: coachId,
+    },
+  });
+
+  if (existingSubscription) {
+    if (!existingSubscription.ended_at) {
+      throw new ConflictException(
+        'USER_COACH_ALREADY_SUBSCRIBED',
+        'Already subscribed to this coach',
+        [
+          {
+            code: 'USER_COACH_ALREADY_SUBSCRIBED',
+            message: 'Already subscribed to this coach',
+            field: 'coachId',
+          },
+        ]
+      );
+    }
+    // Re-subscribe (reactivate)
+    await prisma.subscribed_coach.update({
+      where: { id: existingSubscription.id },
+      data: { ended_at: null },
+    });
+    const updated = await prisma.subscribed_coach.findUnique({
+      where: { id: existingSubscription.id },
+      include: {
+        coach: {
+          include: {
+            user: {
+              select: {
+                full_name: true,
+                email: true,
+                avatar_key: true,
+                bio: true,
+              },
             },
           },
         },
-      });
-      sendSuccess(
-        res,
-        {
-          coach: {
-            ...updated!.coach,
-            subscribedAt: updated!.startedAt,
-          },
-        },
-        200
-      );
-      return;
-    }
-
-    // Create new subscription
-    const subscription = await prisma.subscribedCoach.create({
-      data: {
-        userId: appUser.id,
-        coachId,
-      },
-      include: {
-        coach: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            avatarUrl: true,
-            bio: true,
-            yearsExperience: true,
-            certifications: true,
-            awards: true,
-            specialties: true,
-            isVerified: true,
-          },
-        },
       },
     });
-
-    logger.info('User subscribed to coach', {
-      userId: appUser.id,
-      coachId,
-      subscriptionId: subscription.id,
-    });
-
     sendSuccess(
       res,
       {
         coach: {
-          ...subscription.coach,
-          subscribedAt: subscription.startedAt,
+          ...(await flattenCoach(updated!.coach)),
+          subscribedAt: updated!.started_at,
         },
       },
-      201
+      200
     );
-  } catch (error) {
-    const err = error as Error;
-    logger.error('Error subscribing to coach', {
-      message: err.message,
-      stack: err.stack,
-    });
-    sendSingleError(res, 'Failed to subscribe to coach', 500);
+    return;
   }
+
+  // Create new subscription
+  const subscription = await prisma.subscribed_coach.create({
+    data: {
+      user_id: appUser.supabase_auth_id,
+      coach_id: coachId,
+    },
+    include: {
+      coach: {
+        include: {
+          user: {
+            select: {
+              full_name: true,
+              email: true,
+              avatar_key: true,
+              bio: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  logger.info('User subscribed to coach', {
+    userId: appUser.supabase_auth_id,
+    coachId,
+    subscriptionId: subscription.id,
+  });
+
+  sendSuccess(
+    res,
+    {
+      coach: {
+        ...(await flattenCoach(subscription.coach)),
+        subscribedAt: subscription.started_at,
+      },
+    },
+    201
+  );
 };
 
 /**
@@ -464,101 +508,100 @@ export const unsubscribeFromCoach = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const appUser = req.appUser;
-    if (!appUser) {
-      sendSingleError(res, 'Authentication required', 401);
-      return;
-    }
-
-    const { coachId } = res.locals.validated?.params as UnsubscribeCoachParams;
-
-    const subscription = await prisma.subscribedCoach.findUnique({
-      where: {
-        userId_coachId: { userId: appUser.id, coachId },
-      },
-    });
-
-    if (!subscription) {
-      sendSingleError(res, 'Not subscribed to this coach', 404, 'coachId');
-      return;
-    }
-
-    if (subscription.endedAt) {
-      sendSingleError(
-        res,
-        'Already unsubscribed from this coach',
-        409,
-        'coachId'
-      );
-      return;
-    }
-
-    await prisma.subscribedCoach.update({
-      where: { id: subscription.id },
-      data: { endedAt: new Date() },
-    });
-
-    logger.info('User unsubscribed from coach', {
-      userId: appUser.id,
-      coachId,
-      subscriptionId: subscription.id,
-    });
-
-    sendSuccess(res, { message: 'Unsubscribed from coach' });
-  } catch (error) {
-    const err = error as Error;
-    logger.error('Error unsubscribing from coach', {
-      message: err.message,
-      stack: err.stack,
-    });
-    sendSingleError(res, 'Failed to unsubscribe from coach', 500);
+  const appUser = req.appUser;
+  if (!appUser) {
+    throw new UnauthorizedException(
+      'UNAUTHENTICATED',
+      'Authentication required'
+    );
   }
+
+  const { coachId } = res.locals.validated?.params as UnsubscribeCoachParams;
+
+  const subscription = await prisma.subscribed_coach.findFirst({
+    where: {
+      user_id: appUser.supabase_auth_id,
+      coach_id: coachId,
+    },
+  });
+
+  if (!subscription) {
+    throw new NotFoundException(
+      'USER_COACH_NOT_SUBSCRIBED',
+      'Not subscribed to this coach',
+      [
+        {
+          code: 'USER_COACH_NOT_SUBSCRIBED',
+          message: 'Not subscribed to this coach',
+          field: 'coachId',
+        },
+      ]
+    );
+  }
+
+  if (subscription.ended_at) {
+    throw new ConflictException(
+      'USER_COACH_ALREADY_UNSUBSCRIBED',
+      'Already unsubscribed from this coach',
+      [
+        {
+          code: 'USER_COACH_ALREADY_UNSUBSCRIBED',
+          message: 'Already unsubscribed from this coach',
+          field: 'coachId',
+        },
+      ]
+    );
+  }
+
+  await prisma.subscribed_coach.update({
+    where: { id: subscription.id },
+    data: { ended_at: new Date() },
+  });
+
+  logger.info('User unsubscribed from coach', {
+    userId: appUser.supabase_auth_id,
+    coachId,
+    subscriptionId: subscription.id,
+  });
+
+  sendSuccess(res, { message: 'Unsubscribed from coach' });
 };
 
 /**
  * Get current user profile (Flutter app contract: GET /users/profile).
- * Returns { data: { user: { id, email, name, nickname, supabaseId, createdAt, updatedAt } }, errors: [] }
+ * Returns { data: { user: { supabase_auth_id, email, full_name, nickname, created_at, updated_at } }, errors: [] }
  */
 export const getProfile = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const appUser = req.appUser;
-    if (!appUser) {
-      sendSingleError(res, 'Authentication required', 401);
-      return;
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { id: appUser.id },
-    });
-
-    if (!user) {
-      sendSingleError(res, 'User not found', 404);
-      return;
-    }
-
-    sendSuccess(res, {
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        nickname: user.nickname,
-        supabaseId: user.supabaseId,
-        createdAt: user.createdAt.toISOString(),
-        updatedAt: user.updatedAt.toISOString(),
-      },
-    });
-  } catch (error) {
-    const err = error as Error;
-    logger.error('Error fetching profile', {
-      message: err.message,
-      stack: err.stack,
-    });
-    sendSingleError(res, 'Failed to fetch profile', 500);
+  const appUser = req.appUser;
+  if (!appUser) {
+    throw new UnauthorizedException(
+      'UNAUTHENTICATED',
+      'Authentication required'
+    );
   }
+
+  const user = await prisma.user.findUnique({
+    where: { supabase_auth_id: appUser.supabase_auth_id },
+  });
+
+  if (!user) {
+    throw new NotFoundException('USER_NOT_FOUND', 'User not found');
+  }
+
+  sendSuccess(res, {
+    user: {
+      supabase_auth_id: user.supabase_auth_id,
+      email: user.email,
+      full_name: user.full_name,
+      nickname: user.nickname,
+      created_at: user.created_at.toISOString(),
+      updated_at: user.updated_at.toISOString(),
+    },
+    tier: user.active_subscription_tier,
+  });
 };
 
 /**
@@ -568,62 +611,52 @@ export const updateProfile = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const appUser = req.appUser;
-    if (!appUser) {
-      sendSingleError(res, 'Authentication required', 401);
-      return;
-    }
+  const appUser = req.appUser;
+  if (!appUser) {
+    throw new UnauthorizedException(
+      'UNAUTHENTICATED',
+      'Authentication required'
+    );
+  }
 
-    const body = res.locals.validated?.body as UpdateProfileInput;
-    const data: { name?: string; nickname?: string } = {};
-    if (body.name !== undefined) data.name = body.name;
-    if (body.nickname !== undefined) data.nickname = body.nickname;
+  const body = res.locals.validated?.body as UpdateProfileInput;
+  const data: { full_name?: string; nickname?: string } = {};
+  if (body.name !== undefined) data.full_name = body.name;
+  if (body.nickname !== undefined) data.nickname = body.nickname;
 
-    if (Object.keys(data).length === 0) {
-      const user = await prisma.user.findUnique({
-        where: { id: appUser.id },
-      });
-      if (!user) {
-        sendSingleError(res, 'User not found', 404);
-        return;
-      }
-      sendSuccess(res, {
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          nickname: user.nickname,
-          supabaseId: user.supabaseId,
-          createdAt: user.createdAt.toISOString(),
-          updatedAt: user.updatedAt.toISOString(),
-        },
-      });
-      return;
-    }
-
-    const updated = await prisma.user.update({
-      where: { id: appUser.id },
-      data,
+  if (Object.keys(data).length === 0) {
+    const user = await prisma.user.findUnique({
+      where: { supabase_auth_id: appUser.supabase_auth_id },
     });
-
+    if (!user) {
+      throw new NotFoundException('USER_NOT_FOUND', 'User not found');
+    }
     sendSuccess(res, {
       user: {
-        id: updated.id,
-        email: updated.email,
-        name: updated.name,
-        nickname: updated.nickname,
-        supabaseId: updated.supabaseId,
-        createdAt: updated.createdAt.toISOString(),
-        updatedAt: updated.updatedAt.toISOString(),
+        supabase_auth_id: user.supabase_auth_id,
+        email: user.email,
+        full_name: user.full_name,
+        nickname: user.nickname,
+        created_at: user.created_at.toISOString(),
+        updated_at: user.updated_at.toISOString(),
       },
     });
-  } catch (error) {
-    const err = error as Error;
-    logger.error('Error updating profile', {
-      message: err.message,
-      stack: err.stack,
-    });
-    sendSingleError(res, 'Failed to update profile', 500);
+    return;
   }
+
+  const updated = await prisma.user.update({
+    where: { supabase_auth_id: appUser.supabase_auth_id },
+    data,
+  });
+
+  sendSuccess(res, {
+    user: {
+      supabase_auth_id: updated.supabase_auth_id,
+      email: updated.email,
+      full_name: updated.full_name,
+      nickname: updated.nickname,
+      created_at: updated.created_at.toISOString(),
+      updated_at: updated.updated_at.toISOString(),
+    },
+  });
 };

@@ -8,7 +8,6 @@ import {
   CreateCoachProfileSchema,
   GetClientsSchema,
   GetPerformanceSchema,
-  AssignProgramSchema,
   GetClientProgramsSchema,
   UpdateAssignmentSchema,
   DeleteAssignmentSchema,
@@ -16,13 +15,11 @@ import {
   GetClientSessionDetailSchema,
   GetClientWeeklyStatsSchema,
   GetClientExerciseHistorySchema,
-  GetClientFormResultsSchema,
 } from '../schemas/coach.schema';
 import {
   createCoachProfile,
   getClients,
   getPerformance,
-  assignProgram,
   getClientPrograms,
   updateAssignment,
   deleteAssignment,
@@ -31,12 +28,10 @@ import {
   getClientWeeklyStats,
   getClientExerciseHistory,
   getDetailedPerformance,
-  getClientFormResults,
 } from '../controllers/coach.controller';
 import classRoutes from './class.routes';
 import programRoutes from './program.routes';
-import routineRoutes from './routine.routes';
-import coachSettingsRoutes from './coach-settings.routes';
+import routineTemplateRoutes from './routine.routes';
 
 const router = Router();
 
@@ -53,9 +48,10 @@ router.post(
 );
 
 router.use('/class', classRoutes);
-router.use('/programs', programRoutes);
-router.use('/routines', routineRoutes);
-router.use('/settings', coachSettingsRoutes);
+// Program routes handles /clients/:clientId/programs, /programs/:programId, etc.
+router.use('/', programRoutes);
+// Routine templates: /routine-templates
+router.use('/routine-templates', routineTemplateRoutes);
 
 /**
  * @route   GET /coach/clients
@@ -94,19 +90,6 @@ router.get(
   requireCoach,
   validateRequest(GetPerformanceSchema),
   getPerformance
-);
-
-/**
- * @route   POST /coach/assign-program
- * @desc    Assign program to client
- * @access  Protected (authenticateSupabaseUser + requireCoach)
- */
-router.post(
-  '/assign-program',
-  authenticateSupabaseUser,
-  requireCoach,
-  validateRequest(AssignProgramSchema),
-  assignProgram
 );
 
 /**
@@ -202,21 +185,6 @@ router.get(
   requireCoach,
   validateRequest(GetPerformanceSchema),
   getDetailedPerformance
-);
-
-// ============== Client Form Results Route (GAP 3) ==============
-
-/**
- * @route   GET /coach/clients/:userId/form-results
- * @desc    Get a client's form comparison result history
- * @access  Protected (authenticateSupabaseUser + requireCoach)
- */
-router.get(
-  '/clients/:userId/form-results',
-  authenticateSupabaseUser,
-  requireCoach,
-  validateRequest(GetClientFormResultsSchema),
-  getClientFormResults
 );
 
 export default router;

@@ -163,7 +163,7 @@ The Standalone Workout feature provides a **subscription-free, coach-free** work
 | `PATCH`  | `/api/standalone/programs/:programId`                            | Update program name/description  | Yes (User) |
 | `DELETE` | `/api/standalone/programs/:programId`                            | Delete program (cascades)        | Yes (User) |
 | `POST`   | `/api/standalone/programs/:programId/routines`                   | Assign routine to program day    | Yes (User) |
-| `PATCH`  | `/api/standalone/programs/:programId/routines/:programRoutineId` | Update day number                | Yes (User) |
+| `PATCH`  | `/api/standalone/programs/:programId/routines/:programRoutineId` | Update day of week               | Yes (User) |
 | `DELETE` | `/api/standalone/programs/:programId/routines/:programRoutineId` | Remove routine from program      | Yes (User) |
 
 **GET Query Parameters** (list): `limit` (default 50, max 100), `offset` (default 0)
@@ -195,13 +195,9 @@ The Standalone Workout feature provides a **subscription-free, coach-free** work
 
 **Query Parameters**: `assignedProgramId` (optional — filter to a specific assignment)
 
-**Day-Cycling Logic:**
+**Day-OfWeek Logic:**
 
-```
-daysSinceStart = floor((today - startDate) / msPerDay)
-totalCycleDays = max(dayNumber) across all ProgramRoutines
-cycleDayNumber = (daysSinceStart % totalCycleDays) + 1
-```
+`today` is resolved by determining the current day of the week in the user's timezone mapping to `DayOfWeek` enum (e.g. 1 -> MONDAY) and finding the `ProgramRoutine` with matching `dayOfWeek`.
 
 **Response Scenarios:**
 
@@ -288,7 +284,7 @@ All standalone resources share the same Prisma models as the coach flow. The key
 - **Routine**: `userId?`, `coachId?`, `name`, `description`, `estimatedDurationMinutes`, `muscleGroupsTargeted`
 - **RoutineExercise**: Junction — `routineId`, `exerciseId`, `sets`, `repsMin`, `repsMax`, `restSeconds`, `orderInRoutine`, `notes`
 - **Program**: `userId?`, `coachId?`, `name`, `description`
-- **ProgramRoutine**: Junction — `programId`, `routineId`, `dayNumber`
+- **ProgramRoutine**: Junction — `programId`, `routineId`, `dayOfWeek`
 - **AssignedProgram**: `userId`, `programId`, `startDate`, `endDate?`, `isActive`
 - **WorkoutSession**: `userId`, `assignedProgramId?`, `startedAt`, `completedAt?`, `notes?`
 - **PerformedSet**: `workoutSessionId`, `routineExerciseId`, `setNumber`, `repsCompleted`, `weightKg`, `rpe`, `notes`

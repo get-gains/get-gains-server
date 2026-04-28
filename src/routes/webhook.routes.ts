@@ -1,8 +1,6 @@
 import { Router } from 'express';
-import {
-  handleGooglePlayWebhook,
-  webhookHealth,
-} from '../controllers/webhook.controller';
+import { handleRevenueCatWebhook } from '../controllers/revenuecat.controller';
+import { sendSuccess } from '../utils/response';
 
 const router = Router();
 
@@ -10,18 +8,21 @@ const router = Router();
  * GET /api/webhooks/health
  * Health check for webhook endpoints
  */
-router.get('/health', webhookHealth);
+router.get('/health', (_req, res) => {
+  sendSuccess(res, {
+    status: 'healthy',
+    provider: 'revenuecat',
+    timestamp: new Date().toISOString(),
+  });
+});
 
 /**
- * POST /api/webhooks/google-play
- * Google Play Pub/Sub webhook endpoint
+ * POST /api/webhooks/revenuecat
+ * RevenueCat webhook endpoint
  *
- * This endpoint receives push notifications from Google Cloud Pub/Sub
- * when subscription events occur (purchases, renewals, cancellations, etc.)
- *
- * Note: No authentication middleware - Pub/Sub has its own verification
- * via the subscription configuration in Google Cloud Console
+ * Auth is handled inside the controller via Authorization header
+ * matching REVENUECAT_AUTH_HEADER (constant-time compare).
  */
-router.post('/google-play', handleGooglePlayWebhook);
+router.post('/revenuecat', handleRevenueCatWebhook);
 
 export default router;

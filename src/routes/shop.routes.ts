@@ -14,7 +14,7 @@ const router = Router();
 
 /**
  * @route   GET /api/shop/catalog
- * @desc    Browse the cosmetic shop catalog (filterable by tier/category)
+ * @desc    Browse the cosmetic shop catalog (filterable by tier)
  * @access  Protected
  */
 router.get(

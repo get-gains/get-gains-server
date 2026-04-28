@@ -23,7 +23,7 @@ export default defineConfig(
       sourceType: "module",
       parser: tseslint.parser,
       parserOptions: {
-        project: "./tsconfig.json",
+        project: ["./tsconfig.json", "./tsconfig.eslint.json"],
       },
     },
     rules: {

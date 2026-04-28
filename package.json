@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "dev": "nodemon",
     "build": "tsc",
     "start": "node dist/index.js",
@@ -12,8 +13,9 @@
     "lint:fix": "eslint . --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\"",
     "prepare": "husky",
-    "postinstall": "npx prisma generate",
-    "sync:plans": "npx tsx scripts/sync-plans.ts"
+    "postinstall": "prisma generate",
+    "commitlint": "commitlint --edit",
+    "codegen:errors": "tsx scripts/gen-dart-error-codes.ts"
   },
   "lint-staged": {
     "*.ts": [
@@ -32,12 +34,19 @@
     "url": "https://github.com/get-gains/get-gains-server/issues"
   },
   "homepage": "https://github.com/get-gains/get-gains-server#readme",
+  "packageManager": "pnpm@10.33.0",
+  "prisma": {
+    "seed": "npx ts-node --project tsconfig.json prisma/seed.ts"
+  },
   "devDependencies": {
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
     "@eslint/js": "^9.39.2",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/multer": "^2.0.0",
     "@types/node": "^25.0.9",
+    "@types/supertest": "^7.2.0",
     "@typescript-eslint/eslint-plugin": "^8.53.1",
     "@typescript-eslint/parser": "^8.53.1",
     "eslint": "^9.39.2",
@@ -48,10 +57,12 @@
     "lint-staged": "^16.2.7",
     "nodemon": "^3.1.11",
     "prettier": "^3.8.0",
+    "supertest": "^7.2.2",
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.53.1"
+    "typescript-eslint": "^8.53.1",
+    "vitest": "^4.1.4"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.990.0",
@@ -63,8 +74,7 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
-    "google-auth-library": "^10.5.0",
-    "googleapis": "^171.0.0",
+    "google-auth-library": "^10.6.2",
     "multer": "^2.0.2",
     "pg": "^8.17.2",
     "prisma": "^7.2.0",

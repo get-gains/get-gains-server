@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
-import { sendSuccess, sendSingleError } from '../utils/response';
+import { sendSuccess } from '../utils/response';
 import {
   CheckEmailVerifiedInput,
   ExchangeCodeInput,
@@ -15,344 +15,324 @@ import {
 import supabase from '../config/supabase';
 import { createUser, getUserBySupabaseId } from './user.controller';
 import googleClient from '../config/google';
-import { parseSupabaseAuthError } from '../utils/supabase-error';
+import { mapSupabaseError } from '../lib/errors/supabase-error-mapper';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+  UnauthorizedException,
+  UnexpectedException,
+} from '../lib/errors';
+
+const resolveIsCoach = async (
+  supabaseId: string,
+  userFlag?: boolean
+): Promise<boolean> => {
+  if (userFlag) {
+    return true;
+  }
+
+  const coachProfile = await prisma.coach.findUnique({
+    where: { user_id: supabaseId },
+    select: { user_id: true },
+  });
+
+  return Boolean(coachProfile);
+};
 
 // User registration handler
 export const registerWithEmailAndPassword = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const { email, password, name, nickname } = res.locals.validated
-      ?.body as RegisterInput;
+  const { email, password, name, nickname } = res.locals.validated
+    ?.body as RegisterInput;
 
-    logger.debug('Registration attempt', { email });
+  logger.debug('Registration attempt', { email });
 
-    // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
-    });
+  // Check if user already exists
+  const existingUser = await prisma.user.findUnique({
+    where: { email: email.toLowerCase() },
+  });
 
-    if (existingUser) {
-      logger.debug('Registration failed: Email already exists', { email });
-      sendSingleError(res, 'Email already exists', 409, 'email');
-      return;
-    }
-
-    // Create user in supabase with email verification redirect
-    const { data, error: supabaseError } = await supabase.auth.signUp({
-      email: email.toLowerCase(),
-      password,
-      options: {
-        emailRedirectTo: process.env.EMAIL_VERIFICATION_REDIRECT_URL,
-      },
-    });
-
-    if (supabaseError || !data.user) {
-      logger.error('Supabase user creation failed', {
-        email,
-        error: supabaseError,
-      });
-      if (supabaseError) {
-        const parsed = parseSupabaseAuthError(
-          supabaseError,
-          'registration',
-          'Failed to create account. Please try again.'
-        );
-        sendSingleError(res, parsed.message, parsed.status);
-      } else {
-        sendSingleError(
-          res,
-          'Failed to create account. Please try again.',
-          500
-        );
-      }
-      return;
-    }
-
-    const supabaseId = data.user.id;
-
-    const user = await createUser({ email, name, nickname, supabaseId });
-
-    // Always return user data without tokens — email verification is required
-    sendSuccess(
-      res,
-      {
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          nickname: user.nickname,
-          supabaseId: user.supabaseId,
-        },
-        message:
-          'Registration successful. Please check your email to verify your account.',
-      },
-      201
+  if (existingUser) {
+    logger.debug('Registration failed: Email already exists', { email });
+    throw new ConflictException(
+      'AUTH_EMAIL_ALREADY_EXISTS',
+      'Email already exists'
     );
-    return;
-  } catch (error) {
-    logger.error('Registration error', error);
-    sendSingleError(res, 'Internal server error', 500);
-    return;
   }
+
+  // Create user in supabase with email verification redirect
+  const { data, error: supabaseError } = await supabase.auth.signUp({
+    email: email.toLowerCase(),
+    password,
+    options: {
+      emailRedirectTo: process.env.EMAIL_VERIFICATION_REDIRECT_URL,
+    },
+  });
+
+  if (supabaseError || !data.user) {
+    logger.error('Supabase user creation failed', {
+      email,
+      error: supabaseError,
+    });
+    if (supabaseError) {
+      throw mapSupabaseError(
+        supabaseError,
+        'registration',
+        'Failed to create account. Please try again.'
+      );
+    }
+    throw new UnexpectedException(
+      'UNEXPECTED_EXCEPTION',
+      'Failed to create account. Please try again.'
+    );
+  }
+
+  const supabaseId = data.user.id;
+
+  const user = await createUser({
+    email,
+    full_name: name,
+    nickname,
+    supabase_auth_id: supabaseId,
+  });
+
+  // Always return user data without tokens — email verification is required
+  sendSuccess(
+    res,
+    {
+      user: {
+        supabase_auth_id: user.supabase_auth_id,
+        email: user.email,
+        full_name: user.full_name,
+        nickname: user.nickname,
+      },
+      message:
+        'Registration successful. Please check your email to verify your account.',
+    },
+    201
+  );
 };
 
 export const signInWithGoogle = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const { idToken } = res.locals.validated?.body as GoogleSignInInput;
+  const { idToken } = res.locals.validated?.body as GoogleSignInInput;
 
-    if (!idToken) {
-      sendSingleError(res, 'ID token is required', 400);
-      return;
-    }
+  if (!idToken) {
+    throw new BadRequestException(
+      'AUTH_ID_TOKEN_REQUIRED',
+      'ID token is required'
+    );
+  }
 
-    // Verify ID with Google Client
-    const ticket = await googleClient.verifyIdToken({
-      idToken,
-      audience: process.env.GOOGLE_CLIENT_ID,
+  // Verify ID with Google Client
+  const ticket = await googleClient.verifyIdToken({
+    idToken,
+    audience: process.env.GOOGLE_CLIENT_ID,
+  });
+
+  const payload = ticket.getPayload();
+
+  if (!payload || !payload.email) {
+    throw new BadRequestException('AUTH_ID_TOKEN_INVALID', 'Invalid ID token');
+  }
+
+  const { data: supabaseData, error: supabaseError } =
+    await supabase.auth.signInWithIdToken({
+      provider: 'google',
+      token: idToken,
     });
 
-    const payload = ticket.getPayload();
-
-    if (!payload || !payload.email) {
-      sendSingleError(res, 'Invalid ID token', 400);
-      return;
+  if (supabaseError || !supabaseData.user) {
+    logger.error('Supabase Google sign-in failed', {
+      email: payload.email,
+      error: supabaseError,
+    });
+    if (supabaseError) {
+      throw mapSupabaseError(
+        supabaseError,
+        'google sign-in',
+        'Failed to sign in with Google. Please try again.'
+      );
     }
-
-    const { data: supabaseData, error: supabaseError } =
-      await supabase.auth.signInWithIdToken({
-        provider: 'google',
-        token: idToken,
-      });
-
-    if (supabaseError || !supabaseData.user) {
-      logger.error('Supabase Google sign-in failed', {
-        email: payload.email,
-        error: supabaseError,
-      });
-      if (supabaseError) {
-        const parsed = parseSupabaseAuthError(
-          supabaseError,
-          'google sign-in',
-          'Failed to sign in with Google. Please try again.'
-        );
-        sendSingleError(res, parsed.message, parsed.status);
-      } else {
-        sendSingleError(
-          res,
-          'Failed to sign in with Google. Please try again.',
-          500
-        );
-      }
-      return;
-    }
-
-    const accessToken = supabaseData.session?.access_token;
-    const refreshToken = supabaseData.session?.refresh_token;
-    const supabaseId = supabaseData.user.id;
-
-    sendSuccess(
-      res,
-      {
-        accessToken,
-        refreshToken,
-        user: {
-          email: payload.email,
-          supabaseId,
-        },
-      },
-      200
+    throw new UnexpectedException(
+      'UNEXPECTED_EXCEPTION',
+      'Failed to sign in with Google. Please try again.'
     );
-    return;
-  } catch (error) {
-    logger.error('Google sign-in error', error);
-    sendSingleError(res, 'Internal server error', 500);
-    return;
   }
+
+  const accessToken = supabaseData.session?.access_token;
+  const refreshToken = supabaseData.session?.refresh_token;
+  const supabaseId = supabaseData.user.id;
+
+  sendSuccess(
+    res,
+    {
+      accessToken,
+      refreshToken,
+      user: {
+        email: payload.email,
+        supabaseId,
+      },
+    },
+    200
+  );
 };
 
 export const loginWithEmailAndPassword = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const { email, password } = res.locals.validated?.body as LoginInput;
+  const { email, password } = res.locals.validated?.body as LoginInput;
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: email.toLowerCase(),
-      password,
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: email.toLowerCase(),
+    password,
+  });
+
+  if (error || !data.user) {
+    logger.debug('Login failed', {
+      email,
+      code: (error as { code?: string })?.code,
+      message: error?.message,
     });
-
-    if (error || !data.user) {
-      logger.debug('Login failed', {
-        email,
-        code: (error as any)?.code,
-        message: error?.message,
-      });
-      if (error) {
-        const parsed = parseSupabaseAuthError(
-          error,
-          'login',
-          'Invalid email or password.',
-          401
-        );
-        sendSingleError(res, parsed.message, parsed.status, 'email');
-      } else {
-        sendSingleError(res, 'Invalid email or password.', 401);
-      }
-      return;
+    if (error) {
+      throw mapSupabaseError(error, 'login', 'Invalid email or password.');
     }
-
-    const user = await prisma.user.findUnique({
-      where: { supabaseId: data.user.id },
-    });
-
-    if (!user) {
-      logger.debug('Login failed: User not found in database', {
-        email,
-        supabaseId: data.user.id,
-      });
-      sendSingleError(res, 'User not found', 404);
-      return;
-    }
-
-    const coach = await prisma.coach.findUnique({
-      where: { userId: user.id },
-    });
-    const isCoach = !!coach;
-
-    const accessToken = data.session?.access_token;
-    const refreshToken = data.session?.refresh_token;
-
-    if (!accessToken || !refreshToken) {
-      logger.error('Token generation failed during login', { email });
-      sendSingleError(res, 'Failed to generate token', 500);
-      return;
-    }
-
-    sendSuccess(
-      res,
-      {
-        accessToken,
-        refreshToken,
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          nickname: user.nickname,
-          supabaseId: user.supabaseId,
-          isCoach,
-        },
-      },
-      200
+    throw new UnauthorizedException(
+      'AUTH_INVALID_CREDENTIALS',
+      'Invalid email or password.'
     );
-    return;
-  } catch (error) {
-    logger.error('Email/password login error', error);
-    sendSingleError(res, 'Internal server error', 500);
-    return;
   }
+
+  const user = await prisma.user.findUnique({
+    where: { supabase_auth_id: data.user.id },
+  });
+
+  if (!user) {
+    logger.debug('Login failed: User not found in database', {
+      email,
+      supabase_auth_id: data.user.id,
+    });
+    throw new NotFoundException('AUTH_APP_USER_NOT_FOUND', 'User not found');
+  }
+
+  const isCoach = await resolveIsCoach(user.supabase_auth_id, user.is_coach);
+
+  const accessToken = data.session?.access_token;
+  const refreshToken = data.session?.refresh_token;
+
+  if (!accessToken || !refreshToken) {
+    logger.error('Token generation failed during login', { email });
+    throw new UnexpectedException(
+      'AUTH_TOKEN_GENERATION_FAILED',
+      'Failed to generate token'
+    );
+  }
+
+  sendSuccess(
+    res,
+    {
+      accessToken,
+      refreshToken,
+      user: {
+        supabase_auth_id: user.supabase_auth_id,
+        email: user.email,
+        full_name: user.full_name,
+        nickname: user.nickname,
+        isCoach,
+      },
+    },
+    200
+  );
 };
 
 export const signInWithGoogleWithUserData = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const { idToken } = res.locals.validated?.body as GoogleSignInInput;
+  const { idToken } = res.locals.validated?.body as GoogleSignInInput;
 
-    if (!idToken) {
-      sendSingleError(res, 'ID token is required', 400);
-      return;
-    }
-
-    // Verify ID with Google Client
-    const ticket = await googleClient.verifyIdToken({
-      idToken,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
-
-    const payload = ticket.getPayload();
-
-    if (!payload || !payload.email) {
-      sendSingleError(res, 'Invalid ID token', 400);
-      return;
-    }
-
-    const { data: supabaseData, error: supabaseError } =
-      await supabase.auth.signInWithIdToken({
-        provider: 'google',
-        token: idToken,
-      });
-
-    if (supabaseError || !supabaseData.user) {
-      logger.error('Supabase Google sign-in failed', {
-        email: payload.email,
-        error: supabaseError,
-      });
-      if (supabaseError) {
-        const parsed = parseSupabaseAuthError(
-          supabaseError,
-          'google login',
-          'Failed to sign in with Google. Please try again.'
-        );
-        sendSingleError(res, parsed.message, parsed.status);
-      } else {
-        sendSingleError(
-          res,
-          'Failed to sign in with Google. Please try again.',
-          500
-        );
-      }
-      return;
-    }
-
-    const userData = await getUserBySupabaseId(supabaseData.user.id);
-
-    if (!userData) {
-      logger.debug('Login failed: User not found in database', {
-        email: payload.email,
-        supabaseId: supabaseData.user.id,
-      });
-      sendSingleError(res, 'User not found', 404);
-      return;
-    }
-
-    const coach = await prisma.coach.findUnique({
-      where: { userId: userData.id },
-    });
-    const isCoach = !!coach;
-
-    const accessToken = supabaseData.session?.access_token;
-    const refreshToken = supabaseData.session?.refresh_token;
-    const supabaseId = supabaseData.user.id;
-
-    sendSuccess(
-      res,
-      {
-        accessToken,
-        refreshToken,
-        user: {
-          id: userData.id,
-          email: userData.email,
-          name: userData.name,
-          nickname: userData.nickname,
-          supabaseId,
-          isCoach,
-        },
-      },
-      200
+  if (!idToken) {
+    throw new BadRequestException(
+      'AUTH_ID_TOKEN_REQUIRED',
+      'ID token is required'
     );
-    return;
-  } catch (error) {
-    logger.error('Google sign-in error', error);
-    sendSingleError(res, 'Internal server error', 500);
-    return;
   }
+
+  // Verify ID with Google Client
+  const ticket = await googleClient.verifyIdToken({
+    idToken,
+    audience: process.env.GOOGLE_CLIENT_ID,
+  });
+
+  const payload = ticket.getPayload();
+
+  if (!payload || !payload.email) {
+    throw new BadRequestException('AUTH_ID_TOKEN_INVALID', 'Invalid ID token');
+  }
+
+  const { data: supabaseData, error: supabaseError } =
+    await supabase.auth.signInWithIdToken({
+      provider: 'google',
+      token: idToken,
+    });
+
+  if (supabaseError || !supabaseData.user) {
+    logger.error('Supabase Google sign-in failed', {
+      email: payload.email,
+      error: supabaseError,
+    });
+    if (supabaseError) {
+      throw mapSupabaseError(
+        supabaseError,
+        'google login',
+        'Failed to sign in with Google. Please try again.'
+      );
+    }
+    throw new UnexpectedException(
+      'UNEXPECTED_EXCEPTION',
+      'Failed to sign in with Google. Please try again.'
+    );
+  }
+
+  const userData = await getUserBySupabaseId(supabaseData.user.id);
+
+  if (!userData) {
+    logger.debug('Login failed: User not found in database', {
+      email: payload.email,
+      supabaseId: supabaseData.user.id,
+    });
+    throw new NotFoundException('AUTH_APP_USER_NOT_FOUND', 'User not found');
+  }
+
+  const isCoach = await resolveIsCoach(
+    userData.supabase_auth_id,
+    userData.is_coach
+  );
+
+  const accessToken = supabaseData.session?.access_token;
+  const refreshToken = supabaseData.session?.refresh_token;
+
+  sendSuccess(
+    res,
+    {
+      accessToken,
+      refreshToken,
+      user: {
+        supabase_auth_id: userData.supabase_auth_id,
+        email: userData.email,
+        full_name: userData.full_name,
+        nickname: userData.nickname,
+        isCoach,
+      },
+    },
+    200
+  );
 };
 
 /**
@@ -362,60 +342,58 @@ export const refreshTokenWithBody = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const { refreshToken: refreshTokenValue } = res.locals.validated
-      ?.body as RefreshTokenInput;
+  const { refreshToken: refreshTokenValue } = res.locals.validated
+    ?.body as RefreshTokenInput;
 
-    if (!refreshTokenValue) {
-      sendSingleError(res, 'Refresh token is required', 401);
-      return;
-    }
-
-    const { data, error } = await supabase.auth.refreshSession({
-      refresh_token: refreshTokenValue,
-    });
-
-    if (error || !data.session) {
-      logger.error('Token refresh failed', { error });
-      sendSingleError(res, 'Failed to refresh token', 401);
-      return;
-    }
-
-    const supabaseId = data.session.user?.id;
-    const appUser = supabaseId ? await getUserBySupabaseId(supabaseId) : null;
-
-    if (!appUser) {
-      sendSingleError(res, 'User not found', 401);
-      return;
-    }
-
-    const coach = await prisma.coach.findUnique({
-      where: { userId: appUser.id },
-    });
-    const isCoach = !!coach;
-
-    sendSuccess(
-      res,
-      {
-        accessToken: data.session.access_token,
-        refreshToken: data.session.refresh_token,
-        user: {
-          id: appUser.id,
-          email: appUser.email,
-          name: appUser.name,
-          nickname: appUser.nickname,
-          supabaseId: appUser.supabaseId,
-          isCoach,
-        },
-      },
-      200
+  if (!refreshTokenValue) {
+    throw new UnauthorizedException(
+      'AUTH_TOKEN_MISSING',
+      'Refresh token is required'
     );
-    return;
-  } catch (error) {
-    logger.error('Token refresh error', error);
-    sendSingleError(res, 'Internal server error', 500);
-    return;
   }
+
+  const { data, error } = await supabase.auth.refreshSession({
+    refresh_token: refreshTokenValue,
+  });
+
+  if (error || !data.session) {
+    logger.error('Token refresh failed', { error });
+    throw new UnauthorizedException(
+      'AUTH_REFRESH_FAILED',
+      'Failed to refresh token'
+    );
+  }
+
+  const supabaseId = data.session.user?.id;
+  const appUser = supabaseId ? await getUserBySupabaseId(supabaseId) : null;
+
+  if (!appUser) {
+    throw new UnauthorizedException(
+      'AUTH_APP_USER_NOT_FOUND',
+      'User not found'
+    );
+  }
+
+  const isCoach = await resolveIsCoach(
+    appUser.supabase_auth_id,
+    appUser.is_coach
+  );
+
+  sendSuccess(
+    res,
+    {
+      accessToken: data.session.access_token,
+      refreshToken: data.session.refresh_token,
+      user: {
+        supabase_auth_id: appUser.supabase_auth_id,
+        email: appUser.email,
+        full_name: appUser.full_name,
+        nickname: appUser.nickname,
+        isCoach,
+      },
+    },
+    200
+  );
 };
 
 /**
@@ -425,195 +403,175 @@ export const refreshToken = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const { refreshToken } = res.locals.validated?.body as RefreshTokenInput;
+  const { refreshToken } = res.locals.validated?.body as RefreshTokenInput;
 
-    if (!refreshToken) {
-      sendSingleError(res, 'Refresh token is required', 401);
-      return;
-    }
-
-    const { data, error } = await supabase.auth.refreshSession({
-      refresh_token: refreshToken,
-    });
-
-    if (error || !data.session) {
-      logger.error('Token refresh failed', { error });
-      sendSingleError(res, 'Failed to refresh token', 401);
-      return;
-    }
-
-    const supabaseId = data.session.user?.id;
-    const appUser = supabaseId ? await getUserBySupabaseId(supabaseId) : null;
-
-    if (!appUser) {
-      sendSingleError(res, 'User not found', 401);
-      return;
-    }
-
-    const coach = await prisma.coach.findUnique({
-      where: { userId: appUser.id },
-    });
-    const isCoach = !!coach;
-
-    sendSuccess(
-      res,
-      {
-        accessToken: data.session.access_token,
-        refreshToken: data.session.refresh_token,
-        user: {
-          id: appUser.id,
-          email: appUser.email,
-          name: appUser.name,
-          nickname: appUser.nickname,
-          supabaseId: appUser.supabaseId,
-          isCoach,
-        },
-      },
-      200
+  if (!refreshToken) {
+    throw new UnauthorizedException(
+      'AUTH_TOKEN_MISSING',
+      'Refresh token is required'
     );
-    return;
-  } catch (error) {
-    logger.error('Token refresh error', error);
-    sendSingleError(res, 'Internal server error', 500);
-    return;
   }
+
+  const { data, error } = await supabase.auth.refreshSession({
+    refresh_token: refreshToken,
+  });
+
+  if (error || !data.session) {
+    logger.error('Token refresh failed', { error });
+    throw new UnauthorizedException(
+      'AUTH_REFRESH_FAILED',
+      'Failed to refresh token'
+    );
+  }
+
+  const supabaseId = data.session.user?.id;
+  const appUser = supabaseId ? await getUserBySupabaseId(supabaseId) : null;
+
+  if (!appUser) {
+    throw new UnauthorizedException(
+      'AUTH_APP_USER_NOT_FOUND',
+      'User not found'
+    );
+  }
+
+  const isCoach = await resolveIsCoach(
+    appUser.supabase_auth_id,
+    appUser.is_coach
+  );
+
+  sendSuccess(
+    res,
+    {
+      accessToken: data.session.access_token,
+      refreshToken: data.session.refresh_token,
+      user: {
+        supabase_auth_id: appUser.supabase_auth_id,
+        email: appUser.email,
+        full_name: appUser.full_name,
+        nickname: appUser.nickname,
+        isCoach,
+      },
+    },
+    200
+  );
 };
 
 /**
  * Get current user and coach status. Protected by authenticateSupabaseUser only.
  */
 export const getMe = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const supabaseUser = req.user;
-    if (!supabaseUser) {
-      sendSingleError(res, 'Authentication required', 401);
-      return;
-    }
-
-    const supabaseId =
-      'supabaseId' in supabaseUser ? supabaseUser.supabaseId : supabaseUser.id;
-    const appUser = await getUserBySupabaseId(supabaseId);
-
-    if (!appUser) {
-      sendSingleError(res, 'User not found', 401);
-      return;
-    }
-
-    const coach = await prisma.coach.findUnique({
-      where: { userId: appUser.id },
-    });
-    const isCoach = !!coach;
-
-    sendSuccess(res, {
-      user: {
-        id: appUser.id,
-        email: appUser.email,
-        name: appUser.name,
-        nickname: appUser.nickname,
-        supabaseId: appUser.supabaseId,
-      },
-      isCoach,
-    });
-  } catch (error) {
-    const err = error as Error;
-    logger.error('getMe error', { message: err.message, stack: err.stack });
-    sendSingleError(res, 'Internal server error', 500);
+  const supabaseUser = req.user;
+  if (!supabaseUser) {
+    throw new UnauthorizedException(
+      'UNAUTHENTICATED',
+      'Authentication required'
+    );
   }
+
+  const supabaseUserId =
+    'id' in supabaseUser ? supabaseUser.id : supabaseUser.supabase_auth_id;
+  const appUser = await getUserBySupabaseId(supabaseUserId);
+
+  if (!appUser) {
+    throw new UnauthorizedException(
+      'AUTH_APP_USER_NOT_FOUND',
+      'User not found'
+    );
+  }
+
+  const isCoach = await resolveIsCoach(
+    appUser.supabase_auth_id,
+    appUser.is_coach
+  );
+
+  sendSuccess(res, {
+    user: {
+      supabase_auth_id: appUser.supabase_auth_id,
+      email: appUser.email,
+      full_name: appUser.full_name,
+      nickname: appUser.nickname,
+    },
+    isCoach,
+    tier: appUser.active_subscription_tier,
+  });
 };
 
 /**
  * Logout (optional, Flutter app contract). Client clears tokens locally.
  */
-export const logout = async (req: Request, res: Response): Promise<void> => {
+export const logout = async (_req: Request, res: Response): Promise<void> => {
   sendSuccess(res, {}, 200);
 };
 
 export const sendRecoveryEmail = async (
-  req: Request,
+  _req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const { email } = res.locals.validated?.body as SendRecoveryEmailInput;
+  const { email } = res.locals.validated?.body as SendRecoveryEmailInput;
 
-    logger.debug('Password recovery email request', { email });
-    logger.debug('Using password reset redirect URL', {
-      url: process.env.PASSWORD_RESET_REDIRECT_URL,
-    });
+  logger.debug('Password recovery email request', { email });
+  logger.debug('Using password reset redirect URL', {
+    url: process.env.PASSWORD_RESET_REDIRECT_URL,
+  });
 
-    const { error } = await supabase.auth.resetPasswordForEmail(
-      email.toLowerCase(),
-      {
-        redirectTo: process.env.PASSWORD_RESET_REDIRECT_URL,
-      }
-    );
-
-    if (error) {
-      logger.error('Password recovery email failed', { email, error });
-      const parsed = parseSupabaseAuthError(
-        error,
-        'password recovery',
-        'Failed to send recovery email. Please try again.'
-      );
-      sendSingleError(res, parsed.message, parsed.status);
-      return;
+  const { error } = await supabase.auth.resetPasswordForEmail(
+    email.toLowerCase(),
+    {
+      redirectTo: process.env.PASSWORD_RESET_REDIRECT_URL,
     }
+  );
 
-    sendSuccess(
-      res,
-      { message: 'Password recovery email sent successfully' },
-      200
+  if (error) {
+    logger.error('Password recovery email failed', { email, error });
+    throw mapSupabaseError(
+      error,
+      'password recovery',
+      'Failed to send recovery email. Please try again.'
     );
-    return;
-  } catch (error) {
-    logger.error('Password recovery error', error);
-    sendSingleError(res, 'Internal server error', 500);
-    return;
   }
+
+  sendSuccess(
+    res,
+    { message: 'Password recovery email sent successfully' },
+    200
+  );
 };
 
 export const resetPassword = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const { newPassword } = res.locals.validated?.body as ResetPasswordInput;
+  const { newPassword } = res.locals.validated?.body as ResetPasswordInput;
 
-    // The user is already authenticated via Bearer token (authenticateSupabaseUser middleware)
-    // req.user contains the validated Supabase user from getUser(token)
-    const supabaseUser = req.user;
-    if (!supabaseUser || !('id' in supabaseUser)) {
-      sendSingleError(res, 'Authentication required', 401);
-      return;
-    }
-
-    const supabaseUserId = supabaseUser.id;
-
-    // Use admin API to update the password directly
-    // This avoids needing to setSession on the shared Supabase client
-    // and doesn't require a refresh token
-    const { error } = await supabase.auth.admin.updateUserById(supabaseUserId, {
-      password: newPassword,
-    });
-
-    if (error) {
-      logger.error('Password reset failed', { error, supabaseUserId });
-      const parsed = parseSupabaseAuthError(
-        error,
-        'password reset',
-        'Failed to reset password. Please try again.'
-      );
-      sendSingleError(res, parsed.message, parsed.status);
-      return;
-    }
-
-    sendSuccess(res, { message: 'Password reset successfully' }, 200);
-    return;
-  } catch (error) {
-    logger.error('Password reset error', error);
-    sendSingleError(res, 'Internal server error', 500);
-    return;
+  // The user is already authenticated via Bearer token (authenticateSupabaseUser middleware)
+  // req.user contains the validated Supabase user from getUser(token)
+  const supabaseUser = req.user;
+  if (!supabaseUser || !('id' in supabaseUser)) {
+    throw new UnauthorizedException(
+      'UNAUTHENTICATED',
+      'Authentication required'
+    );
   }
+
+  const supabaseUserId = supabaseUser.id;
+
+  // Use admin API to update the password directly
+  // This avoids needing to setSession on the shared Supabase client
+  // and doesn't require a refresh token
+  const { error } = await supabase.auth.admin.updateUserById(supabaseUserId, {
+    password: newPassword,
+  });
+
+  if (error) {
+    logger.error('Password reset failed', { error, supabaseUserId });
+    throw mapSupabaseError(
+      error,
+      'password reset',
+      'Failed to reset password. Please try again.'
+    );
+  }
+
+  sendSuccess(res, { message: 'Password reset successfully' }, 200);
 };
 
 /**
@@ -628,61 +586,50 @@ export const resetPassword = async (
  * POST /api/auth/exchange-code
  */
 export const exchangeCodeForSession = async (
-  req: Request,
+  _req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const { code } = res.locals.validated?.body as ExchangeCodeInput;
+  const { code } = res.locals.validated?.body as ExchangeCodeInput;
 
-    logger.debug('Exchanging auth code for session');
+  logger.debug('Exchanging auth code for session');
 
-    // Exchange the code for a session using Supabase
-    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+  // Exchange the code for a session using Supabase
+  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
-    if (error || !data.session) {
-      logger.error('Code exchange failed', { error });
-      if (error) {
-        const parsed = parseSupabaseAuthError(
-          error,
-          'code exchange',
-          'This link is invalid or has expired. Please request a new one.',
-          401
-        );
-        sendSingleError(res, parsed.message, parsed.status);
-      } else {
-        sendSingleError(
-          res,
-          'This link is invalid or has expired. Please request a new one.',
-          401
-        );
-      }
-      return;
+  if (error || !data.session) {
+    logger.error('Code exchange failed', { error });
+    if (error) {
+      throw mapSupabaseError(
+        error,
+        'code exchange',
+        'This link is invalid or has expired. Please request a new one.'
+      );
     }
-
-    const { session, user } = data;
-
-    // Check if this user exists in our database
-    const appUser = await prisma.user.findUnique({
-      where: { supabaseId: user.id },
-    });
-
-    sendSuccess(res, {
-      accessToken: session.access_token,
-      refreshToken: session.refresh_token,
-      user: appUser
-        ? {
-            id: appUser.id,
-            email: appUser.email,
-            name: appUser.name,
-            nickname: appUser.nickname,
-            supabaseId: appUser.supabaseId,
-          }
-        : null,
-    });
-  } catch (error) {
-    logger.error('Code exchange error', error);
-    sendSingleError(res, 'Internal server error', 500);
+    throw new UnauthorizedException(
+      'AUTH_CODE_EXCHANGE_FAILED',
+      'This link is invalid or has expired. Please request a new one.'
+    );
   }
+
+  const { session, user } = data;
+
+  // Check if this user exists in our database
+  const appUser = await prisma.user.findUnique({
+    where: { supabase_auth_id: user.id },
+  });
+
+  sendSuccess(res, {
+    accessToken: session.access_token,
+    refreshToken: session.refresh_token,
+    user: appUser
+      ? {
+          supabase_auth_id: appUser.supabase_auth_id,
+          email: appUser.email,
+          full_name: appUser.full_name,
+          nickname: appUser.nickname,
+        }
+      : null,
+  });
 };
 
 /**
@@ -692,41 +639,38 @@ export const exchangeCodeForSession = async (
  * POST /api/auth/check-email-verified
  */
 export const checkEmailVerified = async (
-  req: Request,
+  _req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const { email } = res.locals.validated?.body as CheckEmailVerifiedInput;
+  const { email } = res.locals.validated?.body as CheckEmailVerifiedInput;
 
-    logger.debug('Checking email verification status', { email });
+  logger.debug('Checking email verification status', { email });
 
-    // Use the admin API to look up the user by email
-    const { data, error } = await supabase.auth.admin.listUsers();
+  // Use the admin API to look up the user by email
+  const { data, error } = await supabase.auth.admin.listUsers();
 
-    if (error) {
-      logger.error('Failed to check email verification status', {
-        email,
-        error,
-      });
-      sendSingleError(res, 'Failed to check verification status', 500);
-      return;
-    }
-
-    const supabaseUser = data.users.find(
-      (u) => u.email?.toLowerCase() === email.toLowerCase()
+  if (error) {
+    logger.error('Failed to check email verification status', {
+      email,
+      error,
+    });
+    throw new UnexpectedException(
+      'UNEXPECTED_EXCEPTION',
+      'Failed to check verification status'
     );
-
-    if (!supabaseUser) {
-      // Don't reveal whether the email exists — return unverified
-      sendSuccess(res, { verified: false });
-      return;
-    }
-
-    const verified = !!supabaseUser.email_confirmed_at;
-
-    sendSuccess(res, { verified });
-  } catch (error) {
-    logger.error('Check email verified error', error);
-    sendSingleError(res, 'Internal server error', 500);
   }
+
+  const supabaseUser = data.users.find(
+    (u) => u.email?.toLowerCase() === email.toLowerCase()
+  );
+
+  if (!supabaseUser) {
+    // Don't reveal whether the email exists — return unverified
+    sendSuccess(res, { verified: false });
+    return;
+  }
+
+  const verified = !!supabaseUser.email_confirmed_at;
+
+  sendSuccess(res, { verified });
 };

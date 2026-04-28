@@ -1,892 +1,1094 @@
 import { Request, Response } from 'express';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
-import { sendSuccess, sendSingleError } from '../utils/response';
-import { MuscleGroup } from '@prisma/client';
+import { sendSuccess } from '../utils/response';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+  UnauthorizedException,
+} from '../lib/errors';
 import type {
-  CreateRoutineInput,
-  GetCoachProgramsQuery,
-  GetCoachRoutinesQuery,
-  UpdateProgramInput,
-  UpdateRoutineInput,
-  UpdateProgramRoutineInput,
-  UpdateRoutineExerciseInput,
+  CreateClientProgramParams,
+  CreateClientProgramInput,
+  GetClientActiveProgramParams,
+  UpdateClientProgramParams,
+  UpdateClientProgramInput,
+  DeleteClientProgramParams,
+  GetProgramByIdParams,
+  AddProgramRoutineParams,
+  AddProgramRoutineInput,
   UpdateProgramRoutineParams,
-  RemoveProgramRoutineParams,
-  UpdateRoutineExerciseParams,
-  RemoveRoutineExerciseParams,
+  UpdateProgramRoutineInput,
+  DeleteProgramRoutineParams,
+  AddProgramRoutineExerciseParams,
+  AddProgramRoutineExerciseInput,
+  UpdateProgramRoutineExerciseParams,
+  UpdateProgramRoutineExerciseInput,
+  DeleteProgramRoutineExerciseParams,
+  CreateRoutineInput,
+  GetCoachRoutinesQuery,
+  UpdateRoutineInput,
 } from '../schemas/program.schema';
 
-// ======= Shared shape helpers =======
+// ============== Helpers ==============
 
-const routineShape = (routine: {
-  id: string;
-  coachId: string | null;
-  name: string;
-  description: string;
-  estimatedDurationMinutes: number;
-  muscleGroupsTargeted: MuscleGroup[];
-  createdAt: Date;
-  updatedAt: Date;
-}) => ({
-  id: routine.id,
-  coachId: routine.coachId,
-  name: routine.name,
-  description: routine.description,
-  estimatedDurationMinutes: routine.estimatedDurationMinutes,
-  muscleGroupsTargeted: routine.muscleGroupsTargeted,
-  createdAt: routine.createdAt,
-  updatedAt: routine.updatedAt,
+/**
+ * Verify the coach owns the given program and return it.
+ * @param programId - The program to look up
+ * @param coachId - The authenticated coach's user_id
+ * @returns The assigned_program row
+ * @throws NotFoundException if not found or not owned
+ */
+const requireCoachProgram = async (programId: string, coachId: string) => {
+  const program = await prisma.assigned_program.findUnique({
+    where: { id: programId },
+  });
+  if (!program || program.coach_id !== coachId || program.deleted_at) {
+    throw new NotFoundException(
+      'PROGRAM_NOT_FOUND',
+      'Program not found or access denied'
+    );
+  }
+  return program;
+};
+
+/**
+ * Verify a routine within a program belongs to the coach's program.
+ * @param aprId - assigned_program_routine id
+ * @param programId - parent program id
+ * @param coachId - the coach's user_id
+ * @returns The assigned_program_routine row
+ * @throws NotFoundException if not found
+ */
+const requireProgramRoutine = async (
+  aprId: string,
+  programId: string,
+  coachId: string
+) => {
+  const apr = await prisma.assigned_program_routine.findFirst({
+    where: {
+      id: aprId,
+      assigned_program_id: programId,
+      deleted_at: null,
+      assigned_program: { coach_id: coachId, deleted_at: null },
+    },
+  });
+  if (!apr) {
+    throw new NotFoundException(
+      'PROGRAM_ROUTINE_NOT_FOUND',
+      'Routine not found in this program'
+    );
+  }
+  return apr;
+};
+
+/**
+ * Full program tree shape used by getById and create responses.
+ * @param programId - The program to fetch
+ * @returns Program with all routines and exercises
+ */
+const fetchProgramTree = async (programId: string) => {
+  return prisma.assigned_program.findUniqueOrThrow({
+    where: { id: programId },
+    include: {
+      assigned_program_routines: {
+        where: { deleted_at: null },
+        orderBy: { order_in_program: 'asc' },
+        include: {
+          assigned_program_routine_exercises: {
+            where: { deleted_at: null },
+            orderBy: { order_in_routine: 'asc' },
+            include: { exercise: true },
+          },
+        },
+      },
+    },
+  });
+};
+
+/**
+ * Shape a full program tree for the response envelope.
+ * @param program - Prisma result with nested includes
+ * @returns Cleaned response object
+ */
+const shapeProgramTree = (
+  program: Awaited<ReturnType<typeof fetchProgramTree>>
+) => ({
+  id: program.id,
+  coach_id: program.coach_id,
+  user_id: program.user_id,
+  name: program.name,
+  description: program.description,
+  notes: program.notes,
+  is_active: program.is_active,
+  start_date: program.start_date,
+  end_date: program.end_date,
+  deleted_at: program.deleted_at,
+  created_at: program.created_at,
+  updated_at: program.updated_at,
+  routines: program.assigned_program_routines.map((apr) => ({
+    id: apr.id,
+    source_routine_id: apr.source_routine_id,
+    name: apr.name,
+    description: apr.description,
+    estimated_duration_minutes: apr.estimated_duration_minutes,
+    order_in_program: apr.order_in_program,
+    days_of_week: apr.days_of_week,
+    created_at: apr.created_at,
+    updated_at: apr.updated_at,
+    exercises: apr.assigned_program_routine_exercises.map((apre) => ({
+      id: apre.id,
+      exercise_id: apre.exercise_id,
+      sets: apre.sets,
+      reps_min: apre.reps_min,
+      reps_max: apre.reps_max,
+      rest_seconds: apre.rest_seconds,
+      order_in_routine: apre.order_in_routine,
+      exercise: apre.exercise
+        ? {
+            id: apre.exercise.id,
+            name: apre.exercise.name,
+            description: apre.exercise.description,
+            target_muscles: apre.exercise.target_muscles,
+          }
+        : undefined,
+      created_at: apre.created_at,
+      updated_at: apre.updated_at,
+    })),
+  })),
 });
 
-const exerciseSlotShape = (re: {
-  id: string;
-  exerciseId: string;
-  sets: number;
-  repsMin: number;
-  repsMax: number;
-  restSeconds: number;
-  orderInRoutine: number;
-  notes: string | null;
-  exercise: {
-    id: string;
-    name: string;
-    description: string;
-    primaryMuscleGroup: MuscleGroup;
-    equipmentNeeded: string[];
-  };
-}) => ({
-  id: re.id,
-  exerciseId: re.exerciseId,
-  sets: re.sets,
-  repsMin: re.repsMin,
-  repsMax: re.repsMax,
-  restSeconds: re.restSeconds,
-  orderInRoutine: re.orderInRoutine,
-  notes: re.notes,
-  exercise: {
-    id: re.exercise.id,
-    name: re.exercise.name,
-    description: re.exercise.description,
-    primaryMuscleGroup: re.exercise.primaryMuscleGroup,
-    equipmentNeeded: re.exercise.equipmentNeeded,
-  },
-});
-
-// ============== Program Controllers ==============
+// ============== Client Program Controllers ==============
 
 /**
- * Create a new training program.
+ * Create a new program for a specific client.
+ * POST /coach/clients/:clientId/programs
+ * @param req - Express request with validated params + body
+ * @param res - Express response
  */
-export const createProgram = async (
+export const createClientProgram = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const coach = req.coach;
-    if (!coach) {
-      sendSingleError(res, 'Coach required', 403);
-      return;
-    }
-
-    const { name, description, customForUserId } =
-      req.body as import('../schemas/program.schema').CreateProgramInput;
-
-    // If customForUserId is set, validate the user exists and is in the coach's class
-    if (customForUserId) {
-      const clientRelation = await prisma.subscribedCoach.findFirst({
-        where: { userId: customForUserId, coachId: coach.id, endedAt: null },
-      });
-      if (!clientRelation) {
-        sendSingleError(res, 'Client not found in your class', 404);
-        return;
-      }
-    }
-
-    const program = await prisma.program.create({
-      data: {
-        name,
-        description,
-        coachId: coach.id,
-        ...(customForUserId && { customForUserId }),
-      },
-    });
-
-    logger.info('Program created', {
-      programId: program.id,
-      coachId: coach.id,
-    });
-    sendSuccess(res, { program }, 201);
-  } catch (error) {
-    logger.error('Error creating program', error);
-    sendSingleError(res, 'Failed to create program', 500);
+  const coach = req.coach;
+  if (!coach) {
+    throw new ForbiddenException('AUTH_COACH_REQUIRED', 'Coach required');
   }
-};
 
-/**
- * List all programs owned by the authenticated coach.
- */
-export const getCoachPrograms = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  try {
-    const coach = req.coach;
-    if (!coach) {
-      sendSingleError(res, 'Coach required', 403);
-      return;
-    }
+  const { clientId } = res.locals.validated
+    ?.params as CreateClientProgramParams;
+  const { name, description, notes, start_date, end_date } = res.locals
+    .validated?.body as CreateClientProgramInput;
 
-    const rawQuery = req.query as unknown as GetCoachProgramsQuery;
-    const limit = rawQuery.limit ? Number(rawQuery.limit) : 50;
-    const offset = rawQuery.offset ? Number(rawQuery.offset) : 0;
-
-    // Use validated query if available; fall back to raw parsed values
-    const validatedQuery = res.locals.validated?.query as
-      | GetCoachProgramsQuery
-      | undefined;
-    const includeCustom = validatedQuery?.includeCustom ?? false;
-
-    logger.debug('Fetching programs for coach', {
-      coachId: coach.id,
-      limit,
-      offset,
-      includeCustom,
-    });
-
-    // By default, exclude custom (one-off) programs from the reusable library view
-    const where: Record<string, unknown> = {
-      coachId: coach.id,
-      ...(!includeCustom && { customForUserId: null }),
-    };
-
-    const [programs, total] = await Promise.all([
-      prisma.program.findMany({
-        where,
-        include: {
-          _count: { select: { programRoutines: true, assignedPrograms: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: limit,
-        skip: offset,
-      }),
-      prisma.program.count({ where }),
-    ]);
-
-    sendSuccess(res, {
-      programs: programs.map((p) => ({
-        id: p.id,
-        name: p.name,
-        description: p.description,
-        customForUserId: p.customForUserId,
-        routineCount: p._count.programRoutines,
-        assignedClientCount: p._count.assignedPrograms,
-        createdAt: p.createdAt,
-        updatedAt: p.updatedAt,
-      })),
-      pagination: {
-        total,
-        limit,
-        offset,
-        hasMore: offset + programs.length < total,
-      },
-    });
-  } catch (error) {
-    logger.error('Error fetching coach programs', error);
-    sendSingleError(res, 'Failed to fetch programs', 500);
+  // Verify client is in coach's class
+  const isInClass = await prisma.subscribed_coach.findFirst({
+    where: {
+      user_id: clientId,
+      coach_id: coach.user_id,
+      ended_at: null,
+    },
+  });
+  if (!isInClass) {
+    throw new NotFoundException(
+      'COACH_CLIENT_NOT_FOUND',
+      'Client not found in your class'
+    );
   }
-};
 
-/**
- * Get a single program with its full routine/exercise tree.
- */
-export const getCoachProgramById = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  try {
-    const coach = req.coach;
-    if (!coach) {
-      sendSingleError(res, 'Coach required', 403);
-      return;
-    }
-
-    const { programId } = req.params as Record<string, string>;
-
-    const program = await prisma.program.findUnique({
-      where: { id: programId },
-      include: {
-        programRoutines: {
-          include: {
-            routine: {
-              include: {
-                routineExercises: {
-                  include: { exercise: true },
-                  orderBy: { orderInRoutine: 'asc' },
-                },
-              },
-            },
-          },
-          orderBy: { dayNumber: 'asc' },
-        },
-      },
-    });
-
-    if (!program || program.coachId !== coach.id) {
-      sendSingleError(res, 'Program not found or access denied', 404);
-      return;
-    }
-
-    sendSuccess(res, {
-      program: {
-        id: program.id,
-        name: program.name,
-        description: program.description,
-        coachId: program.coachId,
-        createdAt: program.createdAt,
-        updatedAt: program.updatedAt,
-        routines: program.programRoutines.map((pr) => ({
-          id: pr.id,
-          dayNumber: pr.dayNumber,
-          routine: {
-            ...routineShape(pr.routine),
-            exercises: pr.routine.routineExercises.map(exerciseSlotShape),
-          },
-        })),
-      },
-    });
-  } catch (error) {
-    logger.error('Error fetching program', error);
-    sendSingleError(res, 'Failed to fetch program', 500);
-  }
-};
-
-/**
- * Update a program's name or description.
- */
-export const updateProgram = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  try {
-    const coach = req.coach;
-    if (!coach) {
-      sendSingleError(res, 'Coach required', 403);
-      return;
-    }
-
-    const { programId } = req.params as Record<string, string>;
-    const { name, description } = req.body as UpdateProgramInput;
-
-    if (!name && !description) {
-      sendSingleError(
-        res,
-        'At least one field (name, description) must be provided',
-        400
-      );
-      return;
-    }
-
-    const existing = await prisma.program.findUnique({
-      where: { id: programId },
-    });
-    if (!existing || existing.coachId !== coach.id) {
-      sendSingleError(res, 'Program not found or access denied', 404);
-      return;
-    }
-
-    const program = await prisma.program.update({
-      where: { id: programId },
-      data: {
-        ...(name !== undefined && { name }),
-        ...(description !== undefined && { description }),
-      },
-    });
-
-    logger.info('Program updated', { programId, coachId: coach.id });
-    sendSuccess(res, { program });
-  } catch (error) {
-    logger.error('Error updating program', error);
-    sendSingleError(res, 'Failed to update program', 500);
-  }
-};
-
-/**
- * Delete a program. Cascades to ProgramRoutine records but NOT Routines.
- */
-export const deleteProgram = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  try {
-    const coach = req.coach;
-    if (!coach) {
-      sendSingleError(res, 'Coach required', 403);
-      return;
-    }
-
-    const { programId } = req.params as Record<string, string>;
-
-    const existing = await prisma.program.findUnique({
-      where: { id: programId },
-    });
-    if (!existing || existing.coachId !== coach.id) {
-      sendSingleError(res, 'Program not found or access denied', 404);
-      return;
-    }
-
-    await prisma.program.delete({ where: { id: programId } });
-
-    logger.info('Program deleted', { programId, coachId: coach.id });
-    sendSuccess(res, { message: 'Program deleted successfully' });
-  } catch (error) {
-    logger.error('Error deleting program', error);
-    sendSingleError(res, 'Failed to delete program', 500);
-  }
-};
-
-// ============== Routine Controllers ==============
-
-/**
- * Create a new reusable routine owned by the coach.
- */
-export const createRoutine = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  try {
-    const coach = req.coach;
-    if (!coach) {
-      sendSingleError(res, 'Coach required', 403);
-      return;
-    }
-
-    const {
+  const program = await prisma.assigned_program.create({
+    data: {
+      coach_id: coach.user_id,
+      user_id: clientId,
       name,
       description,
-      estimatedDurationMinutes,
-      muscleGroupsTargeted,
-    } = req.body as CreateRoutineInput;
+      notes: notes ?? null,
+      start_date: start_date ?? null,
+      end_date: end_date ?? null,
+    },
+  });
 
-    const routine = await prisma.routine.create({
-      data: {
-        coachId: coach.id,
-        name,
-        description,
-        estimatedDurationMinutes,
-        muscleGroupsTargeted: muscleGroupsTargeted as MuscleGroup[],
-      },
-    });
+  logger.info('Client program created', {
+    programId: program.id,
+    coachId: coach.user_id,
+    clientId,
+  });
 
-    logger.info('Routine created', {
-      routineId: routine.id,
-      coachId: coach.id,
-    });
-    sendSuccess(res, { routine: routineShape(routine) }, 201);
-  } catch (error) {
-    logger.error('Error creating routine', error);
-    sendSingleError(res, 'Failed to create routine', 500);
-  }
-};
-
-/**
- * List all routines owned by the authenticated coach.
- */
-export const getCoachRoutines = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  try {
-    const coach = req.coach;
-    if (!coach) {
-      sendSingleError(res, 'Coach required', 403);
-      return;
-    }
-
-    const rawQuery = req.query as unknown as GetCoachRoutinesQuery;
-    const limit = rawQuery.limit ? Number(rawQuery.limit) : 50;
-    const offset = rawQuery.offset ? Number(rawQuery.offset) : 0;
-
-    const [routines, total] = await Promise.all([
-      prisma.routine.findMany({
-        where: { coachId: coach.id },
-        include: {
-          _count: { select: { routineExercises: true, programRoutines: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: limit,
-        skip: offset,
+  sendSuccess(
+    res,
+    {
+      program: shapeProgramTree({
+        ...program,
+        assigned_program_routines: [],
       }),
-      prisma.routine.count({ where: { coachId: coach.id } }),
-    ]);
-
-    sendSuccess(res, {
-      routines: routines.map((r) => ({
-        ...routineShape(r),
-        exerciseCount: r._count.routineExercises,
-        programCount: r._count.programRoutines,
-      })),
-      pagination: {
-        total,
-        limit,
-        offset,
-        hasMore: offset + routines.length < total,
-      },
-    });
-  } catch (error) {
-    logger.error('Error fetching coach routines', error);
-    sendSingleError(res, 'Failed to fetch routines', 500);
-  }
+    },
+    201
+  );
 };
 
 /**
- * Get a single routine with its full exercise list.
+ * Get the active program for a specific client (or null).
+ * GET /coach/clients/:clientId/program
+ * @param req - Express request
+ * @param res - Express response
  */
-export const getCoachRoutineById = async (
+export const getClientActiveProgram = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const coach = req.coach;
-    if (!coach) {
-      sendSingleError(res, 'Coach required', 403);
-      return;
-    }
+  const coach = req.coach;
+  if (!coach) {
+    throw new ForbiddenException('AUTH_COACH_REQUIRED', 'Coach required');
+  }
 
-    const { routineId } = req.params as Record<string, string>;
+  const { clientId } = res.locals.validated
+    ?.params as GetClientActiveProgramParams;
 
-    const routine = await prisma.routine.findUnique({
-      where: { id: routineId },
-      include: {
-        routineExercises: {
-          include: { exercise: true },
-          orderBy: { orderInRoutine: 'asc' },
+  // Verify client is in coach's class
+  const isInClass = await prisma.subscribed_coach.findFirst({
+    where: {
+      user_id: clientId,
+      coach_id: coach.user_id,
+      ended_at: null,
+    },
+  });
+  if (!isInClass) {
+    throw new NotFoundException(
+      'COACH_CLIENT_NOT_FOUND',
+      'Client not found in your class'
+    );
+  }
+
+  const program = await prisma.assigned_program.findFirst({
+    where: {
+      user_id: clientId,
+      coach_id: coach.user_id,
+      is_active: true,
+      deleted_at: null,
+    },
+    orderBy: { created_at: 'desc' },
+    include: {
+      assigned_program_routines: {
+        where: { deleted_at: null },
+        orderBy: { order_in_program: 'asc' },
+        include: {
+          assigned_program_routine_exercises: {
+            where: { deleted_at: null },
+            orderBy: { order_in_routine: 'asc' },
+            include: { exercise: true },
+          },
         },
       },
-    });
+    },
+  });
 
-    if (!routine || routine.coachId !== coach.id) {
-      sendSingleError(res, 'Routine not found or access denied', 404);
-      return;
-    }
-
-    sendSuccess(res, {
-      routine: {
-        ...routineShape(routine),
-        exercises: routine.routineExercises.map(exerciseSlotShape),
-      },
-    });
-  } catch (error) {
-    logger.error('Error fetching routine', error);
-    sendSingleError(res, 'Failed to fetch routine', 500);
-  }
+  sendSuccess(res, { program: program ? shapeProgramTree(program) : null });
 };
 
 /**
- * Update a routine's fields.
+ * Get a program by ID.
+ * GET /coach/programs/:programId
+ * @param req - Express request
+ * @param res - Express response
  */
-export const updateRoutine = async (
+export const getProgramById = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const coach = req.coach;
-    if (!coach) {
-      sendSingleError(res, 'Coach required', 403);
-      return;
-    }
+  const coach = req.coach;
+  if (!coach) {
+    throw new ForbiddenException('AUTH_COACH_REQUIRED', 'Coach required');
+  }
 
-    const { routineId } = req.params as Record<string, string>;
-    const {
-      name,
-      description,
-      estimatedDurationMinutes,
-      muscleGroupsTargeted,
-    } = req.body as UpdateRoutineInput;
+  const { programId } = res.locals.validated?.params as GetProgramByIdParams;
+  await requireCoachProgram(programId, coach.user_id);
 
+  const tree = await fetchProgramTree(programId);
+  sendSuccess(res, { program: shapeProgramTree(tree) });
+};
+
+/**
+ * Update program metadata.
+ * PATCH /coach/programs/:programId
+ * @param req - Express request
+ * @param res - Express response
+ */
+export const updateClientProgram = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const coach = req.coach;
+  if (!coach) {
+    throw new ForbiddenException('AUTH_COACH_REQUIRED', 'Coach required');
+  }
+
+  const { programId } = res.locals.validated
+    ?.params as UpdateClientProgramParams;
+  const { name, description, notes, is_active, start_date, end_date } = res
+    .locals.validated?.body as UpdateClientProgramInput;
+
+  await requireCoachProgram(programId, coach.user_id);
+
+  const updated = await prisma.assigned_program.update({
+    where: { id: programId },
+    data: {
+      ...(name !== undefined && { name }),
+      ...(description !== undefined && { description }),
+      ...(notes !== undefined && { notes }),
+      ...(is_active !== undefined && { is_active }),
+      ...(start_date !== undefined && { start_date }),
+      ...(end_date !== undefined && { end_date }),
+    },
+  });
+
+  logger.info('Client program updated', {
+    programId,
+    coachId: coach.user_id,
+  });
+
+  const tree = await fetchProgramTree(updated.id);
+  sendSuccess(res, { program: shapeProgramTree(tree) });
+};
+
+/**
+ * Soft-delete a program.
+ * DELETE /coach/programs/:programId
+ * @param req - Express request
+ * @param res - Express response
+ */
+export const deleteClientProgram = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const coach = req.coach;
+  if (!coach) {
+    throw new ForbiddenException('AUTH_COACH_REQUIRED', 'Coach required');
+  }
+
+  const { programId } = res.locals.validated
+    ?.params as DeleteClientProgramParams;
+
+  await requireCoachProgram(programId, coach.user_id);
+
+  await prisma.assigned_program.update({
+    where: { id: programId },
+    data: { deleted_at: new Date(), is_active: false },
+  });
+
+  logger.info('Client program deleted', {
+    programId,
+    coachId: coach.user_id,
+  });
+
+  sendSuccess(res, { message: 'Program deleted successfully' });
+};
+
+// ============== Program Routine Controllers ==============
+
+/**
+ * Add a routine to a program — either from a template or inline.
+ * POST /coach/programs/:programId/routines
+ * @param req - Express request
+ * @param res - Express response
+ */
+export const addProgramRoutine = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const coach = req.coach;
+  if (!coach) {
+    throw new ForbiddenException('AUTH_COACH_REQUIRED', 'Coach required');
+  }
+
+  const { programId } = res.locals.validated?.params as AddProgramRoutineParams;
+  const body = res.locals.validated?.body as AddProgramRoutineInput;
+
+  await requireCoachProgram(programId, coach.user_id);
+
+  if (body.mode === 'template') {
+    // Copy from template routine
+    const template = await prisma.routine.findUnique({
+      where: { id: body.source_routine_id },
+    });
     if (
-      name === undefined &&
-      description === undefined &&
-      estimatedDurationMinutes === undefined &&
-      muscleGroupsTargeted === undefined
+      !template ||
+      template.user_id !== coach.user_id ||
+      template.deleted_at
     ) {
-      sendSingleError(res, 'At least one field must be provided', 400);
-      return;
+      throw new NotFoundException(
+        'ROUTINE_TEMPLATE_NOT_FOUND',
+        'Routine template not found or access denied'
+      );
     }
 
-    const existing = await prisma.routine.findUnique({
-      where: { id: routineId },
-    });
-    if (!existing || existing.coachId !== coach.id) {
-      sendSingleError(res, 'Routine not found or access denied', 404);
-      return;
-    }
-
-    const routine = await prisma.routine.update({
-      where: { id: routineId },
+    await prisma.assigned_program_routine.create({
       data: {
-        ...(name !== undefined && { name }),
-        ...(description !== undefined && { description }),
-        ...(estimatedDurationMinutes !== undefined && {
-          estimatedDurationMinutes,
-        }),
-        ...(muscleGroupsTargeted !== undefined && {
-          muscleGroupsTargeted: muscleGroupsTargeted as MuscleGroup[],
-        }),
+        assigned_program_id: programId,
+        source_routine_id: template.id,
+        name: template.name,
+        description: template.description,
+        estimated_duration_minutes: template.estimated_duration_minutes,
+        order_in_program: body.order_in_program,
+        days_of_week: body.days_of_week,
       },
     });
 
-    logger.info('Routine updated', { routineId, coachId: coach.id });
-    sendSuccess(res, { routine: routineShape(routine) });
-  } catch (error) {
-    logger.error('Error updating routine', error);
-    sendSingleError(res, 'Failed to update routine', 500);
-  }
-};
-
-/**
- * Delete a routine. Cascades to RoutineExercise and ProgramRoutine but NOT Exercises.
- */
-export const deleteRoutine = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  try {
-    const coach = req.coach;
-    if (!coach) {
-      sendSingleError(res, 'Coach required', 403);
-      return;
-    }
-
-    const { routineId } = req.params as Record<string, string>;
-
-    const existing = await prisma.routine.findUnique({
-      where: { id: routineId },
-    });
-    if (!existing || existing.coachId !== coach.id) {
-      sendSingleError(res, 'Routine not found or access denied', 404);
-      return;
-    }
-
-    await prisma.routine.delete({ where: { id: routineId } });
-
-    logger.info('Routine deleted', { routineId, coachId: coach.id });
-    sendSuccess(res, { message: 'Routine deleted successfully' });
-  } catch (error) {
-    logger.error('Error deleting routine', error);
-    sendSingleError(res, 'Failed to delete routine', 500);
-  }
-};
-
-// ============== ProgramRoutine Junction Controllers ==============
-
-/**
- * Assign an existing routine to a program day slot.
- * Both program and routine must belong to the authenticated coach.
- */
-export const assignRoutineToProgram = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  try {
-    const coach = req.coach;
-    if (!coach) {
-      sendSingleError(res, 'Coach required', 403);
-      return;
-    }
-
-    const { programId } = req.params as Record<string, string>;
-    const { routineId, dayNumber } = req.body;
-
-    const [program, routine] = await Promise.all([
-      prisma.program.findUnique({ where: { id: programId } }),
-      prisma.routine.findUnique({ where: { id: routineId } }),
-    ]);
-
-    if (!program || program.coachId !== coach.id) {
-      sendSingleError(res, 'Program not found or access denied', 404);
-      return;
-    }
-
-    if (!routine || routine.coachId !== coach.id) {
-      sendSingleError(res, 'Routine not found or access denied', 404);
-      return;
-    }
-
-    const assignment = await prisma.programRoutine.create({
-      data: { programId, routineId, dayNumber },
-    });
-
-    logger.info('Routine assigned to program', {
+    logger.info('Program routine added from template', {
       programId,
-      routineId,
-      dayNumber,
+      sourceRoutineId: template.id,
+      coachId: coach.user_id,
     });
-    sendSuccess(res, { assignment }, 201);
-  } catch (error) {
-    if ((error as { code?: string }).code === 'P2002') {
-      sendSingleError(
-        res,
-        'This routine is already assigned to this program',
-        409
-      );
-      return;
-    }
-    logger.error('Error assigning routine to program', error);
-    sendSingleError(res, 'Failed to assign routine to program', 500);
+
+    const tree = await fetchProgramTree(programId);
+    sendSuccess(res, { program: shapeProgramTree(tree) }, 201);
+  } else {
+    // Inline creation
+    await prisma.$transaction(async (tx) => {
+      const created = await tx.assigned_program_routine.create({
+        data: {
+          assigned_program_id: programId,
+          name: body.name,
+          description: body.description,
+          estimated_duration_minutes: body.estimated_duration_minutes,
+          order_in_program: body.order_in_program,
+          days_of_week: body.days_of_week,
+        },
+      });
+
+      if (body.exercises && body.exercises.length > 0) {
+        for (const ex of body.exercises) {
+          // Verify exercise exists and is accessible
+          const exercise = await tx.exercise.findUnique({
+            where: { id: ex.exercise_id },
+          });
+          if (!exercise || exercise.deleted_at) {
+            throw new NotFoundException(
+              'WORKOUT_EXERCISE_NOT_FOUND',
+              `Exercise ${ex.exercise_id} not found`
+            );
+          }
+          if (exercise.user_id !== coach.user_id && !exercise.is_public) {
+            throw new ForbiddenException(
+              'WORKOUT_EXERCISE_FORBIDDEN',
+              `Exercise ${ex.exercise_id} not accessible`
+            );
+          }
+
+          await tx.assigned_program_routine_exercise.create({
+            data: {
+              assigned_program_routine_id: created.id,
+              exercise_id: ex.exercise_id,
+              sets: ex.sets,
+              reps_min: ex.reps_min,
+              reps_max: ex.reps_max,
+              rest_seconds: ex.rest_seconds,
+              order_in_routine: ex.order_in_routine,
+            },
+          });
+        }
+      }
+
+      return created;
+    });
+
+    logger.info('Program routine added inline', {
+      programId,
+      coachId: coach.user_id,
+    });
+
+    const tree = await fetchProgramTree(programId);
+    sendSuccess(res, { program: shapeProgramTree(tree) }, 201);
   }
 };
 
 /**
- * Reassign a routine to a different day number within a program.
+ * Update a routine within a program.
+ * PATCH /coach/programs/:programId/routines/:aprId
+ * @param req - Express request
+ * @param res - Express response
  */
 export const updateProgramRoutine = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const coach = req.coach;
-    if (!coach) {
-      sendSingleError(res, 'Coach required', 403);
-      return;
-    }
-
-    const { programId, programRoutineId } =
-      req.params as UpdateProgramRoutineParams;
-    const { dayNumber } = req.body as UpdateProgramRoutineInput;
-
-    const program = await prisma.program.findUnique({
-      where: { id: programId },
-    });
-    if (!program || program.coachId !== coach.id) {
-      sendSingleError(res, 'Program not found or access denied', 404);
-      return;
-    }
-
-    const programRoutine = await prisma.programRoutine.findUnique({
-      where: { id: programRoutineId },
-    });
-    if (!programRoutine || programRoutine.programId !== programId) {
-      sendSingleError(res, 'Program routine not found', 404);
-      return;
-    }
-
-    const updated = await prisma.programRoutine.update({
-      where: { id: programRoutineId },
-      data: { dayNumber },
-    });
-
-    logger.info('ProgramRoutine day updated', { programRoutineId, dayNumber });
-    sendSuccess(res, { programRoutine: updated });
-  } catch (error) {
-    logger.error('Error updating program routine', error);
-    sendSingleError(res, 'Failed to update program routine', 500);
+  const coach = req.coach;
+  if (!coach) {
+    throw new ForbiddenException('AUTH_COACH_REQUIRED', 'Coach required');
   }
+
+  const { programId, aprId } = res.locals.validated
+    ?.params as UpdateProgramRoutineParams;
+  const {
+    name,
+    description,
+    estimated_duration_minutes,
+    days_of_week,
+    order_in_program,
+  } = res.locals.validated?.body as UpdateProgramRoutineInput;
+
+  await requireProgramRoutine(aprId, programId, coach.user_id);
+
+  await prisma.assigned_program_routine.update({
+    where: { id: aprId },
+    data: {
+      ...(name !== undefined && { name }),
+      ...(description !== undefined && { description }),
+      ...(estimated_duration_minutes !== undefined && {
+        estimated_duration_minutes,
+      }),
+      ...(days_of_week !== undefined && { days_of_week }),
+      ...(order_in_program !== undefined && { order_in_program }),
+    },
+  });
+
+  logger.info('Program routine updated', {
+    programId,
+    aprId,
+    coachId: coach.user_id,
+  });
+
+  const tree = await fetchProgramTree(programId);
+  sendSuccess(res, { program: shapeProgramTree(tree) });
 };
 
 /**
- * Remove a routine from a program day slot. Does NOT delete the Routine.
+ * Soft-delete a routine from a program.
+ * DELETE /coach/programs/:programId/routines/:aprId
+ * @param req - Express request
+ * @param res - Express response
  */
-export const removeProgramRoutine = async (
+export const deleteProgramRoutine = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const coach = req.coach;
-    if (!coach) {
-      sendSingleError(res, 'Coach required', 403);
-      return;
-    }
-
-    const { programId, programRoutineId } =
-      req.params as RemoveProgramRoutineParams;
-
-    const program = await prisma.program.findUnique({
-      where: { id: programId },
-    });
-    if (!program || program.coachId !== coach.id) {
-      sendSingleError(res, 'Program not found or access denied', 404);
-      return;
-    }
-
-    const programRoutine = await prisma.programRoutine.findUnique({
-      where: { id: programRoutineId },
-    });
-    if (!programRoutine || programRoutine.programId !== programId) {
-      sendSingleError(res, 'Program routine not found', 404);
-      return;
-    }
-
-    await prisma.programRoutine.delete({ where: { id: programRoutineId } });
-
-    logger.info('ProgramRoutine removed', { programRoutineId, programId });
-    sendSuccess(res, { message: 'Routine removed from program successfully' });
-  } catch (error) {
-    logger.error('Error removing program routine', error);
-    sendSingleError(res, 'Failed to remove routine from program', 500);
+  const coach = req.coach;
+  if (!coach) {
+    throw new ForbiddenException('AUTH_COACH_REQUIRED', 'Coach required');
   }
+
+  const { programId, aprId } = res.locals.validated
+    ?.params as DeleteProgramRoutineParams;
+
+  await requireProgramRoutine(aprId, programId, coach.user_id);
+
+  await prisma.assigned_program_routine.update({
+    where: { id: aprId },
+    data: { deleted_at: new Date() },
+  });
+
+  logger.info('Program routine removed', {
+    programId,
+    aprId,
+    coachId: coach.user_id,
+  });
+
+  sendSuccess(res, { message: 'Routine removed from program' });
 };
 
-// ============== RoutineExercise Junction Controllers ==============
+// ============== Program Routine Exercise Controllers ==============
 
 /**
- * Add an exercise (from the global library) to a routine.
- * Verifies the coach owns the routine before adding.
+ * Add an exercise to a program routine.
+ * POST /coach/programs/:programId/routines/:aprId/exercises
+ * @param req - Express request
+ * @param res - Express response
  */
-export const addExerciseToRoutine = async (
+export const addProgramRoutineExercise = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const coach = req.coach;
-    if (!coach) {
-      sendSingleError(res, 'Coach required', 403);
-      return;
-    }
-
-    const { routineId } = req.params as Record<string, string>;
-    const data = req.body;
-
-    const routine = await prisma.routine.findUnique({
-      where: { id: routineId },
-    });
-    if (!routine) {
-      sendSingleError(res, 'Routine not found', 404);
-      return;
-    }
-
-    // P0 security fix: ownership check
-    if (routine.coachId !== coach.id) {
-      sendSingleError(res, 'Routine not found or access denied', 403);
-      return;
-    }
-
-    const routineExercise = await prisma.routineExercise.create({
-      data: { routineId, ...data },
-    });
-
-    logger.info('Exercise added to routine', {
-      routineId,
-      exerciseId: data.exerciseId,
-      coachId: coach.id,
-    });
-    sendSuccess(res, { routineExercise }, 201);
-  } catch (error) {
-    if ((error as { code?: string }).code === 'P2002') {
-      sendSingleError(res, 'This exercise is already in the routine', 409);
-      return;
-    }
-    logger.error('Error adding exercise to routine', error);
-    sendSingleError(res, 'Failed to add exercise to routine', 500);
+  const coach = req.coach;
+  if (!coach) {
+    throw new ForbiddenException('AUTH_COACH_REQUIRED', 'Coach required');
   }
-};
 
-/**
- * Update the prescription (sets/reps/rest/order/notes) for an exercise in a routine.
- */
-export const updateRoutineExercise = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  try {
-    const coach = req.coach;
-    if (!coach) {
-      sendSingleError(res, 'Coach required', 403);
-      return;
-    }
+  const { programId, aprId } = res.locals.validated
+    ?.params as AddProgramRoutineExerciseParams;
+  const {
+    exercise_id,
+    sets,
+    reps_min,
+    reps_max,
+    rest_seconds,
+    order_in_routine,
+  } = res.locals.validated?.body as AddProgramRoutineExerciseInput;
 
-    const { routineId, routineExerciseId } =
-      req.params as UpdateRoutineExerciseParams;
-    const { sets, repsMin, repsMax, restSeconds, orderInRoutine, notes } =
-      req.body as UpdateRoutineExerciseInput;
+  await requireProgramRoutine(aprId, programId, coach.user_id);
 
-    if (
-      sets === undefined &&
-      repsMin === undefined &&
-      repsMax === undefined &&
-      restSeconds === undefined &&
-      orderInRoutine === undefined &&
-      notes === undefined
-    ) {
-      sendSingleError(res, 'At least one field must be provided', 400);
-      return;
-    }
+  // Verify exercise exists and is accessible
+  const exercise = await prisma.exercise.findUnique({
+    where: { id: exercise_id },
+  });
+  if (!exercise || exercise.deleted_at) {
+    throw new NotFoundException(
+      'WORKOUT_EXERCISE_NOT_FOUND',
+      'Exercise not found'
+    );
+  }
+  if (exercise.user_id !== coach.user_id && !exercise.is_public) {
+    throw new ForbiddenException(
+      'WORKOUT_EXERCISE_FORBIDDEN',
+      'Exercise not accessible'
+    );
+  }
 
-    const routine = await prisma.routine.findUnique({
-      where: { id: routineId },
-    });
-    if (!routine || routine.coachId !== coach.id) {
-      sendSingleError(res, 'Routine not found or access denied', 404);
-      return;
-    }
+  const apre = await prisma.assigned_program_routine_exercise.create({
+    data: {
+      assigned_program_routine_id: aprId,
+      exercise_id,
+      sets,
+      reps_min,
+      reps_max,
+      rest_seconds,
+      order_in_routine,
+    },
+    include: { exercise: true },
+  });
 
-    const routineExercise = await prisma.routineExercise.findUnique({
-      where: { id: routineExerciseId },
-    });
-    if (!routineExercise || routineExercise.routineId !== routineId) {
-      sendSingleError(res, 'Routine exercise not found', 404);
-      return;
-    }
+  logger.info('Program routine exercise added', {
+    programId,
+    aprId,
+    apreId: apre.id,
+    coachId: coach.user_id,
+  });
 
-    const updated = await prisma.routineExercise.update({
-      where: { id: routineExerciseId },
-      data: {
-        ...(sets !== undefined && { sets }),
-        ...(repsMin !== undefined && { repsMin }),
-        ...(repsMax !== undefined && { repsMax }),
-        ...(restSeconds !== undefined && { restSeconds }),
-        ...(orderInRoutine !== undefined && { orderInRoutine }),
-        ...(notes !== undefined && { notes }),
+  sendSuccess(
+    res,
+    {
+      exercise: {
+        id: apre.id,
+        exercise_id: apre.exercise_id,
+        sets: apre.sets,
+        reps_min: apre.reps_min,
+        reps_max: apre.reps_max,
+        rest_seconds: apre.rest_seconds,
+        order_in_routine: apre.order_in_routine,
+        exercise: apre.exercise
+          ? {
+              id: apre.exercise.id,
+              name: apre.exercise.name,
+              description: apre.exercise.description,
+              target_muscles: apre.exercise.target_muscles,
+            }
+          : undefined,
+        created_at: apre.created_at,
+        updated_at: apre.updated_at,
       },
-    });
-
-    logger.info('RoutineExercise updated', { routineExerciseId, routineId });
-    sendSuccess(res, { routineExercise: updated });
-  } catch (error) {
-    logger.error('Error updating routine exercise', error);
-    sendSingleError(res, 'Failed to update routine exercise', 500);
-  }
+    },
+    201
+  );
 };
 
 /**
- * Remove an exercise slot from a routine. Does NOT delete the Exercise.
+ * Update an exercise within a program routine.
+ * PATCH /coach/programs/:programId/routines/:aprId/exercises/:apreId
+ * @param req - Express request
+ * @param res - Express response
  */
-export const removeRoutineExercise = async (
+export const updateProgramRoutineExercise = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const coach = req.coach;
-    if (!coach) {
-      sendSingleError(res, 'Coach required', 403);
-      return;
-    }
-
-    const { routineId, routineExerciseId } =
-      req.params as RemoveRoutineExerciseParams;
-
-    const routine = await prisma.routine.findUnique({
-      where: { id: routineId },
-    });
-    if (!routine || routine.coachId !== coach.id) {
-      sendSingleError(res, 'Routine not found or access denied', 404);
-      return;
-    }
-
-    const routineExercise = await prisma.routineExercise.findUnique({
-      where: { id: routineExerciseId },
-    });
-    if (!routineExercise || routineExercise.routineId !== routineId) {
-      sendSingleError(res, 'Routine exercise not found', 404);
-      return;
-    }
-
-    await prisma.routineExercise.delete({ where: { id: routineExerciseId } });
-
-    logger.info('RoutineExercise removed', { routineExerciseId, routineId });
-    sendSuccess(res, { message: 'Exercise removed from routine successfully' });
-  } catch (error) {
-    logger.error('Error removing routine exercise', error);
-    sendSingleError(res, 'Failed to remove exercise from routine', 500);
+  const coach = req.coach;
+  if (!coach) {
+    throw new ForbiddenException('AUTH_COACH_REQUIRED', 'Coach required');
   }
+
+  const { programId, aprId, apreId } = res.locals.validated
+    ?.params as UpdateProgramRoutineExerciseParams;
+  const {
+    exercise_id,
+    sets,
+    reps_min,
+    reps_max,
+    rest_seconds,
+    order_in_routine,
+  } = res.locals.validated?.body as UpdateProgramRoutineExerciseInput;
+
+  await requireProgramRoutine(aprId, programId, coach.user_id);
+
+  // Verify the exercise row exists and belongs to this apr
+  const existing = await prisma.assigned_program_routine_exercise.findFirst({
+    where: {
+      id: apreId,
+      assigned_program_routine_id: aprId,
+      deleted_at: null,
+    },
+  });
+  if (!existing) {
+    throw new NotFoundException(
+      'WORKOUT_EXERCISE_NOT_FOUND',
+      'Routine exercise not found'
+    );
+  }
+
+  // If changing exercise_id, verify the new exercise
+  if (exercise_id !== undefined) {
+    const exercise = await prisma.exercise.findUnique({
+      where: { id: exercise_id },
+    });
+    if (!exercise || exercise.deleted_at) {
+      throw new NotFoundException(
+        'WORKOUT_EXERCISE_NOT_FOUND',
+        'Exercise not found'
+      );
+    }
+    if (exercise.user_id !== coach.user_id && !exercise.is_public) {
+      throw new ForbiddenException(
+        'WORKOUT_EXERCISE_FORBIDDEN',
+        'Exercise not accessible'
+      );
+    }
+  }
+
+  const updated = await prisma.assigned_program_routine_exercise.update({
+    where: { id: apreId },
+    data: {
+      ...(exercise_id !== undefined && { exercise_id }),
+      ...(sets !== undefined && { sets }),
+      ...(reps_min !== undefined && { reps_min }),
+      ...(reps_max !== undefined && { reps_max }),
+      ...(rest_seconds !== undefined && { rest_seconds }),
+      ...(order_in_routine !== undefined && { order_in_routine }),
+    },
+    include: { exercise: true },
+  });
+
+  logger.info('Program routine exercise updated', {
+    programId,
+    aprId,
+    apreId,
+    coachId: coach.user_id,
+  });
+
+  sendSuccess(res, {
+    exercise: {
+      id: updated.id,
+      exercise_id: updated.exercise_id,
+      sets: updated.sets,
+      reps_min: updated.reps_min,
+      reps_max: updated.reps_max,
+      rest_seconds: updated.rest_seconds,
+      order_in_routine: updated.order_in_routine,
+      exercise: updated.exercise
+        ? {
+            id: updated.exercise.id,
+            name: updated.exercise.name,
+            description: updated.exercise.description,
+            target_muscles: updated.exercise.target_muscles,
+          }
+        : undefined,
+      created_at: updated.created_at,
+      updated_at: updated.updated_at,
+    },
+  });
+};
+
+/**
+ * Delete an exercise from a program routine.
+ * DELETE /coach/programs/:programId/routines/:aprId/exercises/:apreId
+ * @param req - Express request
+ * @param res - Express response
+ */
+export const deleteProgramRoutineExercise = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const coach = req.coach;
+  if (!coach) {
+    throw new ForbiddenException('AUTH_COACH_REQUIRED', 'Coach required');
+  }
+
+  const { programId, aprId, apreId } = res.locals.validated
+    ?.params as DeleteProgramRoutineExerciseParams;
+
+  await requireProgramRoutine(aprId, programId, coach.user_id);
+
+  const existing = await prisma.assigned_program_routine_exercise.findFirst({
+    where: {
+      id: apreId,
+      assigned_program_routine_id: aprId,
+      deleted_at: null,
+    },
+  });
+  if (!existing) {
+    throw new NotFoundException(
+      'WORKOUT_EXERCISE_NOT_FOUND',
+      'Routine exercise not found'
+    );
+  }
+
+  await prisma.assigned_program_routine_exercise.update({
+    where: { id: apreId },
+    data: { deleted_at: new Date() },
+  });
+
+  logger.info('Program routine exercise removed', {
+    programId,
+    aprId,
+    apreId,
+    coachId: coach.user_id,
+  });
+
+  sendSuccess(res, { message: 'Routine exercise removed successfully' });
+};
+
+// ============== Routine Template Controllers (Coach Library) ==============
+
+/**
+ * Create a routine template.
+ * POST /coach/routine-templates
+ * @param req - Express request
+ * @param res - Express response
+ */
+export const createRoutine = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const appUser = req.appUser;
+  if (!appUser) {
+    throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
+  }
+
+  const { name, description, estimated_duration_minutes } = res.locals.validated
+    ?.body as CreateRoutineInput;
+
+  const routine = await prisma.routine.create({
+    data: {
+      user_id: appUser.supabase_auth_id,
+      name,
+      description,
+      estimated_duration_minutes,
+    },
+  });
+
+  logger.info('Routine template created', {
+    routineId: routine.id,
+    user_id: appUser.supabase_auth_id,
+  });
+  sendSuccess(
+    res,
+    {
+      routine: {
+        id: routine.id,
+        user_id: routine.user_id,
+        name: routine.name,
+        description: routine.description,
+        estimated_duration_minutes: routine.estimated_duration_minutes,
+        created_at: routine.created_at,
+        updated_at: routine.updated_at,
+      },
+    },
+    201
+  );
+};
+
+/**
+ * List coach's routine templates.
+ * GET /coach/routine-templates
+ * @param req - Express request
+ * @param res - Express response
+ */
+export const getCoachRoutines = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const appUser = req.appUser;
+  if (!appUser) {
+    throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
+  }
+
+  const { limit, offset } = res.locals.validated
+    ?.query as GetCoachRoutinesQuery;
+
+  const [routines, total] = await Promise.all([
+    prisma.routine.findMany({
+      where: { user_id: appUser.supabase_auth_id, deleted_at: null },
+      orderBy: { created_at: 'desc' },
+      take: limit,
+      skip: offset,
+    }),
+    prisma.routine.count({
+      where: { user_id: appUser.supabase_auth_id, deleted_at: null },
+    }),
+  ]);
+
+  sendSuccess(res, {
+    routines: routines.map((r) => ({
+      id: r.id,
+      user_id: r.user_id,
+      name: r.name,
+      description: r.description,
+      estimated_duration_minutes: r.estimated_duration_minutes,
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+    })),
+    pagination: {
+      total,
+      limit,
+      offset,
+      hasMore: offset + routines.length < total,
+    },
+  });
+};
+
+/**
+ * Get a routine template by ID.
+ * GET /coach/routine-templates/:routineId
+ * @param req - Express request
+ * @param res - Express response
+ */
+export const getCoachRoutineById = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const appUser = req.appUser;
+  if (!appUser) {
+    throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
+  }
+
+  const { routineId } = res.locals.validated?.params as { routineId: string };
+
+  const routine = await prisma.routine.findUnique({
+    where: { id: routineId },
+  });
+
+  if (
+    !routine ||
+    routine.user_id !== appUser.supabase_auth_id ||
+    routine.deleted_at
+  ) {
+    throw new NotFoundException(
+      'WORKOUT_ROUTINE_NOT_FOUND',
+      'Routine not found or access denied'
+    );
+  }
+
+  sendSuccess(res, {
+    routine: {
+      id: routine.id,
+      user_id: routine.user_id,
+      name: routine.name,
+      description: routine.description,
+      estimated_duration_minutes: routine.estimated_duration_minutes,
+      created_at: routine.created_at,
+      updated_at: routine.updated_at,
+    },
+  });
+};
+
+/**
+ * Update a routine template.
+ * PATCH /coach/routine-templates/:routineId
+ * @param req - Express request
+ * @param res - Express response
+ */
+export const updateRoutine = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const appUser = req.appUser;
+  if (!appUser) {
+    throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
+  }
+
+  const { routineId } = res.locals.validated?.params as { routineId: string };
+  const { name, description, estimated_duration_minutes } = res.locals.validated
+    ?.body as UpdateRoutineInput;
+
+  if (
+    name === undefined &&
+    description === undefined &&
+    estimated_duration_minutes === undefined
+  ) {
+    throw new BadRequestException(
+      'VALIDATION_ERROR',
+      'At least one field must be provided'
+    );
+  }
+
+  const existing = await prisma.routine.findUnique({
+    where: { id: routineId },
+  });
+  if (
+    !existing ||
+    existing.user_id !== appUser.supabase_auth_id ||
+    existing.deleted_at
+  ) {
+    throw new NotFoundException(
+      'WORKOUT_ROUTINE_NOT_FOUND',
+      'Routine not found or access denied'
+    );
+  }
+
+  const routine = await prisma.routine.update({
+    where: { id: routineId },
+    data: {
+      ...(name !== undefined && { name }),
+      ...(description !== undefined && { description }),
+      ...(estimated_duration_minutes !== undefined && {
+        estimated_duration_minutes,
+      }),
+    },
+  });
+
+  logger.info('Routine template updated', {
+    routineId,
+    user_id: appUser.supabase_auth_id,
+  });
+  sendSuccess(res, {
+    routine: {
+      id: routine.id,
+      user_id: routine.user_id,
+      name: routine.name,
+      description: routine.description,
+      estimated_duration_minutes: routine.estimated_duration_minutes,
+      created_at: routine.created_at,
+      updated_at: routine.updated_at,
+    },
+  });
+};
+
+/**
+ * Delete a routine template (soft-delete).
+ * DELETE /coach/routine-templates/:routineId
+ * @param req - Express request
+ * @param res - Express response
+ */
+export const deleteRoutine = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const appUser = req.appUser;
+  if (!appUser) {
+    throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
+  }
+
+  const { routineId } = res.locals.validated?.params as { routineId: string };
+
+  const existing = await prisma.routine.findUnique({
+    where: { id: routineId },
+  });
+  if (
+    !existing ||
+    existing.user_id !== appUser.supabase_auth_id ||
+    existing.deleted_at
+  ) {
+    throw new NotFoundException(
+      'WORKOUT_ROUTINE_NOT_FOUND',
+      'Routine not found or access denied'
+    );
+  }
+
+  // Soft-delete; assigned_program_routine.source_routine_id stays (onDelete: SetNull handled by DB)
+  await prisma.routine.update({
+    where: { id: routineId },
+    data: { deleted_at: new Date() },
+  });
+
+  logger.info('Routine template deleted', {
+    routineId,
+    user_id: appUser.supabase_auth_id,
+  });
+  sendSuccess(res, { message: 'Routine template deleted successfully' });
 };

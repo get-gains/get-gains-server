@@ -11,6 +11,7 @@ import {
   CreateExerciseSchema,
   UpdateExerciseSchema,
   DeleteExerciseSchema,
+  GetAssignedProgramsSchema,
   GetRoutinesSchema,
   GetRoutineByIdSchema,
   GetTodayWorkoutSchema,
@@ -23,14 +24,17 @@ import {
   DeleteSetSchema,
   BatchSyncSetsSchema,
   GetWeeklyStatsSchema,
+  GetProgramsSchema,
 } from '../schemas/workout.schema';
 import {
   getExercises,
   createExercise,
   updateExercise,
   deleteExercise,
+  getAssignedPrograms,
   getRoutines,
   getRoutineById,
+  getPrograms,
   getTodayWorkout,
   startWorkoutSession,
   getActiveSession,
@@ -99,6 +103,21 @@ router.delete(
   deleteExercise
 );
 
+// ============== Program Routes ==============
+
+/**
+ * @route   GET /workout/programs
+ * @desc    Get all assigned programs for the authenticated user
+ * @access  Protected (requires active subscription)
+ */
+router.get(
+  '/programs',
+  authenticateSupabaseUser,
+  requireSubscription(),
+  validateRequest(GetAssignedProgramsSchema),
+  getAssignedPrograms
+);
+
 // ============== Routine Routes ==============
 
 /**
@@ -120,11 +139,26 @@ router.get(
  * @access  Protected
  */
 router.get(
-  '/routines/:routineId',
+  '/routines/:assignedProgramRoutineId',
   authenticateSupabaseUser,
   requireSubscription(),
   validateRequest(GetRoutineByIdSchema),
   getRoutineById
+);
+
+// ============== Program Routes ==============
+
+/**
+ * @route   GET /workout/programs
+ * @desc    Get all active assigned programs with nested routines (client-facing)
+ * @access  Protected (requires active subscription)
+ */
+router.get(
+  '/programs',
+  authenticateSupabaseUser,
+  requireSubscription(),
+  validateRequest(GetProgramsSchema),
+  getPrograms
 );
 
 // ============== Today's Workout Route ==============
