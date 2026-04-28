@@ -47,6 +47,8 @@ export const UnifiedWeeklyStatsResponseSchema = z.object({
   totalMinutes: z.number().int().min(0),
   streakDays: z.number().int().min(0),
   sources: z.array(SourceStatsSchema),
+  /** ISO-8601 UTC timestamps of each completed session's started_at this week. */
+  sessionDates: z.array(z.string()),
 });
 
 export type UnifiedWeeklyStatsResponse = z.infer<

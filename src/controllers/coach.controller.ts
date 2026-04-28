@@ -574,14 +574,14 @@ export const getClientSessions = async (
 
       return {
         id: s.id,
-        assigned_program_routine_id: s.assigned_program_routine_id,
+        assignedProgramId: null,
         programName: s.assigned_program_routine.assigned_program.name ?? null,
-        started_at: s.started_at,
-        completed_at: s.completed_at,
+        startedAt: s.started_at,
+        completedAt: s.completed_at,
         durationMinutes,
         totalSets: s.performed_sets.length,
         uniqueExercises: uniqueExercises.size,
-        feedback: s.feedback,
+        notes: s.feedback,
       };
     }),
     pagination: {
@@ -695,22 +695,33 @@ export const getClientSessionDetail = async (
   sendSuccess(res, {
     session: {
       id: session.id,
-      assigned_program_routine_id: session.assigned_program_routine_id,
+      userId,
+      assignedProgramId: null,
       programName:
         session.assigned_program_routine.assigned_program.name ?? null,
-      started_at: session.started_at,
-      completed_at: session.completed_at,
+      startedAt: session.started_at,
+      completedAt: session.completed_at,
       durationMinutes,
-      feedback: session.feedback,
-      exercises: Array.from(exerciseMap.values()),
+      notes: session.feedback,
+      exercises: Array.from(exerciseMap.values()).map((e) => ({
+        exerciseId: e.exerciseId,
+        exerciseName: e.exerciseName,
+        sets: e.sets.map((s) => ({
+          id: s.id,
+          setNumber: s.set_number,
+          repsCompleted: s.reps,
+          weightKg: s.weight,
+          createdAt: s.completed_at,
+        })),
+      })),
       totalSets: session.performed_sets.length,
       totalReps: session.performed_sets.reduce((s, ps) => s + ps.reps, 0),
       totalVolume: session.performed_sets.reduce(
         (s, ps) => s + ps.reps * (ps.weight ?? 0),
         0
       ),
-      created_at: session.created_at,
-      updated_at: session.updated_at,
+      createdAt: session.created_at,
+      updatedAt: session.updated_at,
     },
   });
 };
