@@ -15,6 +15,7 @@ type TodayWorkoutDetails = {
   routineName?: string;
   exerciseCount: number;
   estimatedMinutes: number;
+  completedToday: boolean;
 };
 
 type AssignmentWithTodayTree = {
@@ -49,6 +50,7 @@ const toTodayWorkoutDetails = (
       programName: assignment.name,
       exerciseCount: 0,
       estimatedMinutes: 0,
+      completedToday: false,
     };
   }
 
@@ -61,6 +63,7 @@ const toTodayWorkoutDetails = (
     routineName: routineForToday.name,
     exerciseCount: routineForToday.assigned_program_routine_exercises.length,
     estimatedMinutes: routineForToday.estimated_duration_minutes,
+    completedToday: false, // resolved after DB check
   };
 };
 
@@ -174,6 +177,41 @@ export const getTodayStatus = async (
     dayName,
     dayNumber
   );
+
+  // Determine which routine IDs to check for completed sessions today
+  const todayStart = new Date();
+  todayStart.setUTCHours(0, 0, 0, 0);
+
+  const routineIdsToCheck: string[] = [
+    coachToday?.programRoutineId,
+    standaloneToday?.programRoutineId,
+  ].filter((id): id is string => Boolean(id));
+
+  const completedRoutineIds = new Set<string>();
+  if (routineIdsToCheck.length > 0) {
+    const completedSessions = await prisma.workout_session.findMany({
+      where: {
+        assigned_program_routine_id: { in: routineIdsToCheck },
+        completed_at: { gte: todayStart },
+        deleted_at: null,
+      },
+      select: { assigned_program_routine_id: true },
+    });
+    for (const s of completedSessions) {
+      completedRoutineIds.add(s.assigned_program_routine_id);
+    }
+  }
+
+  if (coachToday?.programRoutineId) {
+    coachToday.completedToday = completedRoutineIds.has(
+      coachToday.programRoutineId
+    );
+  }
+  if (standaloneToday?.programRoutineId) {
+    standaloneToday.completedToday = completedRoutineIds.has(
+      standaloneToday.programRoutineId
+    );
+  }
 
   logger.debug('Resolved unified today status', {
     supabaseId,
