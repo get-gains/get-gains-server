@@ -3,42 +3,50 @@ FROM node:24-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Copy prisma schema for client generation (needed before npm ci due to postinstall)
+# Copy package files
+COPY package.json pnpm-lock.yaml ./
+
+# Copy prisma schema for client generation (needed before install due to postinstall)
 COPY prisma ./prisma
 
 # Install all dependencies (including devDependencies for build)
 ENV HUSKY=0
-RUN npm ci
+RUN pnpm install --frozen-lockfile
 
 # Copy source code
 COPY tsconfig.json ./
 COPY src ./src
 
 # Build TypeScript
-RUN npm run build
+RUN pnpm run build
 
 # Production stage
 FROM node:24-alpine AS production
 
 WORKDIR /app
 
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
 
 # Copy package files
-COPY package*.json ./
+COPY package.json pnpm-lock.yaml ./
 
 # Copy prisma schema BEFORE installing dependencies (needed for postinstall)
 COPY prisma ./prisma
 
-# Install only production dependencies (this will run prisma generate via postinstall)
-# Disable husky git hooks in production
+# Install only production dependencies, skip scripts (husky is not in prod deps)
 ENV HUSKY=0
-RUN npm ci
+RUN pnpm install --frozen-lockfile --prod --ignore-scripts
+
+# Generate Prisma client manually (postinstall is skipped above)
+RUN pnpm exec prisma generate
 
 # Copy built files from builder stage
 COPY --from=builder /app/dist ./dist
