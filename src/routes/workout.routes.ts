@@ -66,13 +66,13 @@ router.get(
 
 /**
  * @route   POST /workout/exercises
- * @desc    Create a new exercise (coach only)
- * @access  Protected (Coach)
+ * @desc    Create a new exercise
+ * @access  Protected (any authenticated app user)
  */
 router.post(
   '/exercises',
   authenticateSupabaseUser,
-  requireCoach,
+  requireAppUser,
   validateRequest(CreateExerciseSchema),
   createExercise
 );
