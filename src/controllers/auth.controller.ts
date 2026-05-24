@@ -4,13 +4,13 @@ import { logger } from '../utils/logger';
 import { sendSuccess } from '../utils/response';
 import {
   CheckEmailVerifiedInput,
-  ExchangeCodeInput,
   GoogleSignInInput,
   LoginInput,
   RegisterInput,
   RefreshTokenInput,
-  ResetPasswordInput,
-  SendRecoveryEmailInput,
+  ResetPasswordWithOtpInput,
+  SendOtpInput,
+  VerifyOtpInput,
 } from '../schemas/auth.schema';
 import supabase from '../config/supabase';
 import { createUser, getUserBySupabaseId } from './user.controller';
@@ -23,6 +23,11 @@ import {
   UnauthorizedException,
   UnexpectedException,
 } from '../lib/errors';
+import {
+  generateOtp,
+  verifyOtp,
+  consumeResetToken,
+} from '../services/otp.service';
 
 const resolveIsCoach = async (
   supabaseId: string,
@@ -503,67 +508,65 @@ export const logout = async (_req: Request, res: Response): Promise<void> => {
   sendSuccess(res, {}, 200);
 };
 
-export const sendRecoveryEmail = async (
+export const sendOtp = async (_req: Request, res: Response): Promise<void> => {
+  const { email } = res.locals.validated?.body as SendOtpInput;
+
+  logger.debug('Password reset OTP request', { email });
+
+  const result = await generateOtp(email);
+
+  if (!result.success) {
+    throw new BadRequestException(
+      'AUTH_OTP_COOLDOWN',
+      `Please wait ${result.cooldownRemaining} seconds before requesting a new code.`
+    );
+  }
+
+  sendSuccess(res, { message: 'Verification code sent' }, 200);
+};
+
+export const resetPasswordWithOtp = async (
   _req: Request,
   res: Response
 ): Promise<void> => {
-  const { email } = res.locals.validated?.body as SendRecoveryEmailInput;
+  const { email, resetToken, newPassword } = res.locals.validated
+    ?.body as ResetPasswordWithOtpInput;
 
-  logger.debug('Password recovery email request', { email });
-  logger.debug('Using password reset redirect URL', {
-    url: process.env.PASSWORD_RESET_REDIRECT_URL,
-  });
+  await consumeResetToken(email, resetToken);
 
-  const { error } = await supabase.auth.resetPasswordForEmail(
-    email.toLowerCase(),
-    {
-      redirectTo: process.env.PASSWORD_RESET_REDIRECT_URL,
-    }
-  );
+  const { data, error: listError } = await supabase.auth.admin.listUsers();
 
-  if (error) {
-    logger.error('Password recovery email failed', { email, error });
-    throw mapSupabaseError(
-      error,
-      'password recovery',
-      'Failed to send recovery email. Please try again.'
+  if (listError) {
+    logger.error('Failed to look up user for password reset', {
+      email,
+      error: listError,
+    });
+    throw new UnexpectedException(
+      'UNEXPECTED_EXCEPTION',
+      'Failed to reset password. Please try again.'
     );
   }
 
-  sendSuccess(
-    res,
-    { message: 'Password recovery email sent successfully' },
-    200
+  const supabaseUser = data.users.find(
+    (u) => u.email?.toLowerCase() === email.toLowerCase()
   );
-};
 
-export const resetPassword = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  const { newPassword } = res.locals.validated?.body as ResetPasswordInput;
-
-  // The user is already authenticated via Bearer token (authenticateSupabaseUser middleware)
-  // req.user contains the validated Supabase user from getUser(token)
-  const supabaseUser = req.user;
-  if (!supabaseUser || !('id' in supabaseUser)) {
-    throw new UnauthorizedException(
-      'UNAUTHENTICATED',
-      'Authentication required'
+  if (!supabaseUser || !supabaseUser.id) {
+    throw new NotFoundException(
+      'AUTH_USER_NOT_FOUND',
+      'No account found with this email.'
     );
   }
 
-  const supabaseUserId = supabaseUser.id;
-
-  // Use admin API to update the password directly
-  // This avoids needing to setSession on the shared Supabase client
-  // and doesn't require a refresh token
-  const { error } = await supabase.auth.admin.updateUserById(supabaseUserId, {
+  const { error } = await supabase.auth.admin.updateUserById(supabaseUser.id, {
     password: newPassword,
   });
 
   if (error) {
-    logger.error('Password reset failed', { error, supabaseUserId });
+    logger.error('Password reset failed', {
+      error,
+      supabaseUserId: supabaseUser.id,
+    });
     throw mapSupabaseError(
       error,
       'password reset',
@@ -575,61 +578,21 @@ export const resetPassword = async (
 };
 
 /**
- * Exchange Supabase auth code for session tokens.
+ * Verify a password reset OTP code and return a one-time reset token.
  *
- * This endpoint is called by the web app after Supabase redirects
- * with a PKCE auth code (from email verification or password reset links).
- *
- * The Supabase code is exchanged server-side using the service role client
- * to get a valid session with access and refresh tokens.
- *
- * POST /api/auth/exchange-code
+ * POST /api/auth/verify-otp
  */
-export const exchangeCodeForSession = async (
+export const verifyOtpHandler = async (
   _req: Request,
   res: Response
 ): Promise<void> => {
-  const { code } = res.locals.validated?.body as ExchangeCodeInput;
+  const { email, code } = res.locals.validated?.body as VerifyOtpInput;
 
-  logger.debug('Exchanging auth code for session');
+  logger.debug('Verifying password reset OTP', { email });
 
-  // Exchange the code for a session using Supabase
-  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+  const resetToken = await verifyOtp(email, code);
 
-  if (error || !data.session) {
-    logger.error('Code exchange failed', { error });
-    if (error) {
-      throw mapSupabaseError(
-        error,
-        'code exchange',
-        'This link is invalid or has expired. Please request a new one.'
-      );
-    }
-    throw new UnauthorizedException(
-      'AUTH_CODE_EXCHANGE_FAILED',
-      'This link is invalid or has expired. Please request a new one.'
-    );
-  }
-
-  const { session, user } = data;
-
-  // Check if this user exists in our database
-  const appUser = await prisma.user.findUnique({
-    where: { supabase_auth_id: user.id },
-  });
-
-  sendSuccess(res, {
-    accessToken: session.access_token,
-    refreshToken: session.refresh_token,
-    user: appUser
-      ? {
-          supabase_auth_id: appUser.supabase_auth_id,
-          email: appUser.email,
-          full_name: appUser.full_name,
-          nickname: appUser.nickname,
-        }
-      : null,
-  });
+  sendSuccess(res, { resetToken }, 200);
 };
 
 /**
