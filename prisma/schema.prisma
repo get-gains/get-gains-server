@@ -147,6 +147,7 @@ model user {
   user_missions          user_mission[]
   user_subscription      user_subscription?
   rc_subscription_events rc_subscription_event[]
+  exercise_ratings       exercise_rating[]
 }
 
 model coach {
@@ -206,6 +207,7 @@ model exercise {
   target_muscles  String[]
   active_segments String[]
   is_public       Boolean   @default(false)
+  thumbs_up_count Int       @default(0)
   deleted_at      DateTime? @db.Timestamptz
   created_at      DateTime  @default(now()) @db.Timestamptz
   updated_at      DateTime  @updatedAt @db.Timestamptz
@@ -213,9 +215,23 @@ model exercise {
   user                               user                                @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
   exercise_forms                     exercise_form[]
   assigned_program_routine_exercises assigned_program_routine_exercise[]
+  exercise_ratings                   exercise_rating[]
 
   @@index([user_id])
   @@index([is_public])
+}
+
+model exercise_rating {
+  id          String   @id @default(cuid())
+  exercise_id String
+  user_id     String
+  created_at  DateTime @default(now()) @db.Timestamptz
+
+  exercise exercise @relation(fields: [exercise_id], references: [id], onDelete: Cascade)
+  user     user     @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
+
+  @@unique([exercise_id, user_id])
+  @@index([exercise_id])
 }
 
 model exercise_form {
