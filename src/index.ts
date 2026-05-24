@@ -24,6 +24,7 @@ import todayRoutes from './routes/today.routes';
 import missionsRoutes from './routes/missions.routes';
 import formLibraryRoutes from './routes/form-library.routes';
 import exerciseRatingRoutes from './routes/exercise-rating.routes';
+import notificationRoutes from './routes/notification.routes';
 
 dotenv.config();
 
@@ -70,6 +71,7 @@ const startServer = () => {
   app.use('/api/missions', missionsRoutes);
   app.use('/api/form-library', formLibraryRoutes);
   app.use('/api/exercise-ratings', exerciseRatingRoutes);
+  app.use('/api/notifications', notificationRoutes);
   app.use('/api/users', userRoutes);
 
   // 404 Handler (contract: data + errors envelope)

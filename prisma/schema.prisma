@@ -92,6 +92,13 @@ enum DayOfWeek {
   SATURDAY
 }
 
+enum NotificationType {
+  program_assigned
+  coach_subscribed
+  roster_removed
+  subscription_expiring
+}
+
 // ============== Auth / OTP ==============
 
 model password_reset_otp {
@@ -148,6 +155,7 @@ model user {
   user_subscription      user_subscription?
   rc_subscription_events rc_subscription_event[]
   exercise_ratings       exercise_rating[]
+  notifications          notification[]
 }
 
 model coach {
@@ -179,6 +187,26 @@ model subscribed_coach {
 
   @@index([user_id])
   @@index([coach_id])
+}
+
+// ============== Notifications ==============
+
+model notification {
+  id         String           @id @default(uuid())
+  user_id    String
+  type       NotificationType
+  title      String
+  body       String
+  data       Json?
+  is_read    Boolean          @default(false)
+  created_at DateTime         @default(now()) @db.Timestamptz
+  read_at    DateTime?        @db.Timestamptz
+
+  user user @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
+
+  @@index([user_id, is_read, created_at(sort: Desc)])
+  @@index([user_id, created_at(sort: Desc)])
+  @@map("notifications")
 }
 
 // ============== Training Library (Coach Templates) ==============

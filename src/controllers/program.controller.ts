@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
 import { sendSuccess } from '../utils/response';
+import { createNotification } from '../services/notification.service';
 import {
   BadRequestException,
   ForbiddenException,
@@ -213,6 +214,19 @@ export const createClientProgram = async (
     coachId: coach.user_id,
     clientId,
   });
+
+  // Notify client
+  try {
+    await createNotification({
+      userId: clientId,
+      type: 'program_assigned',
+      title: 'New Program Assigned',
+      body: `Your coach assigned you a new program: ${name}`,
+      data: { coachId: coach.user_id, programId: program.id },
+    });
+  } catch (err) {
+    logger.error('Failed to create program_assigned notification', err);
+  }
 
   sendSuccess(
     res,
