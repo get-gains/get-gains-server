@@ -22,6 +22,8 @@ import cosmeticsRoutes from './routes/cosmetics.routes';
 import leaderboardRoutes from './routes/leaderboard.routes';
 import todayRoutes from './routes/today.routes';
 import missionsRoutes from './routes/missions.routes';
+import formLibraryRoutes from './routes/form-library.routes';
+import exerciseRatingRoutes from './routes/exercise-rating.routes';
 
 dotenv.config();
 
@@ -66,6 +68,8 @@ const startServer = () => {
   app.use('/api/leaderboard', leaderboardRoutes);
   app.use('/api/today', todayRoutes);
   app.use('/api/missions', missionsRoutes);
+  app.use('/api/form-library', formLibraryRoutes);
+  app.use('/api/exercise-ratings', exerciseRatingRoutes);
   app.use('/api/users', userRoutes);
 
   // 404 Handler (contract: data + errors envelope)
