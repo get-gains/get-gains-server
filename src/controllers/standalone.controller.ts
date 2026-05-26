@@ -884,7 +884,7 @@ export const updateStandaloneProgramRoutine = async (
     pr.program.user_id !== appUser.supabase_auth_id
   ) {
     throw new NotFoundException(
-      'ROUTINE_NOT_FOUND',
+      'PROGRAM_ROUTINE_NOT_FOUND',
       'Program routine not found'
     );
   }
@@ -919,7 +919,7 @@ export const deleteStandaloneProgramRoutine = async (
     pr.program.user_id !== appUser.supabase_auth_id
   ) {
     throw new NotFoundException(
-      'ROUTINE_NOT_FOUND',
+      'PROGRAM_ROUTINE_NOT_FOUND',
       'Program routine not found'
     );
   }
@@ -956,7 +956,7 @@ export const addStandaloneRoutineExercise = async (
     programRoutine.program.user_id !== appUser.supabase_auth_id
   ) {
     throw new NotFoundException(
-      'ROUTINE_NOT_FOUND',
+      'PROGRAM_ROUTINE_NOT_FOUND',
       'Program routine not found'
     );
   }
@@ -1000,7 +1000,7 @@ export const updateStandaloneRoutineExercise = async (
     re.program_routine.program.user_id !== appUser.supabase_auth_id
   ) {
     throw new NotFoundException(
-      'EXERCISE_NOT_FOUND',
+      'WORKOUT_EXERCISE_NOT_FOUND',
       'Routine exercise not found'
     );
   }
@@ -1045,7 +1045,7 @@ export const deleteStandaloneRoutineExercise = async (
     re.program_routine.program.user_id !== appUser.supabase_auth_id
   ) {
     throw new NotFoundException(
-      'EXERCISE_NOT_FOUND',
+      'WORKOUT_EXERCISE_NOT_FOUND',
       'Routine exercise not found'
     );
   }
@@ -1359,7 +1359,7 @@ export const logStandaloneSet = async (
 
   if (session.completed_at) {
     throw new BadRequestException(
-      'SESSION_COMPLETED',
+      'STANDALONE_ALREADY_COMPLETED',
       'Session is already completed'
     );
   }
@@ -1401,7 +1401,10 @@ export const updateStandaloneSet = async (
     existing.session_id !== sessionId ||
     existing.session.user_id !== appUser.supabase_auth_id
   ) {
-    throw new NotFoundException('SET_NOT_FOUND', 'Performed set not found');
+    throw new NotFoundException(
+      'WORKOUT_SET_NOT_FOUND',
+      'Performed set not found'
+    );
   }
 
   const updated = await prisma.standalone_performed_set.update({
@@ -1437,7 +1440,10 @@ export const deleteStandaloneSet = async (
     existing.session_id !== sessionId ||
     existing.session.user_id !== appUser.supabase_auth_id
   ) {
-    throw new NotFoundException('SET_NOT_FOUND', 'Performed set not found');
+    throw new NotFoundException(
+      'WORKOUT_SET_NOT_FOUND',
+      'Performed set not found'
+    );
   }
 
   await prisma.standalone_performed_set.delete({ where: { id: setId } });
