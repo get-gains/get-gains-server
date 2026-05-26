@@ -15,7 +15,8 @@
     "prepare": "husky",
     "postinstall": "prisma generate",
     "commitlint": "commitlint --edit",
-    "codegen:errors": "tsx scripts/gen-dart-error-codes.ts"
+    "codegen:errors": "tsx scripts/gen-dart-error-codes.ts",
+    "seed:coach-test": "tsx scripts/seed-coach-test-data.ts"
   },
   "lint-staged": {
     "*.ts": [
@@ -67,6 +68,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.990.0",
     "@aws-sdk/s3-request-presigner": "^3.990.0",
+    "@getbrevo/brevo": "^5.0.4",
     "@prisma/adapter-pg": "^7.2.0",
     "@prisma/client": "^7.2.0",
     "@supabase/supabase-js": "^2.91.1",

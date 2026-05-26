@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
 import { sendSuccess } from '../utils/response';
+import { createNotification } from '../services/notification.service';
 import {
   ForbiddenException,
   NotFoundException,
@@ -120,6 +121,23 @@ export const removeClient = async (
     where: { id: subscription.id },
     data: { ended_at: new Date() },
   });
+
+  // Notify client
+  try {
+    const coachUser = await prisma.user.findUnique({
+      where: { supabase_auth_id: coach.user_id },
+      select: { full_name: true },
+    });
+    await createNotification({
+      userId,
+      type: 'roster_removed',
+      title: 'Removed from Roster',
+      body: `You have been removed from ${coachUser?.full_name ?? 'your coach'}'s roster.`,
+      data: { coachId: coach.user_id },
+    });
+  } catch (err) {
+    logger.error('Failed to create roster_removed notification', err);
+  }
 
   sendSuccess(res, { message: 'Client removed from class' });
 };

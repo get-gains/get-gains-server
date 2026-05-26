@@ -156,6 +156,7 @@ export const getWeeklyStats = async (
     : standaloneWorkouts;
   const effectiveMinutes = isSubscribed ? combinedMinutes : standaloneMinutes;
   const effectiveStreak = isSubscribed ? combinedStreak : standaloneStreak;
+  const effectiveSessions = isSubscribed ? sessions : standaloneSessions;
 
   sendSuccess(res, {
     weekStart: weekStart.toISOString().slice(0, 10),
@@ -164,5 +165,8 @@ export const getWeeklyStats = async (
     totalMinutes: effectiveMinutes,
     streakDays: effectiveStreak,
     sources,
+    sessionDates: effectiveSessions
+      .map((s) => s.started_at?.toISOString() ?? null)
+      .filter((d): d is string => d !== null),
   });
 };

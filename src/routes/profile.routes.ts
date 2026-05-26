@@ -5,16 +5,19 @@ import {
   requireAppUser,
   requireCoach,
 } from '../middleware/auth.middleware';
+import { attachSubscription } from '../middleware/subscription.middleware';
 import {
   CreateUserProfileSchema,
   UpdateUserProfileSchema,
   GetClientProfileSchema,
+  ProfileStatsQuerySchema,
 } from '../schemas/profile.schema';
 import {
   getUserProfile,
   createUserProfile,
   updateUserProfile,
   getClientProfile,
+  getProfileStats,
 } from '../controllers/profile.controller';
 import { uploadAvatar } from '../middleware/upload.middleware';
 
@@ -54,6 +57,15 @@ router.put(
   uploadAvatar,
   validateRequest(UpdateUserProfileSchema),
   updateUserProfile
+);
+
+// GET    /api/profile/stats  → Aggregated profile statistics
+router.get(
+  '/stats',
+  authenticateSupabaseUser,
+  attachSubscription,
+  validateRequest(ProfileStatsQuerySchema),
+  getProfileStats
 );
 
 // ─── Coach: view a subscribed client's profile ──────────────────────

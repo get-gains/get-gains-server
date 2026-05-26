@@ -64,18 +64,36 @@ export const GoogleSignInSchema = z.object({
 
 export type GoogleSignInInput = z.infer<typeof GoogleSignInSchema>['body'];
 
-export const SendRecoveryEmailSchema = z.object({
+/**
+ * Schema for sending password reset OTP
+ */
+export const SendOtpSchema = z.object({
   body: z.object({
     email: z.email(),
   }),
 });
 
-export type SendRecoveryEmailInput = z.infer<
-  typeof SendRecoveryEmailSchema
->['body'];
+export type SendOtpInput = z.infer<typeof SendOtpSchema>['body'];
 
-export const ResetPasswordSchema = z.object({
+/**
+ * Schema for verifying a password reset OTP
+ */
+export const VerifyOtpSchema = z.object({
   body: z.object({
+    email: z.email(),
+    code: z.string().length(6, 'Code must be 6 characters'),
+  }),
+});
+
+export type VerifyOtpInput = z.infer<typeof VerifyOtpSchema>['body'];
+
+/**
+ * Schema for resetting password with an OTP-derived reset token
+ */
+export const ResetPasswordWithOtpSchema = z.object({
+  body: z.object({
+    email: z.email(),
+    resetToken: z.string().min(1, 'Reset token is required'),
     newPassword: z
       .string()
       .min(8, 'Password must be at least 8 characters')
@@ -91,18 +109,9 @@ export const ResetPasswordSchema = z.object({
   }),
 });
 
-export type ResetPasswordInput = z.infer<typeof ResetPasswordSchema>['body'];
-
-/**
- * Schema for exchanging Supabase auth code for session
- */
-export const ExchangeCodeSchema = z.object({
-  body: z.object({
-    code: z.string().min(1, 'Auth code is required'),
-  }),
-});
-
-export type ExchangeCodeInput = z.infer<typeof ExchangeCodeSchema>['body'];
+export type ResetPasswordWithOtpInput = z.infer<
+  typeof ResetPasswordWithOtpSchema
+>['body'];
 
 /**
  * Schema for checking if a user's email has been verified

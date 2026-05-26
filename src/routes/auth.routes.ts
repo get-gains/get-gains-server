@@ -2,26 +2,26 @@ import { Router } from 'express';
 import { validateRequest } from '../middleware/validate.middleware';
 import { authenticateSupabaseUser } from '../middleware/auth.middleware';
 import {
-  ExchangeCodeSchema,
   CheckEmailVerifiedSchema,
   GoogleSignInSchema,
   LoginSchema,
   RegisterSchema,
   RefreshTokenSchema,
-  ResetPasswordSchema,
-  SendRecoveryEmailSchema,
+  ResetPasswordWithOtpSchema,
+  SendOtpSchema,
+  VerifyOtpSchema,
 } from '../schemas/auth.schema';
 import {
   checkEmailVerified,
-  exchangeCodeForSession,
   getMe,
   loginWithEmailAndPassword,
   refreshToken,
   registerWithEmailAndPassword,
-  resetPassword,
-  sendRecoveryEmail,
+  resetPasswordWithOtp,
+  sendOtp,
   signInWithGoogle,
   signInWithGoogleWithUserData,
+  verifyOtpHandler,
 } from '../controllers/auth.controller';
 import { CreateUserFromGoogleSchema } from '../schemas/user.schema';
 import { createUserFromGoogle } from '../controllers/user.controller';
@@ -92,36 +92,28 @@ router.post(
 );
 
 /**
- * @route   POST /auth/send-recovery-email
- * @desc    Send password recovery email
+ * @route   POST /auth/send-otp
+ * @desc    Send a 6-character password reset code via email
+ * @access  Public
+ */
+router.post('/send-otp', validateRequest(SendOtpSchema), sendOtp);
+
+/**
+ * @route   POST /auth/verify-otp
+ * @desc    Verify password reset OTP code and get a reset token
+ * @access  Public
+ */
+router.post('/verify-otp', validateRequest(VerifyOtpSchema), verifyOtpHandler);
+
+/**
+ * @route   POST /auth/reset-password
+ * @desc    Reset password using OTP-derived reset token
  * @access  Public
  */
 router.post(
-  '/send-recovery-email',
-  validateRequest(SendRecoveryEmailSchema),
-  sendRecoveryEmail
-);
-
-/** * @route   POST /auth/reset-password
- * @desc    Reset user password
- * @access  Protected
- */
-router.post(
   '/reset-password',
-  authenticateSupabaseUser,
-  validateRequest(ResetPasswordSchema),
-  resetPassword
-);
-
-/**
- * @route   POST /auth/exchange-code
- * @desc    Exchange Supabase PKCE auth code for session tokens
- * @access  Public (called by web app)
- */
-router.post(
-  '/exchange-code',
-  validateRequest(ExchangeCodeSchema),
-  exchangeCodeForSession
+  validateRequest(ResetPasswordWithOtpSchema),
+  resetPasswordWithOtp
 );
 
 /**
