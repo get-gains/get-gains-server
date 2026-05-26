@@ -12,7 +12,10 @@ import type {
   CreateUserProfileInput,
   UpdateUserProfileInput,
   GetClientProfileParams,
+  ProfileStatsQuery,
 } from '../schemas/profile.schema';
+import { calculateStreaksBySource } from '../utils/streak';
+import type { AuthenticatedUser } from '../middleware/auth.middleware';
 import {
   ForbiddenException,
   NotFoundException,
@@ -385,5 +388,152 @@ export const getClientProfile = async (
       nickname: profile.nickname,
       email: profile.email,
     },
+  });
+};
+
+// ─── GET /profile/stats — Aggregated profile statistics ──────────────
+
+/**
+ * Returns aggregated profile stats for the authenticated user.
+ *
+ * Aggregates today's sets, this week's workouts/minutes/streak,
+ * and all-time totals in a single response for the profile screen
+ * and shareable stat cards.
+ *
+ * @route GET /api/profile/stats
+ */
+export const getProfileStats = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const rawUser = req.user;
+  const supabaseId = rawUser
+    ? 'supabase_auth_id' in rawUser
+      ? rawUser.supabase_auth_id
+      : (rawUser as AuthenticatedUser).id
+    : undefined;
+
+  if (!supabaseId) {
+    throw new UnauthorizedException(
+      'UNAUTHENTICATED',
+      'Authentication required'
+    );
+  }
+
+  const { weekOf } = (res.locals.validated?.query as ProfileStatsQuery) || {};
+
+  // ── Week window (Monday–Sunday) ──
+  const referenceDate = weekOf ? new Date(weekOf) : new Date();
+  const dayOfWeek = referenceDate.getUTCDay();
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+
+  const weekStart = new Date(referenceDate);
+  weekStart.setUTCDate(referenceDate.getUTCDate() + mondayOffset);
+  weekStart.setUTCHours(0, 0, 0, 0);
+
+  const weekEnd = new Date(weekStart);
+  weekEnd.setUTCDate(weekStart.getUTCDate() + 7);
+
+  // ── Today window ──
+  const todayStart = new Date();
+  todayStart.setUTCHours(0, 0, 0, 0);
+  const todayEnd = new Date(todayStart);
+  todayEnd.setUTCDate(todayStart.getUTCDate() + 1);
+
+  // ── Fetch sessions for the week ──
+  const weeklySessions = await prisma.workout_session.findMany({
+    where: {
+      assigned_program_routine: { assigned_program: { user_id: supabaseId } },
+      completed_at: { not: null },
+      started_at: { gte: weekStart, lt: weekEnd },
+    },
+    select: {
+      started_at: true,
+      completed_at: true,
+    },
+    orderBy: { started_at: 'asc' },
+  });
+
+  const workoutsThisWeek = weeklySessions.length;
+  const totalMinutesWeek = weeklySessions.reduce((sum, s) => {
+    if (s.started_at && s.completed_at) {
+      return (
+        sum +
+        Math.round((s.completed_at.getTime() - s.started_at.getTime()) / 60000)
+      );
+    }
+    return sum;
+  }, 0);
+
+  // ── Sets completed today ──
+  const sessionsToday = await prisma.workout_session.findMany({
+    where: {
+      assigned_program_routine: { assigned_program: { user_id: supabaseId } },
+      completed_at: { not: null },
+      started_at: { gte: todayStart, lt: todayEnd },
+    },
+    select: { id: true },
+  });
+
+  const sessionIdsToday = sessionsToday.map((s) => s.id);
+
+  let setsToday = 0;
+  if (sessionIdsToday.length > 0) {
+    const setCounts = await prisma.performed_set.groupBy({
+      by: ['workout_session_id'],
+      where: {
+        workout_session_id: { in: sessionIdsToday },
+        deleted_at: null,
+        completed_at: { gte: todayStart, lt: todayEnd },
+      },
+      _count: { id: true },
+    });
+    setsToday = setCounts.reduce((sum, g) => sum + g._count.id, 0);
+  }
+
+  const completedToday = sessionIdsToday.length > 0;
+
+  // ── Streak ──
+  const { combinedStreak } = await calculateStreaksBySource(
+    supabaseId,
+    new Date(),
+    prisma
+  );
+
+  // ── All-time totals ──
+  const allTimeSessions = await prisma.workout_session.count({
+    where: {
+      assigned_program_routine: { assigned_program: { user_id: supabaseId } },
+      completed_at: { not: null },
+    },
+  });
+
+  const allTimeSets = await prisma.performed_set.count({
+    where: {
+      deleted_at: null,
+      workout_session: {
+        assigned_program_routine: {
+          assigned_program: { user_id: supabaseId },
+        },
+      },
+    },
+  });
+
+  // ── Session dates for the week (for calendar display) ──
+  const sessionDates = weeklySessions
+    .map((s) => s.started_at?.toISOString() ?? null)
+    .filter((d): d is string => d !== null);
+
+  sendSuccess(res, {
+    workoutsThisWeek,
+    setsToday,
+    streakDays: combinedStreak,
+    allTimeWorkouts: allTimeSessions,
+    allTimeSets,
+    totalMinutesWeek,
+    completedToday,
+    weekStart: weekStart.toISOString().slice(0, 10),
+    weekEnd: new Date(weekEnd.getTime() - 1).toISOString().slice(0, 10),
+    sessionDates,
   });
 };

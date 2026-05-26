@@ -357,6 +357,7 @@ model performed_set {
 
   @@index([workout_session_id])
   @@index([assigned_program_routine_exercise_id])
+  @@index([completed_at])
 }
 
 // ============== Gamification ==============

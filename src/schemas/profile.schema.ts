@@ -133,3 +133,16 @@ export const GetClientProfileSchema = z.object({
 export type GetClientProfileParams = z.infer<
   typeof GetClientProfileSchema
 >['params'];
+
+// ─── Profile Stats ──────────────────────────────────────────────────
+export const ProfileStatsQuerySchema = z.object({
+  query: z
+    .object({
+      weekOf: z.string().datetime({ offset: true }).optional(),
+    })
+    .optional(),
+});
+
+export type ProfileStatsQuery = z.infer<
+  typeof ProfileStatsQuerySchema
+>['query'];
