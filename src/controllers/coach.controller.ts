@@ -3,6 +3,7 @@ import prisma from '../config/database';
 import { Prisma } from '@prisma/client';
 import { logger } from '../utils/logger';
 import { sendSuccess } from '../utils/response';
+import { createNotification } from '../services/notification.service';
 import {
   UnauthorizedException,
   ForbiddenException,
@@ -403,6 +404,19 @@ export const updateAssignment = async (
   });
 
   logger.info('Assignment updated', { assignmentId, coachId: coach.user_id });
+
+  // Notify client
+  try {
+    await createNotification({
+      userId: updated.user_id,
+      type: 'program_assigned',
+      title: 'Program Updated',
+      body: `Your coach updated your program: ${updated.name}`,
+      data: { coachId: coach.user_id, programId: updated.id },
+    });
+  } catch (err) {
+    logger.error('Failed to create program_assigned notification', err);
+  }
   sendSuccess(res, {
     assignment: {
       id: updated.id,

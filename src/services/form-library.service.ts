@@ -52,6 +52,8 @@ export const getFormLibrary = async (
     whereConditions.push(`$${params.length} = ANY(e.target_muscles)`);
   }
 
+  const whereParamCount = params.length;
+
   const whereClause = whereConditions.join(' AND ');
 
   const orderBy =
@@ -98,7 +100,7 @@ export const getFormLibrary = async (
     prisma.$queryRawUnsafe<LibraryExerciseResult[]>(exercisesQuery, ...params),
     prisma.$queryRawUnsafe<{ total: bigint }[]>(
       countQuery,
-      ...params.slice(0, -1)
+      ...params.slice(0, whereParamCount)
     ),
   ]);
 

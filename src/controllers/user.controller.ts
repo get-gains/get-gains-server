@@ -3,6 +3,7 @@ import prisma from '../config/database';
 import { resolveAvatarUrl } from '../services/upload.service';
 import { logger } from '../utils/logger';
 import { sendSuccess } from '../utils/response';
+import { createNotification } from '../services/notification.service';
 import {
   CreateUserData,
   CreateUserFromGoogleData,
@@ -488,6 +489,19 @@ export const subscribeToCoach = async (
     coachId,
     subscriptionId: subscription.id,
   });
+
+  // Notify coach
+  try {
+    await createNotification({
+      userId: coachId,
+      type: 'coach_subscribed',
+      title: 'New Client',
+      body: `${appUser.full_name} subscribed to you as a client.`,
+      data: { clientId: appUser.supabase_auth_id },
+    });
+  } catch (err) {
+    logger.error('Failed to create coach_subscribed notification', err);
+  }
 
   sendSuccess(
     res,

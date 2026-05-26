@@ -15,7 +15,8 @@
     "prepare": "husky",
     "postinstall": "prisma generate",
     "commitlint": "commitlint --edit",
-    "codegen:errors": "tsx scripts/gen-dart-error-codes.ts"
+    "codegen:errors": "tsx scripts/gen-dart-error-codes.ts",
+    "seed:coach-test": "tsx scripts/seed-coach-test-data.ts"
   },
   "lint-staged": {
     "*.ts": [
