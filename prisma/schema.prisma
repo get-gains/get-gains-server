@@ -92,6 +92,24 @@ enum DayOfWeek {
   SATURDAY
 }
 
+// ============== Auth / OTP ==============
+
+model password_reset_otp {
+  id             String     @id @default(cuid())
+  email          String
+  code           String
+  attempts       Int        @default(0)
+  max_attempts   Int        @default(3)
+  verified       Boolean    @default(false)
+  reset_token    String?    @unique
+  expires_at     DateTime   @db.Timestamptz
+  cooldown_until DateTime?  @db.Timestamptz
+  created_at     DateTime   @default(now()) @db.Timestamptz
+
+  @@index([email, verified, expires_at])
+  @@index([reset_token])
+}
+
 // ============== Identity ==============
 
 model user {
