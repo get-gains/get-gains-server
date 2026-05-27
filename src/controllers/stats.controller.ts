@@ -12,8 +12,12 @@ import type { AuthenticatedUser } from '../middleware/auth.middleware';
 /**
  * Get unified weekly stats with per-source breakdown.
  *
+ * Merges completed sessions from both the coach-assigned system
+ * (`workout_session`) and the standalone system (`standalone_session`)
+ * for the current week window.
+ *
  * Returns combined totals and per-source (standalone / coach) breakdowns.
- * Free users receive standalone stats only; subscribed users receive both.
+ * Standalone sessions are always source "standalone".
  *
  * Uses `attachSubscription` middleware (non-blocking) to determine
  * subscription status via `req.subscription.isSubscribed`.
@@ -60,41 +64,90 @@ export const getWeeklyStats = async (
     isSubscribed,
   });
 
-  // Fetch completed sessions for the week with source indicator via relational path
-  const sessions = await prisma.workout_session.findMany({
-    where: {
-      assigned_program_routine: { assigned_program: { user_id: supabaseId } },
-      completed_at: { not: null },
-      started_at: { gte: weekStart, lt: weekEnd },
-    },
-    select: {
-      started_at: true,
-      completed_at: true,
-      assigned_program_routine: {
-        select: {
-          assigned_program: {
-            select: {
-              coach_id: true,
-              name: true,
+  // Fetch completed sessions for the week from both systems in parallel
+  const [coachSessions, standaloneSessions] = await Promise.all([
+    prisma.workout_session.findMany({
+      where: {
+        assigned_program_routine: { assigned_program: { user_id: supabaseId } },
+        completed_at: { not: null },
+        started_at: { gte: weekStart, lt: weekEnd },
+      },
+      select: {
+        started_at: true,
+        completed_at: true,
+        assigned_program_routine: {
+          select: {
+            assigned_program: {
+              select: {
+                coach_id: true,
+                name: true,
+              },
             },
           },
         },
       },
-    },
-    orderBy: { started_at: 'asc' },
-  });
+      orderBy: { started_at: 'asc' },
+    }),
 
-  // Partition sessions by source
-  const standaloneSessions = sessions.filter(
+    prisma.standalone_session.findMany({
+      where: {
+        user_id: supabaseId,
+        completed_at: { not: null },
+        deleted_at: null,
+        started_at: { gte: weekStart, lt: weekEnd },
+      },
+      select: {
+        started_at: true,
+        completed_at: true,
+        program_routine: {
+          select: {
+            program: {
+              select: { name: true },
+            },
+          },
+        },
+      },
+      orderBy: { started_at: 'asc' },
+    }),
+  ]);
+
+  // Partition coach-assigned sessions by source
+  const selfAssignedCoach = coachSessions.filter(
     (s) => s.assigned_program_routine.assigned_program.coach_id === supabaseId
   );
-  const coachSessions = sessions.filter(
+  const coachAssignedCoach = coachSessions.filter(
     (s) => s.assigned_program_routine.assigned_program.coach_id !== supabaseId
   );
 
+  // All standalone sessions are "standalone" source
+  // Self-assigned coach sessions are also "standalone" source
+  const allStandaloneSessions = [
+    ...standaloneSessions.map((s) => ({
+      started_at: s.started_at,
+      completed_at: s.completed_at,
+      programName: s.program_routine.program.name,
+      type: 'standalone' as const,
+    })),
+    ...selfAssignedCoach.map((s) => ({
+      started_at: s.started_at,
+      completed_at: s.completed_at,
+      programName: s.assigned_program_routine.assigned_program.name,
+      type: 'standalone' as const,
+    })),
+  ];
+
+  const allCoachSessions = coachAssignedCoach.map((s) => ({
+    started_at: s.started_at,
+    completed_at: s.completed_at,
+    programName: s.assigned_program_routine.assigned_program.name,
+    type: 'coach' as const,
+  }));
+
   // Helper: compute minutes from sessions; guard nullable started_at
-  const computeMinutes = (sessionList: typeof sessions): number =>
-    sessionList.reduce((sum, s) => {
+  const computeMinutes = (
+    list: Array<{ started_at: Date | null; completed_at: Date | null }>
+  ): number =>
+    list.reduce((sum, s) => {
       if (s.started_at && s.completed_at) {
         return (
           sum +
@@ -106,29 +159,31 @@ export const getWeeklyStats = async (
       return sum;
     }, 0);
 
-  // Combined totals
-  const combinedWorkouts = sessions.length;
-  const combinedMinutes = computeMinutes(sessions);
+  // Combined totals (all sessions across both systems)
+  const combinedWorkouts =
+    allStandaloneSessions.length + allCoachSessions.length;
+  const combinedMinutes =
+    computeMinutes(allStandaloneSessions) + computeMinutes(allCoachSessions);
 
   // Per-source weekly stats
-  const standaloneWorkouts = standaloneSessions.length;
-  const standaloneMinutes = computeMinutes(standaloneSessions);
-  const coachWorkouts = coachSessions.length;
-  const coachMinutes = computeMinutes(coachSessions);
+  const standaloneWorkouts = allStandaloneSessions.length;
+  const standaloneMinutes = computeMinutes(allStandaloneSessions);
+  const coachWorkouts = allCoachSessions.length;
+  const coachMinutes = computeMinutes(allCoachSessions);
 
   // ── Streak Calculation (shared utility) ──
 
   const { combinedStreak, standaloneStreak, coachStreak } =
     await calculateStreaksBySource(supabaseId, new Date(), prisma);
 
-  // Get most recently active coach program name from included data (no extra DB query)
+  // Get most recently active coach program name from included data
   let coachProgramName: string | null = null;
-  if (isSubscribed && coachSessions.length > 0) {
-    const recent = coachSessions[coachSessions.length - 1];
-    coachProgramName = recent.assigned_program_routine.assigned_program.name;
+  if (isSubscribed && allCoachSessions.length > 0) {
+    coachProgramName =
+      allCoachSessions[allCoachSessions.length - 1].programName;
   }
 
-  // Build sources array based on subscription status
+  // Build sources array
   const sources: SourceStats[] = [];
 
   if (standaloneWorkouts > 0) {
@@ -156,11 +211,13 @@ export const getWeeklyStats = async (
     : standaloneWorkouts;
   const effectiveMinutes = isSubscribed ? combinedMinutes : standaloneMinutes;
   const effectiveStreak = isSubscribed ? combinedStreak : standaloneStreak;
-  const effectiveSessions = isSubscribed ? sessions : standaloneSessions;
+
+  const allSessions = [...allStandaloneSessions, ...allCoachSessions];
+  const effectiveSessions = isSubscribed ? allSessions : allStandaloneSessions;
 
   sendSuccess(res, {
     weekStart: weekStart.toISOString().slice(0, 10),
-    weekEnd: new Date(weekEnd.getTime() - 1).toISOString().slice(0, 10), // Sunday, not next Monday
+    weekEnd: new Date(weekEnd.getTime() - 1).toISOString().slice(0, 10),
     workoutsCompleted: effectiveWorkouts,
     totalMinutes: effectiveMinutes,
     streakDays: effectiveStreak,
