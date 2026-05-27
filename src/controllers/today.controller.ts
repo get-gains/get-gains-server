@@ -143,9 +143,9 @@ export const getTodayStatus = async (
 
   const hasCoach = Boolean(coachRelation);
 
-  const [coachAssignment, standaloneAssignment] = await Promise.all([
+  const coachAssignment =
     isSubscribed && coachRelation
-      ? prisma.assigned_program.findFirst({
+      ? await prisma.assigned_program.findFirst({
           where: {
             user_id: supabaseId,
             coach_id: coachRelation.coach_id,
@@ -155,62 +155,37 @@ export const getTodayStatus = async (
           select: assignmentSelect,
           orderBy: [{ start_date: 'desc' }, { created_at: 'desc' }],
         })
-      : Promise.resolve(null),
-    prisma.assigned_program.findFirst({
-      where: {
-        user_id: supabaseId,
-        coach_id: supabaseId,
-        deleted_at: null,
-        OR: [{ end_date: null }, { end_date: { gt: now } }],
-      },
-      select: assignmentSelect,
-      orderBy: [{ start_date: 'desc' }, { created_at: 'desc' }],
-    }),
-  ]);
+      : null;
 
   const coachToday =
     isSubscribed && hasCoach
       ? toTodayWorkoutDetails(coachAssignment, dayName, dayNumber)
       : null;
-  const standaloneToday = toTodayWorkoutDetails(
-    standaloneAssignment,
-    dayName,
-    dayNumber
-  );
+
+  // Standalone check: is there an active standalone program?
+  const standaloneActive = await prisma.standalone_program.findFirst({
+    where: {
+      user_id: supabaseId,
+      is_active: true,
+      deleted_at: null,
+    },
+    select: { id: true, name: true },
+  });
 
   // Determine which routine IDs to check for completed sessions today
   const todayStart = new Date();
   todayStart.setUTCHours(0, 0, 0, 0);
 
-  const routineIdsToCheck: string[] = [
-    coachToday?.programRoutineId,
-    standaloneToday?.programRoutineId,
-  ].filter((id): id is string => Boolean(id));
-
-  const completedRoutineIds = new Set<string>();
-  if (routineIdsToCheck.length > 0) {
-    const completedSessions = await prisma.workout_session.findMany({
+  if (coachToday?.programRoutineId) {
+    const completedSession = await prisma.workout_session.findFirst({
       where: {
-        assigned_program_routine_id: { in: routineIdsToCheck },
+        assigned_program_routine_id: coachToday.programRoutineId,
         completed_at: { gte: todayStart },
         deleted_at: null,
       },
-      select: { assigned_program_routine_id: true },
+      select: { id: true },
     });
-    for (const s of completedSessions) {
-      completedRoutineIds.add(s.assigned_program_routine_id);
-    }
-  }
-
-  if (coachToday?.programRoutineId) {
-    coachToday.completedToday = completedRoutineIds.has(
-      coachToday.programRoutineId
-    );
-  }
-  if (standaloneToday?.programRoutineId) {
-    standaloneToday.completedToday = completedRoutineIds.has(
-      standaloneToday.programRoutineId
-    );
+    coachToday.completedToday = Boolean(completedSession);
   }
 
   logger.debug('Resolved unified today status', {
@@ -219,9 +194,7 @@ export const getTodayStatus = async (
     isSubscribed,
     hasCoach,
     hasCoachAssignment: Boolean(coachAssignment),
-    hasStandaloneAssignment: Boolean(standaloneAssignment),
     coachRestDay: coachToday?.isRestDay,
-    standaloneRestDay: standaloneToday?.isRestDay,
   });
 
   sendSuccess(res, {
@@ -230,6 +203,9 @@ export const getTodayStatus = async (
     hasCoach,
     tier,
     coachToday,
-    standaloneToday,
+    standalone: {
+      hasActiveProgram: Boolean(standaloneActive),
+      program: standaloneActive ?? null,
+    },
   });
 };

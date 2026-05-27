@@ -33,10 +33,11 @@ export type SessionHistoryQuery = z.infer<
  */
 export const UnifiedSessionSummarySchema = z.object({
   id: z.string(),
+  userId: z.string(),
   routineId: z.string(),
   startedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
-  feedback: z.string().nullable(),
+  notes: z.string().nullable(),
   totalSets: z.number().int().min(0),
   routineName: z.string(),
   source: z.enum(['standalone', 'coach']),

@@ -174,3 +174,24 @@ export type GetClientExerciseHistoryParams = z.infer<
 export type GetClientExerciseHistoryQuery = z.infer<
   typeof GetClientExerciseHistorySchema
 >['query'];
+
+/**
+ * Get paginated form comparison results for a client.
+ */
+export const GetClientFormResultsSchema = z.object({
+  params: z.object({
+    userId: z.string().min(1, 'Invalid user ID'),
+  }),
+  query: z.object({
+    limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+    offset: z.coerce.number().int().min(0).optional().default(0),
+    exerciseId: z.string().optional(),
+  }),
+});
+
+export type GetClientFormResultsParams = z.infer<
+  typeof GetClientFormResultsSchema
+>['params'];
+export type GetClientFormResultsQuery = z.infer<
+  typeof GetClientFormResultsSchema
+>['query'];

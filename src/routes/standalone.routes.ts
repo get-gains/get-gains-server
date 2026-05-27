@@ -14,20 +14,28 @@ import {
   GetPersonalRoutineByIdSchema,
   UpdatePersonalRoutineSchema,
   DeletePersonalRoutineSchema,
-  CreatePersonalProgramSchema,
-  GetPersonalProgramsSchema,
-  GetPersonalProgramByIdSchema,
-  UpdatePersonalProgramSchema,
-  DeletePersonalProgramSchema,
-  GetStandaloneTodaySchema,
+  CreateStandaloneProgramSchema,
+  GetStandaloneProgramsSchema,
+  GetStandaloneProgramByIdSchema,
+  UpdateStandaloneProgramSchema,
+  DeleteStandaloneProgramSchema,
+  ActivateStandaloneProgramSchema,
+  AddStandaloneProgramRoutineSchema,
+  UpdateStandaloneProgramRoutineSchema,
+  DeleteStandaloneProgramRoutineSchema,
+  AddStandaloneRoutineExerciseSchema,
+  UpdateStandaloneRoutineExerciseSchema,
+  DeleteStandaloneRoutineExerciseSchema,
+  BuildStandaloneProgramSchema,
   StartStandaloneSessionSchema,
   CompleteStandaloneSessionSchema,
   GetStandaloneSessionsSchema,
   GetStandaloneSessionByIdSchema,
-  GetStandaloneWeeklyStatsSchema,
-  CreateStandaloneAssignmentSchema,
-  GetStandaloneAssignmentsSchema,
-  GetStandaloneAssignmentByIdSchema,
+  LogStandaloneSetSchema,
+  UpdateStandaloneSetSchema,
+  DeleteStandaloneSetSchema,
+  GetStandaloneStatsSchema,
+  GetStandaloneExerciseStatSchema,
 } from '../schemas/standalone.schema';
 import {
   createPersonalExercise,
@@ -39,21 +47,31 @@ import {
   getPersonalRoutineById,
   updatePersonalRoutine,
   deletePersonalRoutine,
-  createPersonalProgram,
-  getPersonalPrograms,
-  getPersonalProgramById,
-  updatePersonalProgram,
-  deletePersonalProgram,
-  createStandaloneAssignment,
-  getStandaloneAssignments,
-  getStandaloneAssignmentById,
-  getStandaloneToday,
+  createStandaloneProgram,
+  getStandalonePrograms,
+  getActiveStandaloneProgram,
+  getStandaloneProgramById,
+  updateStandaloneProgram,
+  deleteStandaloneProgram,
+  activateStandaloneProgram,
+  deactivateStandaloneProgram,
+  buildStandaloneProgram,
+  addStandaloneProgramRoutine,
+  updateStandaloneProgramRoutine,
+  deleteStandaloneProgramRoutine,
+  addStandaloneRoutineExercise,
+  updateStandaloneRoutineExercise,
+  deleteStandaloneRoutineExercise,
   startStandaloneSession,
   getStandaloneActiveSession,
   completeStandaloneSession,
   getStandaloneSessions,
   getStandaloneSessionById,
-  getStandaloneWeeklyStats,
+  logStandaloneSet,
+  updateStandaloneSet,
+  deleteStandaloneSet,
+  getStandaloneStats,
+  getStandaloneExerciseStat,
 } from '../controllers/standalone.controller';
 
 const router = Router();
@@ -130,73 +148,117 @@ router.delete(
 // ============== Program Routes ==============
 
 router.post(
+  '/programs/build',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(BuildStandaloneProgramSchema),
+  buildStandaloneProgram
+);
+
+router.get(
+  '/programs/active',
+  authenticateSupabaseUser,
+  requireAppUser,
+  getActiveStandaloneProgram
+);
+
+router.post(
   '/programs',
   authenticateSupabaseUser,
   requireAppUser,
-  validateRequest(CreatePersonalProgramSchema),
-  createPersonalProgram
+  validateRequest(CreateStandaloneProgramSchema),
+  createStandaloneProgram
 );
 router.get(
   '/programs',
   authenticateSupabaseUser,
   requireAppUser,
-  validateRequest(GetPersonalProgramsSchema),
-  getPersonalPrograms
+  validateRequest(GetStandaloneProgramsSchema),
+  getStandalonePrograms
 );
 router.get(
   '/programs/:programId',
   authenticateSupabaseUser,
   requireAppUser,
-  validateRequest(GetPersonalProgramByIdSchema),
-  getPersonalProgramById
+  validateRequest(GetStandaloneProgramByIdSchema),
+  getStandaloneProgramById
 );
 router.patch(
   '/programs/:programId',
   authenticateSupabaseUser,
   requireAppUser,
-  validateRequest(UpdatePersonalProgramSchema),
-  updatePersonalProgram
+  validateRequest(UpdateStandaloneProgramSchema),
+  updateStandaloneProgram
 );
 router.delete(
   '/programs/:programId',
   authenticateSupabaseUser,
   requireAppUser,
-  validateRequest(DeletePersonalProgramSchema),
-  deletePersonalProgram
+  validateRequest(DeleteStandaloneProgramSchema),
+  deleteStandaloneProgram
 );
-
-// ============== Assignment Routes ==============
 
 router.post(
-  '/assigned-programs',
+  '/programs/:programId/activate',
   authenticateSupabaseUser,
   requireAppUser,
-  validateRequest(CreateStandaloneAssignmentSchema),
-  createStandaloneAssignment
+  validateRequest(ActivateStandaloneProgramSchema),
+  activateStandaloneProgram
 );
-router.get(
-  '/assigned-programs',
+router.post(
+  '/programs/:programId/deactivate',
   authenticateSupabaseUser,
   requireAppUser,
-  validateRequest(GetStandaloneAssignmentsSchema),
-  getStandaloneAssignments
-);
-router.get(
-  '/assigned-programs/:assignedProgramId',
-  authenticateSupabaseUser,
-  requireAppUser,
-  validateRequest(GetStandaloneAssignmentByIdSchema),
-  getStandaloneAssignmentById
+  validateRequest(ActivateStandaloneProgramSchema),
+  deactivateStandaloneProgram
 );
 
-// ============== Today Route ==============
+// ============== Program Routine Routes ==============
 
-router.get(
-  '/today',
+router.post(
+  '/programs/:programId/routines',
   authenticateSupabaseUser,
   requireAppUser,
-  validateRequest(GetStandaloneTodaySchema),
-  getStandaloneToday
+  validateRequest(AddStandaloneProgramRoutineSchema),
+  addStandaloneProgramRoutine
+);
+router.patch(
+  '/programs/:programId/routines/:programRoutineId',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(UpdateStandaloneProgramRoutineSchema),
+  updateStandaloneProgramRoutine
+);
+router.delete(
+  '/programs/:programId/routines/:programRoutineId',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(DeleteStandaloneProgramRoutineSchema),
+  deleteStandaloneProgramRoutine
+);
+
+// ============== Routine Exercise Routes ==============
+
+router.post(
+  '/routines/:routineId/exercises',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(AddStandaloneRoutineExerciseSchema),
+  addStandaloneRoutineExercise
+);
+router.patch(
+  '/routines/:routineId/exercises/:routineExerciseId',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(UpdateStandaloneRoutineExerciseSchema),
+  updateStandaloneRoutineExercise
+);
+router.delete(
+  '/routines/:routineId/exercises/:routineExerciseId',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(DeleteStandaloneRoutineExerciseSchema),
+  deleteStandaloneRoutineExercise
 );
 
 // ============== Session Routes ==============
@@ -236,14 +298,45 @@ router.post(
   completeStandaloneSession
 );
 
-// ============== Stats Route ==============
+// ============== Performed Set Routes ==============
 
-router.get(
-  '/stats/weekly',
+router.post(
+  '/sessions/:sessionId/sets',
   authenticateSupabaseUser,
   requireAppUser,
-  validateRequest(GetStandaloneWeeklyStatsSchema),
-  getStandaloneWeeklyStats
+  validateRequest(LogStandaloneSetSchema),
+  logStandaloneSet
+);
+router.patch(
+  '/sessions/:sessionId/sets/:setId',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(UpdateStandaloneSetSchema),
+  updateStandaloneSet
+);
+router.delete(
+  '/sessions/:sessionId/sets/:setId',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(DeleteStandaloneSetSchema),
+  deleteStandaloneSet
+);
+
+// ============== Stats Routes ==============
+
+router.get(
+  '/stats/summary',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(GetStandaloneStatsSchema),
+  getStandaloneStats
+);
+router.get(
+  '/stats/exercise/:exerciseId',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(GetStandaloneExerciseStatSchema),
+  getStandaloneExerciseStat
 );
 
 export default router;

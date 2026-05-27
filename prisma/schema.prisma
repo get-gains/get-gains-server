@@ -143,6 +143,10 @@ model user {
   // Denormalized for O(1) tier gate checks. Updated by RC webhook handler.
   active_subscription_tier SubscriptionTier @default(FREE)
 
+  // Standalone (free-tier) workout stats — separate from coach-tier counters.
+  standalone_streak_days       Int       @default(0)
+  standalone_last_workout_date DateTime? @db.Timestamptz
+
   coach                  coach?
   subscribed_coaches     subscribed_coach[]
   routines               routine[]
@@ -156,6 +160,8 @@ model user {
   rc_subscription_events rc_subscription_event[]
   exercise_ratings       exercise_rating[]
   notifications          notification[]
+  standalone_programs    standalone_program[]
+  standalone_sessions    standalone_session[]
 }
 
 model coach {
@@ -223,6 +229,7 @@ model routine {
 
   user                      user                       @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
   assigned_program_routines assigned_program_routine[]
+  standalone_routines       standalone_program_routine[]
 
   @@index([user_id])
 }
@@ -243,6 +250,7 @@ model exercise {
   user                               user                                @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
   exercise_forms                     exercise_form[]
   assigned_program_routine_exercises assigned_program_routine_exercise[]
+  standalone_exercises               standalone_program_routine_exercise[]
   exercise_ratings                   exercise_rating[]
 
   @@index([user_id])
@@ -386,6 +394,95 @@ model performed_set {
   @@index([workout_session_id])
   @@index([assigned_program_routine_exercise_id])
   @@index([completed_at])
+}
+
+// ============== Standalone Workout (Free Tier) ==============
+
+model standalone_program {
+  id          String    @id @default(cuid())
+  user_id     String
+  name        String
+  description String    @default("") @db.Text
+  is_active   Boolean   @default(false)
+  deleted_at  DateTime? @db.Timestamptz
+  created_at  DateTime  @default(now()) @db.Timestamptz
+  updated_at  DateTime  @updatedAt @db.Timestamptz
+
+  user     user                          @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
+  routines standalone_program_routine[]
+
+  @@index([user_id, deleted_at])
+}
+
+model standalone_program_routine {
+  id               String    @id @default(cuid())
+  program_id       String
+  routine_id       String
+  order_in_program Int       @default(1)
+  deleted_at       DateTime? @db.Timestamptz
+  created_at       DateTime  @default(now()) @db.Timestamptz
+
+  program   standalone_program                 @relation(fields: [program_id], references: [id], onDelete: Cascade)
+  routine   routine                            @relation(fields: [routine_id], references: [id], onDelete: Restrict)
+  exercises standalone_program_routine_exercise[]
+  sessions  standalone_session[]
+
+  @@index([program_id])
+  @@index([routine_id])
+}
+
+model standalone_program_routine_exercise {
+  id                String    @id @default(cuid())
+  program_routine_id String
+  exercise_id       String
+  sets              Int       @default(3)
+  reps_min          Int       @default(8)
+  reps_max          Int       @default(12)
+  rest_seconds      Int       @default(60)
+  order_in_routine  Int       @default(1)
+  deleted_at        DateTime? @db.Timestamptz
+  created_at        DateTime  @default(now()) @db.Timestamptz
+
+  program_routine standalone_program_routine @relation(fields: [program_routine_id], references: [id], onDelete: Cascade)
+  exercise        exercise                   @relation(fields: [exercise_id], references: [id], onDelete: Restrict)
+  performed_sets  standalone_performed_set[]
+
+  @@index([program_routine_id])
+  @@index([exercise_id])
+}
+
+model standalone_session {
+  id                String    @id @default(cuid())
+  user_id           String
+  program_routine_id String
+  started_at        DateTime  @default(now()) @db.Timestamptz
+  completed_at      DateTime? @db.Timestamptz
+  feedback          String?   @db.Text
+  deleted_at        DateTime? @db.Timestamptz
+  created_at        DateTime  @default(now()) @db.Timestamptz
+
+  user            user                        @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
+  program_routine standalone_program_routine  @relation(fields: [program_routine_id], references: [id], onDelete: Cascade)
+  performed_sets  standalone_performed_set[]
+
+  @@index([user_id, completed_at])
+  @@index([program_routine_id])
+}
+
+model standalone_performed_set {
+  id                 String   @id @default(cuid())
+  session_id         String
+  routine_exercise_id String
+  set_number         Int
+  reps               Int
+  weight             Float    @default(0)
+  created_at         DateTime @default(now()) @db.Timestamptz
+
+  session  standalone_session                @relation(fields: [session_id], references: [id], onDelete: Cascade)
+  exercise standalone_program_routine_exercise @relation(fields: [routine_exercise_id], references: [id], onDelete: Cascade)
+
+  @@index([session_id])
+  @@index([routine_exercise_id])
 }
 
 // ============== Gamification ==============

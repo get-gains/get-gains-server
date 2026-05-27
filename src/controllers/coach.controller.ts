@@ -26,6 +26,8 @@ import {
   GetClientWeeklyStatsQuery,
   GetClientExerciseHistoryParams,
   GetClientExerciseHistoryQuery,
+  GetClientFormResultsParams,
+  GetClientFormResultsQuery,
 } from '../schemas/coach.schema';
 import { getUserBySupabaseId } from './user.controller';
 
@@ -1006,6 +1008,206 @@ export const getClientExerciseHistory = async (
       };
     }),
     total: sessionMap.size,
+  });
+};
+
+// ============== Client Form Results ==============
+
+/**
+ * GET /coach/clients/:userId/form-results
+ * Paginated form comparison results for a client, grouped by session and exercise.
+ *
+ * Returns only results where recorded_frames_key is present (form data was captured).
+ * Omits segmentScores, corrections, durationMs, totalFrames since those are
+ * not yet persisted in the database.
+ *
+ * @param req      Express request with coach auth, validated params { userId }, query { limit, offset, exerciseId? }
+ * @param res      Express response — sends { results, pagination } envelope
+ * @throws         NotFoundException if client is not in the coach's class
+ */
+export const getClientFormResults = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const coach = req.coach;
+  if (!coach) {
+    throw new ForbiddenException('AUTH_COACH_REQUIRED', 'Coach required');
+  }
+
+  const { userId } = res.locals.validated?.params as GetClientFormResultsParams;
+  const { limit, offset, exerciseId } = res.locals.validated
+    ?.query as GetClientFormResultsQuery;
+
+  await verifyCoachClientRelationship(coach.user_id, userId);
+
+  logger.debug('Fetching client form results', {
+    coachId: coach.user_id,
+    userId,
+    exerciseId,
+    limit,
+    offset,
+  });
+
+  // Build exercise filter if exerciseId is provided
+  const exerciseFilter: Prisma.assigned_program_routine_exerciseWhereInput =
+    exerciseId ? { exercise_id: exerciseId } : {};
+
+  // Count total matching performed_sets with form data
+  const where: Prisma.performed_setWhereInput = {
+    recorded_frames_key: { not: null },
+    assigned_program_routine_exercise: {
+      ...exerciseFilter,
+      assigned_program_routine: {
+        assigned_program: { user_id: userId },
+      },
+    },
+  };
+
+  // Fetch all qualifying sets with full relational context
+  const sets = await prisma.performed_set.findMany({
+    where,
+    include: {
+      workout_session: {
+        select: { id: true, started_at: true, completed_at: true },
+      },
+      assigned_program_routine_exercise: {
+        select: {
+          id: true,
+          exercise: {
+            select: {
+              id: true,
+              name: true,
+              user: {
+                select: {
+                  supabase_auth_id: true,
+                  full_name: true,
+                  coach: { select: { user_id: true } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    orderBy: [
+      { workout_session: { started_at: 'desc' } },
+      { created_at: 'desc' },
+      { set_number: 'asc' },
+    ],
+  });
+
+  // Find exercise_forms for each unique exercise to get camera_angle & coach context
+  const exerciseIds = [
+    ...new Set(
+      sets.map((s) => s.assigned_program_routine_exercise.exercise.id)
+    ),
+  ];
+  const forms = await prisma.exercise_form.findMany({
+    where: { exercise_id: { in: exerciseIds } },
+    select: { id: true, exercise_id: true, camera_angle: true },
+  });
+  const formByExercise = new Map<string, (typeof forms)[number]>();
+  for (const f of forms) {
+    if (!formByExercise.has(f.exercise_id)) {
+      formByExercise.set(f.exercise_id, f);
+    }
+  }
+
+  // Group by (session, exercise) — each group is one form-result entry
+  const groupMap = new Map<
+    string,
+    {
+      sessionId: string;
+      sessionDate: Date | null;
+      exercise: { id: string; name: string };
+      exerciseForm: {
+        id: string;
+        cameraAngle: string | null;
+        exercise: { id: string; name: string };
+        coach: { id: string; name: string } | null;
+      } | null;
+      exerciseName: string;
+      scores: number[];
+      recordedFramesKey: string | null;
+      performedAt: Date | null;
+    }
+  >();
+
+  for (const s of sets) {
+    const sess = s.workout_session;
+    const aprEx = s.assigned_program_routine_exercise;
+    const ex = aprEx.exercise;
+    const key = `${sess.id}:${ex.id}`;
+
+    if (!groupMap.has(key)) {
+      const ef = formByExercise.get(ex.id) ?? null;
+      const coachUser = ex.user?.coach
+        ? { id: ex.user.coach.user_id, name: ex.user.full_name }
+        : null;
+
+      groupMap.set(key, {
+        sessionId: sess.id,
+        sessionDate: sess.started_at,
+        exercise: { id: ex.id, name: ex.name },
+        exerciseForm: ef
+          ? {
+              id: ef.id,
+              cameraAngle: ef.camera_angle ?? null,
+              exercise: { id: ex.id, name: ex.name },
+              coach: coachUser,
+            }
+          : null,
+        exerciseName: ex.name,
+        scores: [],
+        recordedFramesKey: s.recorded_frames_key ?? null,
+        performedAt: s.created_at,
+      });
+    }
+
+    const group = groupMap.get(key)!;
+    if (s.overall_score !== null) {
+      group.scores.push(s.overall_score);
+    }
+    if (s.recorded_frames_key && !group.recordedFramesKey) {
+      group.recordedFramesKey = s.recorded_frames_key;
+    }
+    if (
+      s.created_at &&
+      (!group.performedAt || s.created_at < group.performedAt)
+    ) {
+      group.performedAt = s.created_at;
+    }
+  }
+
+  const results = [...groupMap.values()]
+    .map((g) => ({
+      id: `${g.sessionId}:${g.exercise.id}`,
+      overallScore:
+        g.scores.length > 0
+          ? +(
+              g.scores.reduce((a, b) => a + b, 0) /
+              g.scores.length /
+              100
+            ).toFixed(2)
+          : 0,
+      cameraAngle: g.exerciseForm?.cameraAngle ?? null,
+      recordedFramesKey: g.recordedFramesKey,
+      exerciseName: g.exerciseName,
+      createdAt:
+        g.performedAt?.toISOString() ??
+        g.sessionDate?.toISOString() ??
+        new Date().toISOString(),
+      exerciseForm: g.exerciseForm,
+    }))
+    .slice(offset, offset + limit);
+
+  sendSuccess(res, {
+    results,
+    pagination: {
+      total: groupMap.size,
+      limit,
+      offset,
+    },
   });
 };
 

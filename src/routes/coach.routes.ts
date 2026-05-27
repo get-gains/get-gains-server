@@ -15,6 +15,7 @@ import {
   GetClientSessionDetailSchema,
   GetClientWeeklyStatsSchema,
   GetClientExerciseHistorySchema,
+  GetClientFormResultsSchema,
 } from '../schemas/coach.schema';
 import {
   createCoachProfile,
@@ -27,6 +28,7 @@ import {
   getClientSessionDetail,
   getClientWeeklyStats,
   getClientExerciseHistory,
+  getClientFormResults,
   getDetailedPerformance,
 } from '../controllers/coach.controller';
 import classRoutes from './class.routes';
@@ -170,6 +172,19 @@ router.get(
   requireCoach,
   validateRequest(GetClientExerciseHistorySchema),
   getClientExerciseHistory
+);
+
+/**
+ * @route   GET /coach/clients/:userId/form-results
+ * @desc    Get paginated form comparison results for a client
+ * @access  Protected (authenticateSupabaseUser + requireCoach)
+ */
+router.get(
+  '/clients/:userId/form-results',
+  authenticateSupabaseUser,
+  requireCoach,
+  validateRequest(GetClientFormResultsSchema),
+  getClientFormResults
 );
 
 // ============== Enhanced Performance Route (GAP 2) ==============
