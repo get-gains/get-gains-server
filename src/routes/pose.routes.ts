@@ -15,6 +15,7 @@ import {
   downloadExerciseForm,
   createFramesUploadUrl,
   getFormDownloadUrl,
+  getFramesDownloadUrl,
 } from '../controllers/pose.controller';
 import {
   UploadFormSchema,
@@ -24,6 +25,7 @@ import {
   DownloadProgramFormsSchema,
   DownloadExerciseFormSchema,
   FramesUploadUrlSchema,
+  FramesDownloadUrlSchema,
 } from '../schemas/pose.schema';
 
 const router = Router();
@@ -104,6 +106,14 @@ router.get(
   requireAppUser,
   validateRequest(FormIdParamSchema),
   getFormDownloadUrl
+);
+
+router.get(
+  '/frames/download-url',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(FramesDownloadUrlSchema),
+  getFramesDownloadUrl
 );
 
 export default router;

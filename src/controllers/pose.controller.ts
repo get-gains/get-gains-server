@@ -599,3 +599,27 @@ export const getFormDownloadUrl = async (
     expiresInSeconds: 3600,
   });
 };
+
+/**
+ * Generate a presigned GET URL for downloading any pose-frames blob.
+ * Takes a raw S3 key via query param. Auth: any authenticated user.
+ *
+ * @param req - Express request with validated query { key }
+ * @param res - Express response
+ */
+export const getFramesDownloadUrl = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const { key } = res.locals.validated?.query as { key: string };
+
+  const url = await getPresignedUrl(key);
+
+  logger.debug('Frames download URL generated', { key });
+
+  sendSuccess(res, {
+    key,
+    url,
+    expiresInSeconds: 3600,
+  });
+};

@@ -94,3 +94,12 @@ export const FramesUploadUrlSchema = z.object({
 export type FramesUploadUrlInput = z.infer<
   typeof FramesUploadUrlSchema
 >['body'];
+
+export const FramesDownloadUrlSchema = z.object({
+  query: z.object({
+    key: z.string().min(1, 'Frames key is required'),
+  }),
+});
+export type FramesDownloadUrlQuery = z.infer<
+  typeof FramesDownloadUrlSchema
+>['query'];
