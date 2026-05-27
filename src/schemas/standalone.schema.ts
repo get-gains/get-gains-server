@@ -5,7 +5,7 @@ import { z } from 'zod';
 export const CreatePersonalExerciseSchema = z.object({
   body: z.object({
     name: z.string().min(1),
-    description: z.string().min(1),
+    description: z.string().optional().default(''),
     target_muscles: z.array(z.string()).optional().default([]),
     is_public: z.boolean().optional().default(false),
   }),
