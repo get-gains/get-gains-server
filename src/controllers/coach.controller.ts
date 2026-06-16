@@ -30,6 +30,10 @@ import {
   GetClientFormResultsQuery,
 } from '../schemas/coach.schema';
 import { getUserBySupabaseId } from './user.controller';
+import {
+  verifyCoachInviteCode,
+  markInvitationRedeemed,
+} from '../services/coach-invite.service';
 
 /**
  * Create coach profile (become a coach). Any authenticated user can call.
@@ -70,13 +74,20 @@ export const createCoachProfile = async (
 
   const body = (res.locals.validated?.body as CreateCoachProfileInput) ?? {};
 
-  const [coach] = await prisma.$transaction([
-    prisma.coach.create({
+  const invitation = body.invitation_code
+    ? await verifyCoachInviteCode(body.invitation_code, appUser.email)
+    : null;
+
+  const coach = await prisma.$transaction(async (tx) => {
+    const created = await tx.coach.create({
       data: {
         user_id: appUser.supabase_auth_id,
         certifications: body.certifications ?? [],
         specialties: body.specialties ?? [],
         social_links: body.social_links ?? [],
+        ...(body.years_experience !== undefined && {
+          years_experience: body.years_experience,
+        }),
         ...(body.max_clients !== undefined && {
           max_clients: body.max_clients,
         }),
@@ -87,12 +98,19 @@ export const createCoachProfile = async (
           is_discoverable: body.is_discoverable,
         }),
       },
-    }),
-    prisma.user.update({
+    });
+
+    await tx.user.update({
       where: { supabase_auth_id: appUser.supabase_auth_id },
       data: { is_coach: true },
-    }),
-  ]);
+    });
+
+    if (invitation) {
+      await markInvitationRedeemed(invitation.id, appUser.supabase_auth_id, tx);
+    }
+
+    return created;
+  });
 
   logger.info('Coach profile created', {
     userId: appUser.supabase_auth_id,
@@ -108,6 +126,7 @@ export const createCoachProfile = async (
         certifications: coach.certifications,
         specialties: coach.specialties,
         social_links: coach.social_links,
+        years_experience: coach.years_experience,
         max_clients: coach.max_clients,
         accepting_clients: coach.accepting_clients,
         is_discoverable: coach.is_discoverable,

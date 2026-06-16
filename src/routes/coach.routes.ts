@@ -2,10 +2,12 @@ import { Router } from 'express';
 import { validateRequest } from '../middleware/validate.middleware';
 import {
   authenticateSupabaseUser,
+  requireAppUser,
   requireCoach,
 } from '../middleware/auth.middleware';
 import {
   CreateCoachProfileSchema,
+  VerifyCoachInviteSchema,
   GetClientsSchema,
   GetPerformanceSchema,
   GetClientProgramsSchema,
@@ -31,6 +33,7 @@ import {
   getClientFormResults,
   getDetailedPerformance,
 } from '../controllers/coach.controller';
+import { verifyCoachInviteForUser } from '../controllers/admin.controller';
 import classRoutes from './class.routes';
 import programRoutes from './program.routes';
 import routineTemplateRoutes from './routine.routes';
@@ -47,6 +50,19 @@ router.post(
   authenticateSupabaseUser,
   validateRequest(CreateCoachProfileSchema),
   createCoachProfile
+);
+
+/**
+ * @route   POST /coach/verify-invite
+ * @desc    Verify a coach invitation code for the authenticated user
+ * @access  Protected (authenticateSupabaseUser + requireAppUser)
+ */
+router.post(
+  '/verify-invite',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(VerifyCoachInviteSchema),
+  verifyCoachInviteForUser
 );
 
 router.use('/class', classRoutes);
