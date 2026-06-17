@@ -208,6 +208,13 @@ export const requireCoach = async (
       );
     }
 
+    if (coach.deactivated_at != null) {
+      throw new ForbiddenException(
+        'COACH_DEACTIVATED',
+        'Your coach account has been deactivated. Contact support for assistance.'
+      );
+    }
+
     req.appUser = appUser;
     req.coach = coach;
     next();
