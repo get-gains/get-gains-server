@@ -8,6 +8,7 @@ import {
   MissionIdParamsSchema,
   ListMissionsQuerySchema,
   DrawWinnersSchema,
+  MissionWinnersParamsSchema,
 } from '../schemas/admin-missions.schema';
 import {
   listMissions,
@@ -16,6 +17,7 @@ import {
   updateMission,
   deleteMission,
   drawWinners,
+  getMissionWinners,
 } from '../controllers/admin-missions.controller';
 
 const router = Router();
@@ -31,6 +33,11 @@ router.post(
   '/:id/draw-winners',
   validateRequest(DrawWinnersSchema),
   drawWinners
+);
+router.get(
+  '/:id/winners',
+  validateRequest(MissionWinnersParamsSchema),
+  getMissionWinners
 );
 
 export default router;

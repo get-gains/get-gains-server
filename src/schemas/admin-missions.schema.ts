@@ -123,3 +123,12 @@ export const DrawWinnersSchema = z.object({
 });
 export type DrawWinnersParams = z.infer<typeof DrawWinnersSchema>['params'];
 export type DrawWinnersBody = z.infer<typeof DrawWinnersSchema>['body'];
+
+export const MissionWinnersParamsSchema = z.object({
+  params: z.object({
+    id: z.string().min(1, 'Mission ID is required'),
+  }),
+});
+export type MissionWinnersParams = z.infer<
+  typeof MissionWinnersParamsSchema
+>['params'];

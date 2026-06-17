@@ -72,7 +72,7 @@ export const getAdminImageUrl = async (
     logger.error('Failed to generate presigned URL for admin', { key, error });
     sendSingleError(
       res,
-      'PRESIGN_FAILED',
+      'UPLOAD_PRESIGN_FAILED',
       'Failed to generate image URL.',
       500
     );

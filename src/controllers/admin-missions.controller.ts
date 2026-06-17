@@ -22,6 +22,7 @@ import {
   ListMissionsQuery,
   DrawWinnersParams,
   DrawWinnersBody,
+  MissionWinnersParams,
 } from '../schemas/admin-missions.schema';
 
 function serializeMission(
@@ -458,5 +459,55 @@ export const drawWinners = async (
       id: mission.id,
       isClosed: true,
     },
+  });
+};
+
+/**
+ * GET /api/admin/missions/:id/winners
+ * List all raffle winners for a mission.
+ */
+export const getMissionWinners = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const { id } = res.locals.validated?.params as MissionWinnersParams;
+
+  const mission = await prisma.mission.findUnique({
+    where: { id },
+    select: { id: true, reward_type: true },
+  });
+
+  if (!mission) {
+    throw new NotFoundException('MISSION_NOT_FOUND', 'Mission not found');
+  }
+
+  if (mission.reward_type !== 'RAFFLE') {
+    throw new BadRequestException(
+      'MISSION_NOT_RAFFLE',
+      'This mission is not a raffle mission'
+    );
+  }
+
+  const winners = await prisma.raffle_winner.findMany({
+    where: { mission_id: id },
+    include: {
+      user: {
+        select: {
+          supabase_auth_id: true,
+          email: true,
+          full_name: true,
+        },
+      },
+    },
+    orderBy: { rank: 'asc' },
+  });
+
+  sendSuccess(res, {
+    winners: winners.map((w) => ({
+      userId: w.user.supabase_auth_id,
+      rank: w.rank,
+      email: w.user.email,
+      fullName: w.user.full_name,
+    })),
   });
 };
