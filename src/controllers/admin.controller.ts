@@ -436,6 +436,41 @@ export const activateCoach = async (
   });
 };
 
+interface DateCountRow {
+  date: Date;
+  count: bigint;
+}
+
+/**
+ * Build a daily series of counts for a given table/column using a PostgreSQL
+ * generate_series CTE so every day in the period is present (with 0 counts).
+ */
+const fetchDailyCounts = async (
+  tableName: 'user' | 'coach' | 'workout_session' | 'coach_invitation',
+  dateColumn: 'created_at' | 'completed_at' | 'redeemed_at',
+  periodStart: Date,
+  now: Date,
+  extraWhere?: Prisma.Sql
+): Promise<DateCountRow[]> => {
+  return prisma.$queryRaw<DateCountRow[]>`
+    WITH dates AS (
+      SELECT generate_series(
+        DATE_TRUNC('day', ${periodStart}::timestamptz),
+        DATE_TRUNC('day', ${now}::timestamptz),
+        INTERVAL '1 day'
+      )::date AS date
+    )
+    SELECT d.date, COUNT(*) AS count
+    FROM dates d
+    LEFT JOIN ${Prisma.raw(`"${tableName}"`)} t
+      ON DATE_TRUNC('day', t.${Prisma.raw(dateColumn)})::date = d.date
+      AND t.${Prisma.raw(dateColumn)} >= ${periodStart}
+      ${extraWhere ? extraWhere : Prisma.empty}
+    GROUP BY d.date
+    ORDER BY d.date ASC
+  `;
+};
+
 /**
  * Get aggregate admin analytics for the last N days.
  */
@@ -451,25 +486,34 @@ export const getAnalytics = async (
   const [
     totalUsers,
     newUsers,
+    userBaseline,
     totalCoaches,
     activeCoaches,
     deactivatedCoaches,
+    coachBaseline,
     onboardedCoaches,
     pendingInvites,
     revokedInvites,
     redeemedInvites,
+    totalRedeemedInvites,
     completedWorkouts,
     subscribedUsersResult,
     usersWithCoachResult,
     usersWithProgramResult,
     avgClientsResult,
     topCoachesResult,
+    dailyWorkouts,
+    dailyNewUsers,
+    dailyNewCoaches,
+    dailyRedeemedInvites,
   ] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({ where: { created_at: { gte: periodStart } } }),
+    prisma.user.count({ where: { created_at: { lt: periodStart } } }),
     prisma.coach.count(),
     prisma.coach.count({ where: { deactivated_at: null } }),
     prisma.coach.count({ where: { deactivated_at: { not: null } } }),
+    prisma.coach.count({ where: { created_at: { lt: periodStart } } }),
     prisma.coach.count({ where: { created_at: { gte: periodStart } } }),
     prisma.coach_invitation.count({ where: { status: 'PENDING' } }),
     prisma.coach_invitation.count({ where: { status: 'REVOKED' } }),
@@ -479,6 +523,7 @@ export const getAnalytics = async (
         redeemed_at: { gte: periodStart },
       },
     }),
+    prisma.coach_invitation.count({ where: { status: 'REDEEMED' } }),
     prisma.workout_session.count({
       where: {
         completed_at: { gte: periodStart },
@@ -526,12 +571,56 @@ export const getAnalytics = async (
       ORDER BY workouts DESC
       LIMIT 5
     `,
+    fetchDailyCounts('workout_session', 'completed_at', periodStart, now),
+    fetchDailyCounts('user', 'created_at', periodStart, now),
+    fetchDailyCounts('coach', 'created_at', periodStart, now),
+    fetchDailyCounts(
+      'coach_invitation',
+      'redeemed_at',
+      periodStart,
+      now,
+      Prisma.sql`AND t.status = 'REDEEMED'`
+    ),
   ]);
 
   const subscribedUsers = Number(subscribedUsersResult[0]?.count ?? 0);
   const usersWithCoach = Number(usersWithCoachResult[0]?.count ?? 0);
   const usersWithProgram = Number(usersWithProgramResult[0]?.count ?? 0);
   const avgClients = avgClientsResult[0]?.average ?? 0;
+
+  let runningUsers = Number(userBaseline);
+  const userSeries = dailyNewUsers.map((row) => {
+    runningUsers += Number(row.count);
+    return {
+      date: row.date.toISOString(),
+      newUsers: Number(row.count),
+      cumulativeUsers: runningUsers,
+    };
+  });
+
+  let runningCoaches = Number(coachBaseline);
+  const coachSeries = dailyNewCoaches.map((row) => {
+    runningCoaches += Number(row.count);
+    return {
+      date: row.date.toISOString(),
+      newCoaches: Number(row.count),
+      cumulativeCoaches: runningCoaches,
+    };
+  });
+
+  const engagementSeries = dailyWorkouts.map((row) => ({
+    date: row.date.toISOString(),
+    workoutsCompleted: Number(row.count),
+    avgWorkoutsPerUser:
+      totalUsers > 0
+        ? Math.round((Number(row.count) / totalUsers) * 100) / 100
+        : 0,
+  }));
+
+  const invitationSeries = dailyRedeemedInvites.map((row) => ({
+    date: row.date.toISOString(),
+    redeemedInvites: Number(row.count),
+  }));
 
   sendSuccess(res, {
     period: {
@@ -566,6 +655,7 @@ export const getAnalytics = async (
       pending: pendingInvites,
       revoked: revokedInvites,
       redeemedThisPeriod: redeemedInvites,
+      totalRedeemed: totalRedeemedInvites,
     },
     engagement: {
       workoutsCompletedThisPeriod: completedWorkouts,
@@ -574,6 +664,10 @@ export const getAnalytics = async (
           ? Math.round((completedWorkouts / totalUsers) * 10) / 10
           : 0,
     },
+    engagementSeries,
+    userSeries,
+    coachSeries,
+    invitationSeries,
   });
 };
 
