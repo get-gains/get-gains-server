@@ -99,6 +99,12 @@ enum NotificationType {
   subscription_expiring
 }
 
+enum CoachInviteStatus {
+  PENDING
+  REDEEMED
+  REVOKED
+}
+
 // ============== Auth / OTP ==============
 
 model password_reset_otp {
@@ -125,6 +131,7 @@ model user {
   full_name           String
   nickname            String
   is_coach            Boolean     @default(false)
+  is_admin            Boolean     @default(false)
   bio                 String?     @db.Text
   avatar_key          String?
   height_cm           Int?
@@ -149,6 +156,9 @@ model user {
 
   coach                  coach?
   subscribed_coaches     subscribed_coach[]
+  created_invitations    coach_invitation[]    @relation("AdminCreatedInvitations")
+  redeemed_invitations   coach_invitation[]    @relation("CoachRedeemedInvitations")
+  revoked_invitations    coach_invitation[]    @relation("AdminRevokedInvitations")
   routines               routine[]
   exercises              exercise[]
   coached_programs       assigned_program[]      @relation("CoachPrograms")
@@ -172,6 +182,8 @@ model coach {
   max_clients       Int      @default(40)
   accepting_clients Boolean  @default(true)
   is_discoverable   Boolean  @default(true)
+  years_experience  Int?
+  deactivated_at    DateTime? @db.Timestamptz
   created_at        DateTime @default(now()) @db.Timestamptz
   updated_at        DateTime @updatedAt @db.Timestamptz
 
@@ -193,6 +205,30 @@ model subscribed_coach {
 
   @@index([user_id])
   @@index([coach_id])
+}
+
+model coach_invitation {
+  id           String            @id @default(cuid())
+  email        String
+  code         String
+  status       CoachInviteStatus @default(PENDING)
+  attempts     Int               @default(0)
+  max_attempts Int               @default(3)
+  expires_at   DateTime          @db.Timestamptz
+  created_by   String
+  redeemed_by  String?
+  redeemed_at  DateTime?         @db.Timestamptz
+  revoked_by   String?
+  revoked_at   DateTime?         @db.Timestamptz
+  created_at   DateTime          @default(now()) @db.Timestamptz
+  updated_at   DateTime          @updatedAt @db.Timestamptz
+
+  creator user? @relation("AdminCreatedInvitations", fields: [created_by], references: [supabase_auth_id], onDelete: Cascade)
+  redeemer user? @relation("CoachRedeemedInvitations", fields: [redeemed_by], references: [supabase_auth_id], onDelete: SetNull)
+  revoker user? @relation("AdminRevokedInvitations", fields: [revoked_by], references: [supabase_auth_id], onDelete: SetNull)
+
+  @@index([email, status, expires_at])
+  @@index([code, status])
 }
 
 // ============== Notifications ==============

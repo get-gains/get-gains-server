@@ -25,6 +25,7 @@ import missionsRoutes from './routes/missions.routes';
 import formLibraryRoutes from './routes/form-library.routes';
 import exerciseRatingRoutes from './routes/exercise-rating.routes';
 import notificationRoutes from './routes/notification.routes';
+import adminRoutes from './routes/admin.routes';
 
 dotenv.config();
 
@@ -57,6 +58,7 @@ const startServer = () => {
   app.use('/api/subscriptions', subscriptionRoutes);
   app.use('/api/webhooks', webhookRoutes);
   app.use('/api/coach', coachRoutes);
+  app.use('/api/admin', adminRoutes);
   app.use('/api/user', userRoutes);
   app.use('/api/profile', profileRoutes);
   app.use('/api/pose', poseRoutes);

@@ -7,9 +7,11 @@ import { z } from 'zod';
 export const CreateCoachProfileSchema = z.object({
   body: z
     .object({
+      invitation_code: z.string().length(6).optional(),
       certifications: z.array(z.string()).optional(),
       specialties: z.array(z.string()).optional(),
       social_links: z.array(z.string().url()).optional(),
+      years_experience: z.number().int().min(0).optional(),
       max_clients: z.number().int().min(1).optional(),
       accepting_clients: z.boolean().optional(),
       is_discoverable: z.boolean().optional(),
@@ -20,6 +22,19 @@ export const CreateCoachProfileSchema = z.object({
 
 export type CreateCoachProfileInput = z.infer<
   typeof CreateCoachProfileSchema
+>['body'];
+
+/**
+ * Schema for verifying a coach invitation code in the mobile app.
+ */
+export const VerifyCoachInviteSchema = z.object({
+  body: z.object({
+    code: z.string().length(6, 'Code must be 6 characters'),
+  }),
+});
+
+export type VerifyCoachInviteInput = z.infer<
+  typeof VerifyCoachInviteSchema
 >['body'];
 
 /**

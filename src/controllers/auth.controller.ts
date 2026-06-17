@@ -489,6 +489,15 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
     appUser.is_coach
   );
 
+  let coachDeactivated = false;
+  if (isCoach) {
+    const coachProfile = await prisma.coach.findUnique({
+      where: { user_id: appUser.supabase_auth_id },
+      select: { deactivated_at: true },
+    });
+    coachDeactivated = coachProfile?.deactivated_at != null;
+  }
+
   sendSuccess(res, {
     user: {
       supabase_auth_id: appUser.supabase_auth_id,
@@ -497,6 +506,7 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
       nickname: appUser.nickname,
     },
     isCoach,
+    coachDeactivated,
     tier: appUser.active_subscription_tier,
   });
 };
