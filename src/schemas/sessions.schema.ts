@@ -63,3 +63,100 @@ export const UnifiedSessionHistoryResponseSchema = z.object({
 export type UnifiedSessionHistoryResponse = z.infer<
   typeof UnifiedSessionHistoryResponseSchema
 >;
+
+// ============== Calendar Schemas ==============
+
+/**
+ * Schema for the calendar endpoint query params.
+ *
+ * `month` must be in "YYYY-MM" format (e.g. "2026-06").
+ */
+export const SessionCalendarQuerySchema = z.object({
+  query: z.object({
+    month: z.string().regex(/^\d{4}-\d{2}$/, 'month must be in YYYY-MM format'),
+  }),
+});
+
+export type SessionCalendarQuery = z.infer<
+  typeof SessionCalendarQuerySchema
+>['query'];
+
+/**
+ * A single session entry in the calendar response.
+ */
+export const CalendarSessionSummarySchema = z.object({
+  id: z.string(),
+  routineName: z.string(),
+  startedAt: z.string(),
+  completedAt: z.string().nullable(),
+  totalSets: z.number().int().min(0),
+  source: z.enum(['standalone', 'coach']),
+});
+
+export type CalendarSessionSummary = z.infer<
+  typeof CalendarSessionSummarySchema
+>;
+
+// ============== Session Detail Schemas ==============
+
+/**
+ * Path params schema for GET /sessions/:sessionId
+ */
+export const SessionDetailParamsSchema = z.object({
+  params: z.object({
+    sessionId: z.string().min(1),
+  }),
+});
+
+export type SessionDetailParams = z.infer<
+  typeof SessionDetailParamsSchema
+>['params'];
+
+/**
+ * A single set in the unified session detail response.
+ */
+export const UnifiedSetSchema = z.object({
+  id: z.string(),
+  setNumber: z.number().int(),
+  repsCompleted: z.number().int(),
+  weightKg: z.number().nullable(),
+  /** RPE (Rate of Perceived Exertion) — only available for coach sessions. */
+  rpe: z.number().nullable(),
+});
+
+export type UnifiedSet = z.infer<typeof UnifiedSetSchema>;
+
+/**
+ * An exercise group in the unified session detail response.
+ */
+export const UnifiedExerciseGroupSchema = z.object({
+  exerciseId: z.string(),
+  exerciseName: z.string(),
+  sets: z.array(UnifiedSetSchema),
+  /** Total volume for this exercise: sum(reps * weightKg) */
+  totalVolumeKg: z.number(),
+});
+
+export type UnifiedExerciseGroup = z.infer<typeof UnifiedExerciseGroupSchema>;
+
+/**
+ * Full session detail response shape (unified across coach and standalone).
+ */
+export const UnifiedSessionDetailSchema = z.object({
+  id: z.string(),
+  source: z.enum(['coach', 'standalone']),
+  routineName: z.string(),
+  programName: z.string().nullable(),
+  startedAt: z.string(),
+  completedAt: z.string().nullable(),
+  /** Duration in minutes (server-computed). */
+  durationMinutes: z.number().int().nullable(),
+  notes: z.string().nullable(),
+  exercises: z.array(UnifiedExerciseGroupSchema),
+  totalSets: z.number().int(),
+  totalReps: z.number().int(),
+  /** Total volume lifted in kg across all exercises. */
+  totalVolumeKg: z.number(),
+});
+
+export type UnifiedSessionDetail = z.infer<typeof UnifiedSessionDetailSchema>;
