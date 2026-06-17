@@ -38,55 +38,67 @@ const upload = multer({
 });
 
 /**
- * Middleware: Accept a single file upload under the "avatar" field name.
- * Wraps multer errors into the standard API response envelope.
+ * Build a multer error handler for a single file upload under a named field.
  */
-export const uploadAvatar = (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void => {
-  const handler = upload.single('avatar');
+function buildSingleUploadMiddleware(fieldName: string) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const handler = upload.single(fieldName);
 
-  handler(req, res, (err: unknown) => {
-    if (err instanceof multer.MulterError) {
-      if (err.code === 'LIMIT_FILE_SIZE') {
+    handler(req, res, (err: unknown) => {
+      if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          next(
+            new BadRequestException(
+              'UPLOAD_FILE_TOO_LARGE',
+              `File too large. Maximum size is ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
+              [
+                {
+                  code: 'UPLOAD_FILE_TOO_LARGE',
+                  message: `File too large. Maximum size is ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
+                  field: fieldName,
+                },
+              ]
+            )
+          );
+          return;
+        }
         next(
-          new BadRequestException(
-            'UPLOAD_FILE_TOO_LARGE',
-            `File too large. Maximum size is ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
-            [
-              {
-                code: 'UPLOAD_FILE_TOO_LARGE',
-                message: `File too large. Maximum size is ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
-                field: 'avatar',
-              },
-            ]
-          )
+          new BadRequestException('UPLOAD_FAILED', err.message, [
+            {
+              code: 'UPLOAD_FAILED',
+              message: err.message,
+              field: fieldName,
+            },
+          ])
         );
         return;
       }
-      next(
-        new BadRequestException('UPLOAD_FAILED', err.message, [
-          { code: 'UPLOAD_FAILED', message: err.message, field: 'avatar' },
-        ])
-      );
-      return;
-    }
 
-    if (err instanceof Error) {
-      next(
-        new BadRequestException('UPLOAD_INVALID_FILE_TYPE', err.message, [
-          {
-            code: 'UPLOAD_INVALID_FILE_TYPE',
-            message: err.message,
-            field: 'avatar',
-          },
-        ])
-      );
-      return;
-    }
+      if (err instanceof Error) {
+        next(
+          new BadRequestException('UPLOAD_INVALID_FILE_TYPE', err.message, [
+            {
+              code: 'UPLOAD_INVALID_FILE_TYPE',
+              message: err.message,
+              field: fieldName,
+            },
+          ])
+        );
+        return;
+      }
 
-    next();
-  });
-};
+      next();
+    });
+  };
+}
+
+/**
+ * Middleware: Accept a single file upload under the "avatar" field name.
+ * Wraps multer errors into the standard API response envelope.
+ */
+export const uploadAvatar = buildSingleUploadMiddleware('avatar');
+
+/**
+ * Middleware: Accept a single generic image upload under the "image" field name.
+ */
+export const uploadGenericImage = buildSingleUploadMiddleware('image');

@@ -1,6 +1,8 @@
 import type { PrismaClient, mission, user_mission } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 import { logger } from '../utils/logger';
+import { getPresignedUrl } from '../services/upload.service';
+import { grantCouponOnMissionCompletion } from './coupon.service';
 
 export const MISSION_STATUS_IN_PROGRESS = 'in_progress';
 export const MISSION_STATUS_COMPLETED = 'completed';
@@ -23,6 +25,7 @@ function isSupportedGoal(goal: string): goal is SupportedGoal {
 function missionWhereActive(now: Date): Prisma.missionWhereInput {
   return {
     AND: [
+      { is_closed: false },
       { OR: [{ starts_at: null }, { starts_at: { lte: now } }] },
       { OR: [{ ends_at: null }, { ends_at: { gte: now } }] },
       { goal_type: { in: [...SUPPORTED_GOAL_TYPES] } },
@@ -174,7 +177,8 @@ async function countGlobalCompletions(
 }
 
 /**
- * Awards coins, optional raffle entry, then resets repeatable missions for the next cycle.
+ * Awards the mission's reward (coins, raffle entry, or coupon), then resets
+ * repeatable missions for the next cycle.
  */
 async function finalizeMissionCompletion(
   tx: Prisma.TransactionClient,
@@ -191,36 +195,45 @@ async function finalizeMissionCompletion(
   const slotAvailable =
     effectiveMaxWinners == null || completedBefore < effectiveMaxWinners;
 
-  const rewardCoins = slotAvailable ? mission.reward_coins : 0;
-
-  if (rewardCoins > 0) {
-    const [userRow] = await tx.$queryRaw<Array<{ coin_balance: number }>>`
-      SELECT coin_balance FROM "user" WHERE supabase_auth_id = ${userId} FOR UPDATE
-    `;
-    if (!userRow) {
-      logger.warn('finalizeMissionCompletion: user missing', { userId });
-    } else {
-      const newBalance = userRow.coin_balance + rewardCoins;
-      await tx.coin_transactions.create({
-        data: {
-          user_id: userId,
-          transaction_type: 'MISSION_REWARD',
-          value: rewardCoins,
-          balance_after: newBalance,
-          user_mission_id: userMissionId,
-        },
-      });
-      await tx.user.update({
-        where: { supabase_auth_id: userId },
-        data: { coin_balance: newBalance },
-      });
+  if (mission.reward_type === 'COINS') {
+    const rewardCoins = slotAvailable ? mission.reward_coins : 0;
+    if (rewardCoins > 0) {
+      const [userRow] = await tx.$queryRaw<Array<{ coin_balance: number }>>`
+        SELECT coin_balance FROM "user" WHERE supabase_auth_id = ${userId} FOR UPDATE
+      `;
+      if (!userRow) {
+        logger.warn('finalizeMissionCompletion: user missing', { userId });
+      } else {
+        const newBalance = userRow.coin_balance + rewardCoins;
+        await tx.coin_transactions.create({
+          data: {
+            user_id: userId,
+            transaction_type: 'MISSION_REWARD',
+            value: rewardCoins,
+            balance_after: newBalance,
+            user_mission_id: userMissionId,
+          },
+        });
+        await tx.user.update({
+          where: { supabase_auth_id: userId },
+          data: { coin_balance: newBalance },
+        });
+      }
     }
   }
 
-  if (effectiveMaxWinners != null && slotAvailable) {
+  if (
+    mission.reward_type === 'RAFFLE' &&
+    effectiveMaxWinners != null &&
+    slotAvailable
+  ) {
     await tx.raffle_entry.create({
       data: { user_mission_id: userMissionId },
     });
+  }
+
+  if (mission.reward_type === 'COUPON' && slotAvailable) {
+    await grantCouponOnMissionCompletion(tx, userId, mission.id);
   }
 
   await tx.user_mission.update({
@@ -250,18 +263,34 @@ export type MissionListItem = {
   description: string;
   goalType: string;
   goalToReach: number;
+  rewardType: string;
   rewardCoins: number;
   rewardTitle: string | null;
   rewardDescription: string | null;
   rewardImageKey: string | null;
   maxWinners: number | null;
   isRepeatable: boolean;
+  isClosed: boolean;
   startsAt: string | null;
   endsAt: string | null;
   partner: {
     id: string;
     name: string;
     logoKey: string;
+    bio: string;
+    socialLinks: string[];
+  } | null;
+  coupon: {
+    id: string;
+    offerTag: string;
+    description: string | null;
+    discountPercent: number;
+    claimed: boolean;
+  } | null;
+  raffle: {
+    entryCount: number;
+    isWinner: boolean;
+    winnerRank: number | null;
   } | null;
   userMission: {
     id: string;
@@ -275,6 +304,15 @@ function toIso(d: Date | null): string | null {
   return d ? d.toISOString() : null;
 }
 
+async function resolveUrl(key: string | null): Promise<string | null> {
+  if (!key) return null;
+  try {
+    return await getPresignedUrl(key);
+  } catch {
+    return null;
+  }
+}
+
 function serializeUserMission(um: user_mission) {
   return {
     id: um.id,
@@ -285,7 +323,8 @@ function serializeUserMission(um: user_mission) {
 }
 
 /**
- * Active missions (time window + supported goal types) with optional user progress.
+ * Active missions (time window + supported goal types + not closed) with
+ * optional user progress, partner details, and reward state.
  */
 export async function listActiveMissionsForUser(
   userId: string,
@@ -296,36 +335,79 @@ export async function listActiveMissionsForUser(
     where: missionWhereActive(now),
     include: {
       partner: true,
-      user_missions: { where: { user_id: userId }, take: 1 },
+      coupon: {
+        include: {
+          user_coupons: {
+            where: { user_id: userId },
+            take: 1,
+          },
+        },
+      },
+      user_missions: {
+        where: { user_id: userId },
+        take: 1,
+        include: {
+          raffle_entries: true,
+        },
+      },
+      raffle_winners: {
+        where: { user_id: userId },
+      },
     },
     orderBy: [{ starts_at: 'desc' }, { created_at: 'desc' }],
   });
 
-  return rows.map((m) => {
-    const um = m.user_missions[0];
-    return {
-      id: m.id,
-      partnerId: m.partner_id,
-      title: m.title,
-      description: m.description,
-      goalType: m.goal_type,
-      goalToReach: m.goal_to_reach,
-      rewardCoins: m.reward_coins,
-      rewardTitle: m.reward_title,
-      rewardDescription: m.reward_description,
-      rewardImageKey: m.reward_image_key,
-      maxWinners: m.max_winners,
-      isRepeatable: m.is_repeatable,
-      startsAt: toIso(m.starts_at),
-      endsAt: toIso(m.ends_at),
-      partner: m.partner
-        ? {
-            id: m.partner.id,
-            name: m.partner.name,
-            logoKey: m.partner.logo_key,
-          }
-        : null,
-      userMission: um ? serializeUserMission(um) : null,
-    };
-  });
+  return Promise.all(
+    rows.map(async (m) => {
+      const um = m.user_missions[0];
+      const userCoupon = m.coupon?.user_coupons?.[0];
+      const winner = m.raffle_winners[0];
+
+      return {
+        id: m.id,
+        partnerId: m.partner_id,
+        title: m.title,
+        description: m.description,
+        goalType: m.goal_type,
+        goalToReach: m.goal_to_reach,
+        rewardType: m.reward_type,
+        rewardCoins: m.reward_coins,
+        rewardTitle: m.reward_title,
+        rewardDescription: m.reward_description,
+        rewardImageKey: await resolveUrl(m.reward_image_key),
+        maxWinners: m.max_winners,
+        isRepeatable: m.is_repeatable,
+        isClosed: m.is_closed,
+        startsAt: toIso(m.starts_at),
+        endsAt: toIso(m.ends_at),
+        partner: m.partner
+          ? {
+              id: m.partner.id,
+              name: m.partner.name,
+              logoKey: (await resolveUrl(m.partner.logo_key)) ?? '',
+              bio: m.partner.bio,
+              socialLinks: m.partner.social_links,
+            }
+          : null,
+        coupon: m.coupon
+          ? {
+              id: m.coupon.id,
+              offerTag: m.coupon.offer_tag,
+              description: m.coupon.description,
+              discountPercent: m.coupon.discount_percent,
+              claimed: Boolean(userCoupon),
+            }
+          : null,
+        raffle:
+          m.reward_type === 'RAFFLE'
+            ? {
+                entryCount: um?.raffle_entries.length ?? 0,
+                isWinner: Boolean(winner),
+                winnerRank: winner?.rank ?? null,
+              }
+            : null,
+        userMission: um ? serializeUserMission(um) : null,
+      };
+    })
+  );
 }
