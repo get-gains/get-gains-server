@@ -28,6 +28,7 @@ import {
   GetClientExerciseHistoryQuery,
   GetClientFormResultsParams,
   GetClientFormResultsQuery,
+  UpdateCoachSettingsInput,
 } from '../schemas/coach.schema';
 import { getUserBySupabaseId } from './user.controller';
 import {
@@ -135,6 +136,128 @@ export const createCoachProfile = async (
     },
     201
   );
+};
+
+type CoachSettingsRow = {
+  user_id: string;
+  max_clients: number;
+  accepting_clients: boolean;
+  is_discoverable: boolean;
+  created_at: Date;
+  updated_at: Date;
+};
+
+async function countActiveClients(coachId: string): Promise<number> {
+  return prisma.subscribed_coach.count({
+    where: { coach_id: coachId, ended_at: null },
+  });
+}
+
+function toCoachSettingsDto(
+  coach: CoachSettingsRow,
+  activeClientCount: number
+) {
+  return {
+    id: coach.user_id,
+    coachId: coach.user_id,
+    maxClients: coach.max_clients,
+    acceptingClients: coach.accepting_clients,
+    isDiscoverable: coach.is_discoverable,
+    activeClientCount,
+    createdAt: coach.created_at.toISOString(),
+    updatedAt: coach.updated_at.toISOString(),
+  };
+}
+
+/**
+ * Get the authenticated coach's settings.
+ * GET /coach/settings
+ */
+export const getCoachSettings = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const coach = req.coach;
+  if (!coach) {
+    throw new ForbiddenException('AUTH_COACH_REQUIRED', 'Coach required');
+  }
+
+  const activeClientCount = await countActiveClients(coach.user_id);
+
+  sendSuccess(res, {
+    settings: toCoachSettingsDto(coach, activeClientCount),
+  });
+};
+
+/**
+ * Update the authenticated coach's settings.
+ * PATCH /coach/settings
+ */
+export const updateCoachSettings = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const coach = req.coach;
+  if (!coach) {
+    throw new ForbiddenException('AUTH_COACH_REQUIRED', 'Coach required');
+  }
+
+  const body =
+    (res.locals.validated?.body as UpdateCoachSettingsInput | undefined) ?? {};
+
+  if (
+    body.maxClients === undefined &&
+    body.acceptingClients === undefined &&
+    body.isDiscoverable === undefined
+  ) {
+    throw new BadRequestException(
+      'VALIDATION_ERROR',
+      'At least one setting field must be provided'
+    );
+  }
+
+  if (body.maxClients !== undefined) {
+    const activeClientCount = await countActiveClients(coach.user_id);
+    if (body.maxClients < activeClientCount) {
+      throw new ConflictException(
+        'COACH_MAX_CLIENTS_BELOW_ACTIVE',
+        `Max clients cannot be set below your current active client count (${activeClientCount})`,
+        [
+          {
+            code: 'COACH_MAX_CLIENTS_BELOW_ACTIVE',
+            message: `Max clients cannot be set below your current active client count (${activeClientCount})`,
+            field: 'maxClients',
+          },
+        ]
+      );
+    }
+  }
+
+  const updated = await prisma.coach.update({
+    where: { user_id: coach.user_id },
+    data: {
+      ...(body.maxClients !== undefined && { max_clients: body.maxClients }),
+      ...(body.acceptingClients !== undefined && {
+        accepting_clients: body.acceptingClients,
+      }),
+      ...(body.isDiscoverable !== undefined && {
+        is_discoverable: body.isDiscoverable,
+      }),
+    },
+  });
+
+  const activeClientCount = await countActiveClients(coach.user_id);
+
+  logger.info('Coach settings updated', {
+    userId: coach.user_id,
+    maxClients: updated.max_clients,
+    acceptingClients: updated.accepting_clients,
+    isDiscoverable: updated.is_discoverable,
+  });
+
+  sendSuccess(res, {
+    settings: toCoachSettingsDto(updated, activeClientCount),
+  });
 };
 
 /**
