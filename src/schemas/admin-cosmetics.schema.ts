@@ -20,7 +20,7 @@ export const CreateCosmeticSchema = z.object({
       z.number().int().min(0)
     ),
     category: CosmeticCategoryEnum,
-    previewImageKey: z.string().min(1, 'Preview image key is required'),
+    previewImageKey: z.string(),
     unityAssetRef: z.string().min(1, 'Unity asset reference is required'),
     status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE'),
     sortOrder: z.preprocess(

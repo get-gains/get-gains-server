@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { uploadFile } from '../services/upload.service';
+import { uploadFile, getPresignedUrl } from '../services/upload.service';
 import { sendSuccess, sendSingleError } from '../utils/response';
 import { logger } from '../utils/logger';
 
@@ -49,6 +49,31 @@ export const uploadAdminImage = async (
       res,
       'UPLOAD_FAILED',
       'Failed to upload image. Please try again.',
+      500
+    );
+  }
+};
+
+/**
+ * GET /api/admin/upload/image-url?key=<s3-key>
+ * Returns a presigned URL for the given S3 object key so the admin UI
+ * can display image previews without exposing the S3 bucket directly.
+ */
+export const getAdminImageUrl = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const { key } = res.locals.validated?.query as { key: string };
+
+  try {
+    const url = await getPresignedUrl(key);
+    sendSuccess(res, { url });
+  } catch (error) {
+    logger.error('Failed to generate presigned URL for admin', { key, error });
+    sendSingleError(
+      res,
+      'PRESIGN_FAILED',
+      'Failed to generate image URL.',
       500
     );
   }

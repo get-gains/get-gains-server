@@ -10,3 +10,9 @@ export const UploadAdminImageSchema = z.object({
 export type UploadAdminImageBody = z.infer<
   typeof UploadAdminImageSchema
 >['body'];
+
+export const AdminImageUrlSchema = z.object({
+  query: z.object({
+    key: z.string().min(1, 'S3 key is required'),
+  }),
+});

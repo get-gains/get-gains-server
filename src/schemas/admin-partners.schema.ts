@@ -6,7 +6,7 @@ export const CreatePartnerSchema = z.object({
   body: z.object({
     name: z.string().min(1, 'Partner name is required'),
     bio: z.string().min(1, 'Bio is required'),
-    logoKey: z.string().min(1, 'Logo key is required'),
+    logoKey: z.string(),
     socialLinks: z.array(socialLinkSchema).default([]),
   }),
 });
