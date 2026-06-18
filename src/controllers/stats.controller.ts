@@ -3,7 +3,11 @@ import prisma from '../config/database';
 import { logger } from '../utils/logger';
 import { sendSuccess } from '../utils/response';
 import { UnauthorizedException } from '../lib/errors';
-import { WeeklyStatsQuery, SourceStats } from '../schemas/stats.schema';
+import {
+  WeeklyStatsQuery,
+  SourceStats,
+  MonthlyInsightQuery,
+} from '../schemas/stats.schema';
 import { calculateStreaksBySource } from '../utils/streak';
 import type { AuthenticatedUser } from '../middleware/auth.middleware';
 
@@ -159,11 +163,28 @@ export const getWeeklyStats = async (
       return sum;
     }, 0);
 
+  // ── Session-granularity note ──
+  // ALL counts below are SESSION-grained (session arrays, never set arrays).
+  // The system intentionally counts completed workout sessions, not
+  // individual performed sets. One session with 2 exercises × 3 sets = 1
+  // workout. Audit 2026-06-18: verified correct — see
+  // test/stats-weekly.test.ts.
+  //
+  // computeMinutes() also iterates session objects (not sets), so
+  // totalMinutes, avgVolumePerSession, and Avg/Workout are all
+  // session-grained.
+
   // Combined totals (all sessions across both systems)
   const combinedWorkouts =
     allStandaloneSessions.length + allCoachSessions.length;
   const combinedMinutes =
     computeMinutes(allStandaloneSessions) + computeMinutes(allCoachSessions);
+
+  logger.debug('Weekly stats session counts', {
+    standaloneSessions: allStandaloneSessions.length,
+    coachSessions: allCoachSessions.length,
+    combinedWorkouts,
+  });
 
   // Per-source weekly stats
   const standaloneWorkouts = allStandaloneSessions.length;
@@ -225,5 +246,298 @@ export const getWeeklyStats = async (
     sessionDates: effectiveSessions
       .map((s) => s.started_at?.toISOString() ?? null)
       .filter((d): d is string => d !== null),
+  });
+};
+
+// ============== Monthly Insight ==============
+
+/**
+ * Get monthly training insight including avg volume/session, trend %, 6-month
+ * sparkline data, and top exercise weight improvements vs previous month.
+ *
+ * Fetches sessions from both coach-assigned (`workout_session`) and standalone
+ * (`standalone_session`) systems, then aggregates `reps × weight` from each
+ * system's performed_set tables.
+ *
+ * @route GET /api/stats/monthly-insight?month=YYYY-MM
+ */
+export const getMonthlyInsight = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const rawUser = req.user;
+  const supabaseId = rawUser
+    ? 'supabase_auth_id' in rawUser
+      ? rawUser.supabase_auth_id
+      : (rawUser as AuthenticatedUser).id
+    : undefined;
+
+  const { month } = (res.locals.validated?.query as MonthlyInsightQuery) || {
+    month: '',
+  };
+
+  if (!supabaseId) {
+    throw new UnauthorizedException(
+      'UNAUTHENTICATED',
+      'Authentication required'
+    );
+  }
+
+  if (!month) {
+    res.status(400).json({ error: 'month query param is required (YYYY-MM)' });
+    return;
+  }
+
+  // Parse target month and previous month
+  const [yearStr, monthStr] = month.split('-');
+  const year = parseInt(yearStr, 10);
+  const monthNum = parseInt(monthStr, 10);
+
+  const targetStart = new Date(Date.UTC(year, monthNum - 1, 1));
+  const targetEnd = new Date(Date.UTC(year, monthNum, 1));
+
+  const prevStart = new Date(Date.UTC(year, monthNum - 2, 1));
+  const prevEnd = new Date(Date.UTC(year, monthNum - 1, 1));
+
+  // Build sparkline months (last 6 months including current)
+  const sparklineMonths: { start: Date; end: Date }[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(Date.UTC(year, monthNum - 1 - i, 1));
+    const s = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+    const e = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
+    sparklineMonths.push({ start: s, end: e });
+  }
+
+  // ── Helper: fetch sessions & volume for a date range ──
+  // NOTE: session count is derived from coachIds.length + standaloneIds.length
+  // (session IDs, NOT set counts), so avgVolumePerSession divides by correct
+  // session count. Audit 2026-06-18.
+  async function fetchVolumeForRange(
+    start: Date,
+    end: Date
+  ): Promise<{ sessions: number; volume: number }> {
+    const [coachSessions, standaloneSessions] = await Promise.all([
+      prisma.workout_session.findMany({
+        where: {
+          assigned_program_routine: {
+            assigned_program: { user_id: supabaseId },
+          },
+          completed_at: { not: null },
+          deleted_at: null,
+          started_at: { gte: start, lt: end },
+        },
+        select: { id: true },
+      }),
+      prisma.standalone_session.findMany({
+        where: {
+          user_id: supabaseId,
+          completed_at: { not: null },
+          deleted_at: null,
+          started_at: { gte: start, lt: end },
+        },
+        select: { id: true },
+      }),
+    ]);
+
+    const coachIds = coachSessions.map((s) => s.id);
+    const standaloneIds = standaloneSessions.map((s) => s.id);
+
+    const [coachSets, standaloneSets] = await Promise.all([
+      coachIds.length > 0
+        ? prisma.performed_set.findMany({
+            where: { workout_session_id: { in: coachIds } },
+            select: { reps: true, weight: true },
+          })
+        : ([] as { reps: number; weight: number | null }[]),
+      standaloneIds.length > 0
+        ? prisma.standalone_performed_set.findMany({
+            where: { session_id: { in: standaloneIds } },
+            select: { reps: true, weight: true },
+          })
+        : ([] as { reps: number; weight: number }[]),
+    ]);
+
+    const volume = [
+      ...coachSets.map((s) => s.reps * (s.weight ?? 0)),
+      ...standaloneSets.map((s) => s.reps * s.weight),
+    ].reduce((sum, v) => sum + v, 0);
+
+    return { sessions: coachIds.length + standaloneIds.length, volume };
+  }
+
+  // ── Fetch target month & previous month volume ──
+  const [target, previous, ...sparklineResults] = await Promise.all([
+    fetchVolumeForRange(targetStart, targetEnd),
+    fetchVolumeForRange(prevStart, prevEnd),
+    ...sparklineMonths.map((m) => fetchVolumeForRange(m.start, m.end)),
+  ]);
+
+  const avgVolumePerSession =
+    target.sessions > 0 ? target.volume / target.sessions : 0;
+
+  const previousAvg =
+    previous.sessions > 0 ? previous.volume / previous.sessions : 0;
+
+  const percentChange =
+    previousAvg > 0
+      ? Math.round(((avgVolumePerSession - previousAvg) / previousAvg) * 100)
+      : null;
+
+  const sparkline = sparklineResults.map((r) =>
+    r.sessions > 0 ? Math.round(r.volume / r.sessions) : null
+  );
+
+  // Per-month total volume and session counts for the sparkline window
+  const sparklineVolumes = sparklineResults.map(
+    (r) => Math.round(r.volume * 100) / 100
+  );
+  const sparklineSessions = sparklineResults.map((r) => r.sessions);
+
+  // ── Exercise improvements: compare avg weight per exercise ──
+  async function getExerciseAvgWeights(
+    start: Date,
+    end: Date
+  ): Promise<
+    Map<string, { name: string; totalWeight: number; setCount: number }>
+  > {
+    const exerciseMap = new Map<
+      string,
+      { name: string; totalWeight: number; setCount: number }
+    >();
+
+    // Coach sets with exercise names via snapshot
+    const coachSessions = await prisma.workout_session.findMany({
+      where: {
+        assigned_program_routine: { assigned_program: { user_id: supabaseId } },
+        completed_at: { not: null },
+        deleted_at: null,
+        started_at: { gte: start, lt: end },
+      },
+      select: { id: true },
+    });
+
+    const coachIds = coachSessions.map((s) => s.id);
+    if (coachIds.length > 0) {
+      const coachSets = await prisma.performed_set.findMany({
+        where: { workout_session_id: { in: coachIds }, weight: { gt: 0 } },
+        select: {
+          reps: true,
+          weight: true,
+          exercise_name_snapshot: true,
+          assigned_program_routine_exercise: {
+            select: { exercise: { select: { name: true } } },
+          },
+        },
+      });
+
+      for (const ps of coachSets) {
+        const name =
+          ps.exercise_name_snapshot ??
+          ps.assigned_program_routine_exercise?.exercise?.name ??
+          'Unknown';
+        const entry = exerciseMap.get(name) ?? {
+          name,
+          totalWeight: 0,
+          setCount: 0,
+        };
+        entry.totalWeight += ps.weight ?? 0;
+        entry.setCount += 1;
+        exerciseMap.set(name, entry);
+      }
+    }
+
+    // Standalone sets with exercise names
+    const standaloneSessions = await prisma.standalone_session.findMany({
+      where: {
+        user_id: supabaseId,
+        completed_at: { not: null },
+        deleted_at: null,
+        started_at: { gte: start, lt: end },
+      },
+      select: { id: true },
+    });
+
+    const standaloneIds = standaloneSessions.map((s) => s.id);
+    if (standaloneIds.length > 0) {
+      const standaloneSets = await prisma.standalone_performed_set.findMany({
+        where: { session_id: { in: standaloneIds }, weight: { gt: 0 } },
+        select: {
+          reps: true,
+          weight: true,
+          exercise: {
+            select: { exercise: { select: { name: true } } },
+          },
+        },
+      });
+
+      for (const ps of standaloneSets) {
+        const name = ps.exercise?.exercise?.name ?? 'Unknown';
+        const entry = exerciseMap.get(name) ?? {
+          name,
+          totalWeight: 0,
+          setCount: 0,
+        };
+        entry.totalWeight += ps.weight;
+        entry.setCount += 1;
+        exerciseMap.set(name, entry);
+      }
+    }
+
+    return exerciseMap;
+  }
+
+  const [targetWeights, previousWeights] = await Promise.all([
+    getExerciseAvgWeights(targetStart, targetEnd),
+    getExerciseAvgWeights(prevStart, prevEnd),
+  ]);
+
+  const exerciseImprovements: Array<{
+    exerciseName: string;
+    currentAvgWeight: number;
+    previousAvgWeight: number;
+    percentChange: number;
+  }> = [];
+
+  for (const [name, current] of targetWeights) {
+    const previous = previousWeights.get(name);
+    if (!previous || previous.setCount === 0) continue;
+
+    const currentAvg = current.totalWeight / current.setCount;
+    const prevAvg = previous.totalWeight / previous.setCount;
+    const pct = Math.round(((currentAvg - prevAvg) / prevAvg) * 100);
+
+    if (pct > 0) {
+      exerciseImprovements.push({
+        exerciseName: name,
+        currentAvgWeight: Math.round(currentAvg * 100) / 100,
+        previousAvgWeight: Math.round(prevAvg * 100) / 100,
+        percentChange: pct,
+      });
+    }
+  }
+
+  // Sort by percent change descending, take top 3
+  exerciseImprovements.sort((a, b) => b.percentChange - a.percentChange);
+  const topImprovements = exerciseImprovements.slice(0, 3);
+
+  logger.debug('Monthly insight computed', {
+    supabaseId,
+    month,
+    avgVolumePerSession,
+    percentChange,
+    sparkline,
+    improvements: topImprovements.length,
+  });
+
+  sendSuccess(res, {
+    month,
+    avgVolumePerSession: Math.round(avgVolumePerSession * 100) / 100,
+    percentChange,
+    totalVolumeKg: Math.round(target.volume * 100) / 100,
+    totalSessions: target.sessions,
+    sparkline,
+    sparklineVolumes,
+    sparklineSessions,
+    exerciseImprovements: topImprovements,
   });
 };

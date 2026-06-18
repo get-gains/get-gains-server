@@ -54,3 +54,61 @@ export const UnifiedWeeklyStatsResponseSchema = z.object({
 export type UnifiedWeeklyStatsResponse = z.infer<
   typeof UnifiedWeeklyStatsResponseSchema
 >;
+
+// ============== Monthly Insight Schemas ==============
+
+/**
+ * Schema for monthly insight endpoint (query params).
+ *
+ * `month` must be in "YYYY-MM" format (e.g. "2026-06").
+ */
+export const MonthlyInsightQuerySchema = z.object({
+  query: z.object({
+    month: z.string().regex(/^\d{4}-\d{2}$/, 'month must be YYYY-MM'),
+  }),
+});
+
+export type MonthlyInsightQuery = z.infer<
+  typeof MonthlyInsightQuerySchema
+>['query'];
+
+/**
+ * A single exercise improvement entry — comparing avg weight
+ * this month vs the previous month.
+ */
+export const ExerciseImprovementSchema = z.object({
+  exerciseName: z.string(),
+  currentAvgWeight: z.number(),
+  previousAvgWeight: z.number(),
+  percentChange: z.number(),
+});
+
+export type ExerciseImprovement = z.infer<typeof ExerciseImprovementSchema>;
+
+/**
+ * Schema for the monthly insight response payload.
+ *
+ * `avgVolumePerSession` normalizes for workout frequency so the number
+ * reflects training density, not just showing up more.
+ * `percentChange` compares avgVolumePerSession vs the previous month.
+ * `sparkline` contains avg volume/session for the last 6 months (null = no data).
+ * `exerciseImprovements` lists up to 3 exercises where avg weight
+ * increased most vs the previous month.
+ */
+export const MonthlyInsightResponseSchema = z.object({
+  month: z.string(),
+  avgVolumePerSession: z.number(),
+  percentChange: z.number().nullable(),
+  totalVolumeKg: z.number(),
+  totalSessions: z.number().int().min(0),
+  sparkline: z.array(z.number().nullable()).nullable(),
+  // Per-month total volume and session counts for the 6-month sparkline window.
+  // Same length as sparkline; index 5 is the target month.
+  sparklineVolumes: z.array(z.number()).nullable(),
+  sparklineSessions: z.array(z.number().int().min(0)).nullable(),
+  exerciseImprovements: z.array(ExerciseImprovementSchema),
+});
+
+export type MonthlyInsightResponse = z.infer<
+  typeof MonthlyInsightResponseSchema
+>;
