@@ -19,6 +19,45 @@ export function buildAvatarKey(userId: string, originalName: string): string {
 }
 
 /**
+ * Generates an S3 object key for a mission reward image.
+ * Format: missions/<missionId>/<timestamp>.<ext>
+ */
+export function buildMissionRewardImageKey(
+  missionId: string,
+  originalName: string
+): string {
+  const ext = originalName.split('.').pop()?.toLowerCase() || 'jpg';
+  const timestamp = Date.now();
+  return `missions/${missionId}/${timestamp}.${ext}`;
+}
+
+/**
+ * Generates an S3 object key for a partner logo.
+ * Format: partners/<partnerId>/<timestamp>.<ext>
+ */
+export function buildPartnerLogoKey(
+  partnerId: string,
+  originalName: string
+): string {
+  const ext = originalName.split('.').pop()?.toLowerCase() || 'jpg';
+  const timestamp = Date.now();
+  return `partners/${partnerId}/${timestamp}.${ext}`;
+}
+
+/**
+ * Generates an S3 object key for a cosmetic preview image.
+ * Format: cosmetics/<cosmeticId>/<timestamp>.<ext>
+ */
+export function buildCosmeticPreviewImageKey(
+  cosmeticId: string,
+  originalName: string
+): string {
+  const ext = originalName.split('.').pop()?.toLowerCase() || 'jpg';
+  const timestamp = Date.now();
+  return `cosmetics/${cosmeticId}/${timestamp}.${ext}`;
+}
+
+/**
  * Uploads a file buffer to S3 and returns the object key.
  */
 export async function uploadFile(

@@ -38,15 +38,74 @@ const upload = multer({
 });
 
 /**
- * Middleware: Accept a single file upload under the "avatar" field name.
- * Wraps multer errors into the standard API response envelope.
+ * Build a multer error handler for a single file upload under a named field.
  */
-export const uploadAvatar = (
+function buildSingleUploadMiddleware(fieldName: string) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const handler = upload.single(fieldName);
+
+    handler(req, res, (err: unknown) => {
+      if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          next(
+            new BadRequestException(
+              'UPLOAD_FILE_TOO_LARGE',
+              `File too large. Maximum size is ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
+              [
+                {
+                  code: 'UPLOAD_FILE_TOO_LARGE',
+                  message: `File too large. Maximum size is ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
+                  field: fieldName,
+                },
+              ]
+            )
+          );
+          return;
+        }
+        next(
+          new BadRequestException('UPLOAD_FAILED', err.message, [
+            {
+              code: 'UPLOAD_FAILED',
+              message: err.message,
+              field: fieldName,
+            },
+          ])
+        );
+        return;
+      }
+
+      if (err instanceof Error) {
+        next(
+          new BadRequestException('UPLOAD_INVALID_FILE_TYPE', err.message, [
+            {
+              code: 'UPLOAD_INVALID_FILE_TYPE',
+              message: err.message,
+              field: fieldName,
+            },
+          ])
+        );
+        return;
+      }
+
+      next();
+    });
+  };
+}
+
+/**
+ * Middleware: Accept a single file upload under the "image" field name plus
+ * the accompanying text fields (e.g. `prefix`, `entityId`).
+ *
+ * Uses `upload.fields([...])` rather than `upload.single(...)` so that
+ * non-file form fields are still parsed into `req.body` and available to
+ * the Zod validator that runs after this middleware.
+ */
+export const uploadGenericImageWithFields = (
   req: Request,
   res: Response,
   next: NextFunction
 ): void => {
-  const handler = upload.single('avatar');
+  const handler = upload.fields([{ name: 'image', maxCount: 1 }]);
 
   handler(req, res, (err: unknown) => {
     if (err instanceof multer.MulterError) {
@@ -59,7 +118,7 @@ export const uploadAvatar = (
               {
                 code: 'UPLOAD_FILE_TOO_LARGE',
                 message: `File too large. Maximum size is ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
-                field: 'avatar',
+                field: 'image',
               },
             ]
           )
@@ -68,7 +127,11 @@ export const uploadAvatar = (
       }
       next(
         new BadRequestException('UPLOAD_FAILED', err.message, [
-          { code: 'UPLOAD_FAILED', message: err.message, field: 'avatar' },
+          {
+            code: 'UPLOAD_FAILED',
+            message: err.message,
+            field: 'image',
+          },
         ])
       );
       return;
@@ -80,13 +143,29 @@ export const uploadAvatar = (
           {
             code: 'UPLOAD_INVALID_FILE_TYPE',
             message: err.message,
-            field: 'avatar',
+            field: 'image',
           },
         ])
       );
       return;
     }
 
+    const files = req.files as
+      | { [fieldname: string]: Express.Multer.File[] }
+      | undefined;
+    req.file = files?.image?.[0];
+
     next();
   });
 };
+
+/**
+ * Middleware: Accept a single file upload under the "avatar" field name.
+ * Wraps multer errors into the standard API response envelope.
+ */
+export const uploadAvatar = buildSingleUploadMiddleware('avatar');
+
+/**
+ * Middleware: Accept a single generic image upload under the "image" field name.
+ */
+export const uploadGenericImage = buildSingleUploadMiddleware('image');

@@ -82,6 +82,19 @@ enum RcEventStatus {
   FAILED
 }
 
+enum RewardType {
+  COINS
+  RAFFLE
+  COUPON
+}
+
+enum CosmeticCategory {
+  HEADWEAR
+  TOP
+  BOTTOM
+  ACCESSORY
+}
+
 enum DayOfWeek {
   SUNDAY
   MONDAY
@@ -97,6 +110,8 @@ enum NotificationType {
   coach_subscribed
   roster_removed
   subscription_expiring
+  mission_raffle_won
+  mission_coupon_earned
 }
 
 enum CoachInviteStatus {
@@ -166,6 +181,8 @@ model user {
   coin_transactions      coin_transactions[]
   user_cosmetics         user_cosmetic[]
   user_missions          user_mission[]
+  user_coupons           user_coupon[]
+  raffle_winners         raffle_winner[]
   user_subscription      user_subscription?
   rc_subscription_events rc_subscription_event[]
   exercise_ratings       exercise_rating[]
@@ -524,18 +541,19 @@ model standalone_performed_set {
 // ============== Gamification ==============
 
 model cosmetics {
-  id                String    @id @default(cuid())
+  id                String           @id @default(cuid())
   name              String
-  description       String    @db.Text
+  description       String           @db.Text
   tier              Int
   price             Int
   preview_image_key String
-  unity_asset_ref   String    @unique @default("")
-  status            String    @default("ACTIVE")
-  sort_order        Int       @default(0)
-  deleted_at        DateTime? @db.Timestamptz
-  created_at        DateTime  @default(now()) @db.Timestamptz
-  updated_at        DateTime  @updatedAt @db.Timestamptz
+  unity_asset_ref   String           @unique @default("")
+  category          CosmeticCategory @default(HEADWEAR)
+  status            String           @default("ACTIVE")
+  sort_order        Int              @default(0)
+  deleted_at        DateTime?        @db.Timestamptz
+  created_at        DateTime         @default(now()) @db.Timestamptz
+  updated_at        DateTime         @updatedAt @db.Timestamptz
 
   user_cosmetics user_cosmetic[]
 }
@@ -603,29 +621,34 @@ model partner {
 }
 
 model mission {
-  id                 String    @id @default(cuid())
+  id                 String     @id @default(cuid())
   partner_id         String?
   title              String
-  description        String    @db.Text
+  description        String     @db.Text
   goal_type          String
   goal_to_reach      Int
-  reward_coins       Int       @default(0)
+  reward_type        RewardType @default(COINS)
+  reward_coins       Int        @default(0)
   reward_title       String?
-  reward_description String?   @db.Text
+  reward_description String?    @db.Text
   reward_image_key   String?
   max_winners        Int?
-  is_repeatable      Boolean   @default(false)
-  starts_at          DateTime? @db.Timestamptz
-  ends_at            DateTime? @db.Timestamptz
-  created_at         DateTime  @default(now()) @db.Timestamptz
-  updated_at         DateTime  @updatedAt @db.Timestamptz
+  is_repeatable      Boolean    @default(false)
+  is_closed          Boolean    @default(false)
+  starts_at          DateTime?  @db.Timestamptz
+  ends_at            DateTime?  @db.Timestamptz
+  created_at         DateTime   @default(now()) @db.Timestamptz
+  updated_at         DateTime   @updatedAt @db.Timestamptz
 
   partner       partner?       @relation(fields: [partner_id], references: [id], onDelete: SetNull)
   user_missions user_mission[]
+  coupon        coupon?
+  raffle_winners raffle_winner[]
 
   @@index([partner_id])
   @@index([starts_at, ends_at])
 }
+
 
 model user_mission {
   id           String    @id @default(cuid())
@@ -657,6 +680,48 @@ model raffle_entry {
   user_mission user_mission @relation(fields: [user_mission_id], references: [id], onDelete: Cascade)
 
   @@index([user_mission_id])
+}
+
+model coupon {
+  id               String   @id @default(cuid())
+  mission_id       String   @unique
+  offer_tag        String
+  description      String?  @db.Text
+  discount_percent Int      @default(20)
+  created_at       DateTime @default(now()) @db.Timestamptz
+  updated_at       DateTime @updatedAt @db.Timestamptz
+
+  mission      mission       @relation(fields: [mission_id], references: [id], onDelete: Cascade)
+  user_coupons user_coupon[]
+}
+
+model user_coupon {
+  id           String    @id @default(cuid())
+  user_id      String
+  coupon_id    String
+  claimed_at   DateTime  @default(now()) @db.Timestamptz
+  created_at   DateTime  @default(now()) @db.Timestamptz
+
+  user   user    @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
+  coupon coupon  @relation(fields: [coupon_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, coupon_id])
+  @@index([user_id])
+  @@index([coupon_id])
+}
+
+model raffle_winner {
+  id         String   @id @default(cuid())
+  mission_id String
+  user_id    String
+  rank       Int
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  mission mission @relation(fields: [mission_id], references: [id], onDelete: Cascade)
+  user    user    @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
+
+  @@index([mission_id])
+  @@index([user_id])
 }
 
 // ============== RevenueCat Subscription Domain ==============
