@@ -7,6 +7,7 @@ import {
 } from '../middleware/auth.middleware';
 import {
   CreateCoachProfileSchema,
+  UpdateCoachSettingsSchema,
   VerifyCoachInviteSchema,
   GetClientsSchema,
   GetPerformanceSchema,
@@ -21,6 +22,8 @@ import {
 } from '../schemas/coach.schema';
 import {
   createCoachProfile,
+  getCoachSettings,
+  updateCoachSettings,
   getClients,
   getPerformance,
   getClientPrograms,
@@ -63,6 +66,31 @@ router.post(
   requireAppUser,
   validateRequest(VerifyCoachInviteSchema),
   verifyCoachInviteForUser
+);
+
+/**
+ * @route   GET /coach/settings
+ * @desc    Get authenticated coach's capacity and discoverability settings
+ * @access  Protected (authenticateSupabaseUser + requireCoach)
+ */
+router.get(
+  '/settings',
+  authenticateSupabaseUser,
+  requireCoach,
+  getCoachSettings
+);
+
+/**
+ * @route   PATCH /coach/settings
+ * @desc    Update coach settings (partial)
+ * @access  Protected (authenticateSupabaseUser + requireCoach)
+ */
+router.patch(
+  '/settings',
+  authenticateSupabaseUser,
+  requireCoach,
+  validateRequest(UpdateCoachSettingsSchema),
+  updateCoachSettings
 );
 
 router.use('/class', classRoutes);

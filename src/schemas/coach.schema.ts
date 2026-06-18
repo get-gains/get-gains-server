@@ -38,6 +38,30 @@ export type VerifyCoachInviteInput = z.infer<
 >['body'];
 
 /**
+ * Schema for updating coach settings (capacity, intake, discoverability).
+ * CamelCase body matches the Flutter client contract.
+ */
+export const UpdateCoachSettingsSchema = z.object({
+  body: z
+    .object({
+      maxClients: z.number().int().min(1).max(1000).optional(),
+      acceptingClients: z.boolean().optional(),
+      isDiscoverable: z.boolean().optional(),
+    })
+    .refine(
+      (data) =>
+        data.maxClients !== undefined ||
+        data.acceptingClients !== undefined ||
+        data.isDiscoverable !== undefined,
+      { message: 'At least one setting field must be provided' }
+    ),
+});
+
+export type UpdateCoachSettingsInput = z.infer<
+  typeof UpdateCoachSettingsSchema
+>['body'];
+
+/**
  * Schema for getting coach's clients with filters
  */
 export const GetClientsSchema = z.object({

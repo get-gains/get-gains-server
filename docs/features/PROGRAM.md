@@ -624,9 +624,8 @@ Routes are mounted via sub-routers in `coach.routes.ts`:
 
 ```typescript
 // src/routes/coach.routes.ts
-router.use('/programs', programRoutes); // → /api/coach/programs/*
-router.use('/routines', routineRoutes); // → /api/coach/routines/*
-router.use('/settings', coachSettingsRoutes);
+router.get('/settings', ...);   // → GET /api/coach/settings
+router.patch('/settings', ...); // → PATCH /api/coach/settings
 router.use('/class', classRoutes);
 ```
 
