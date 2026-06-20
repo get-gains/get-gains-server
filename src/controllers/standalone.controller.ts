@@ -62,8 +62,23 @@ export const createPersonalExercise = async (
     throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
   }
 
-  const { name, description, target_muscles, is_public } = res.locals.validated
-    ?.body as CreatePersonalExerciseInput;
+  const {
+    id: clientId,
+    name,
+    description,
+    target_muscles,
+    is_public,
+  } = res.locals.validated?.body as CreatePersonalExerciseInput;
+
+  if (clientId) {
+    const existing = await prisma.exercise.findUnique({
+      where: { id: clientId },
+    });
+    if (existing) {
+      sendSuccess(res, { exercise: existing });
+      return;
+    }
+  }
 
   const existing = await prisma.exercise.findFirst({
     where: {
@@ -81,6 +96,7 @@ export const createPersonalExercise = async (
 
   const exercise = await prisma.exercise.create({
     data: {
+      ...(clientId ? { id: clientId } : {}),
       name,
       description,
       target_muscles: target_muscles ?? [],
@@ -262,11 +278,26 @@ export const createPersonalRoutine = async (
     throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
   }
 
-  const { name, description, estimated_duration_minutes } = res.locals.validated
-    ?.body as CreatePersonalRoutineInput;
+  const {
+    id: clientId,
+    name,
+    description,
+    estimated_duration_minutes,
+  } = res.locals.validated?.body as CreatePersonalRoutineInput;
+
+  if (clientId) {
+    const existing = await prisma.routine.findUnique({
+      where: { id: clientId },
+    });
+    if (existing) {
+      sendSuccess(res, { routine: existing });
+      return;
+    }
+  }
 
   const routine = await prisma.routine.create({
     data: {
+      ...(clientId ? { id: clientId } : {}),
       user_id: appUser.supabase_auth_id,
       name,
       description,
@@ -433,11 +464,25 @@ export const createStandaloneProgram = async (
     throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
   }
 
-  const { name, description } = res.locals.validated
-    ?.body as CreateStandaloneProgramInput;
+  const {
+    id: clientId,
+    name,
+    description,
+  } = res.locals.validated?.body as CreateStandaloneProgramInput;
+
+  if (clientId) {
+    const existing = await prisma.standalone_program.findUnique({
+      where: { id: clientId },
+    });
+    if (existing) {
+      sendSuccess(res, { program: existing });
+      return;
+    }
+  }
 
   const program = await prisma.standalone_program.create({
     data: {
+      ...(clientId ? { id: clientId } : {}),
       user_id: appUser.supabase_auth_id,
       name,
       description,
@@ -747,12 +792,42 @@ export const buildStandaloneProgram = async (
     throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
   }
 
-  const { name, description, routines } = res.locals.validated
-    ?.body as BuildStandaloneProgramInput;
+  const {
+    id: clientId,
+    name,
+    description,
+    routines,
+  } = res.locals.validated?.body as BuildStandaloneProgramInput;
+
+  if (clientId) {
+    const existing = await prisma.standalone_program.findUnique({
+      where: { id: clientId },
+    });
+    if (existing) {
+      const program = await prisma.standalone_program.findUnique({
+        where: { id: clientId },
+        include: {
+          routines: {
+            include: {
+              routine: true,
+              exercises: {
+                include: { exercise: true },
+                orderBy: { order_in_routine: 'asc' },
+              },
+            },
+            orderBy: { order_in_program: 'asc' },
+          },
+        },
+      });
+      sendSuccess(res, { program });
+      return;
+    }
+  }
 
   const program = await prisma.$transaction(async (tx) => {
     const p = await tx.standalone_program.create({
       data: {
+        ...(clientId ? { id: clientId } : {}),
         user_id: appUser.supabase_auth_id,
         name,
         description,
@@ -831,8 +906,21 @@ export const addStandaloneProgramRoutine = async (
 
   const { programId } = res.locals.validated
     ?.params as AddStandaloneProgramRoutineParams;
-  const { routine_id, order_in_program } = res.locals.validated
-    ?.body as AddStandaloneProgramRoutineInput;
+  const {
+    id: clientId,
+    routine_id,
+    order_in_program,
+  } = res.locals.validated?.body as AddStandaloneProgramRoutineInput;
+
+  if (clientId) {
+    const existing = await prisma.standalone_program_routine.findUnique({
+      where: { id: clientId },
+    });
+    if (existing) {
+      sendSuccess(res, { program_routine: existing });
+      return;
+    }
+  }
 
   const program = await prisma.standalone_program.findUnique({
     where: { id: programId },
@@ -847,6 +935,7 @@ export const addStandaloneProgramRoutine = async (
 
   const programRoutine = await prisma.standalone_program_routine.create({
     data: {
+      ...(clientId ? { id: clientId } : {}),
       program_id: programId,
       routine_id,
       order_in_program,
@@ -947,6 +1036,17 @@ export const addStandaloneRoutineExercise = async (
     ?.params as AddStandaloneRoutineExerciseParams;
   const input = res.locals.validated?.body as AddStandaloneRoutineExerciseInput;
 
+  if (input.id) {
+    const existing =
+      await prisma.standalone_program_routine_exercise.findUnique({
+        where: { id: input.id },
+      });
+    if (existing) {
+      sendSuccess(res, { routine_exercise: existing });
+      return;
+    }
+  }
+
   const programRoutine = await prisma.standalone_program_routine.findUnique({
     where: { id: routineId },
     include: { program: true },
@@ -963,6 +1063,7 @@ export const addStandaloneRoutineExercise = async (
 
   const exercise = await prisma.standalone_program_routine_exercise.create({
     data: {
+      ...(input.id ? { id: input.id } : {}),
       program_routine_id: routineId,
       exercise_id: input.exercise_id,
       sets: input.sets,
@@ -1069,8 +1170,21 @@ export const startStandaloneSession = async (
     throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
   }
 
-  const { program_routine_id } = res.locals.validated
+  const { id: clientId, program_routine_id } = res.locals.validated
     ?.body as StartStandaloneSessionInput;
+
+  if (clientId) {
+    const existing = await prisma.standalone_session.findUnique({
+      where: { id: clientId },
+    });
+    if (existing) {
+      sendSuccess(res, {
+        session: existing,
+        alreadyCompleted: existing.completed_at != null,
+      });
+      return;
+    }
+  }
 
   const pr = await prisma.standalone_program_routine.findUnique({
     where: { id: program_routine_id },
@@ -1100,6 +1214,7 @@ export const startStandaloneSession = async (
 
   const session = await prisma.standalone_session.create({
     data: {
+      ...(clientId ? { id: clientId } : {}),
       user_id: appUser.supabase_auth_id,
       program_routine_id,
       started_at: new Date(),
@@ -1176,10 +1291,12 @@ export const completeStandaloneSession = async (
   }
 
   if (session.completed_at) {
-    throw new BadRequestException(
-      'STANDALONE_ALREADY_COMPLETED',
-      'Workout session is already completed'
-    );
+    sendSuccess(res, {
+      session,
+      alreadyCompleted: true,
+      message: 'Session was already completed',
+    });
+    return;
   }
 
   const now = new Date();
@@ -1343,8 +1460,13 @@ export const logStandaloneSet = async (
   }
 
   const { sessionId } = res.locals.validated?.params as LogStandaloneSetParams;
-  const { routine_exercise_id, set_number, reps, weight } = res.locals.validated
-    ?.body as LogStandaloneSetInput;
+  const {
+    id: clientId,
+    routine_exercise_id,
+    set_number,
+    reps,
+    weight,
+  } = res.locals.validated?.body as LogStandaloneSetInput;
 
   const session = await prisma.standalone_session.findFirst({
     where: {
@@ -1364,11 +1486,23 @@ export const logStandaloneSet = async (
     );
   }
 
-  const performedSet = await prisma.standalone_performed_set.create({
-    data: {
+  const performedSet = await prisma.standalone_performed_set.upsert({
+    where: {
+      session_id_routine_exercise_id_set_number: {
+        session_id: sessionId,
+        routine_exercise_id,
+        set_number,
+      },
+    },
+    create: {
+      ...(clientId ? { id: clientId } : {}),
       session_id: sessionId,
       routine_exercise_id,
       set_number,
+      reps,
+      weight,
+    },
+    update: {
       reps,
       weight,
     },

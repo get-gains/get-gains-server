@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 export const CreatePersonalExerciseSchema = z.object({
   body: z.object({
+    id: z.string().cuid().optional(),
     name: z.string().min(1),
     description: z.string().optional().default(''),
     target_muscles: z.array(z.string()).optional().default([]),
@@ -56,6 +57,7 @@ export type DeletePersonalExerciseParams = z.infer<
 
 export const CreatePersonalRoutineSchema = z.object({
   body: z.object({
+    id: z.string().cuid().optional(),
     name: z.string().min(1),
     description: z.string().min(1),
     estimated_duration_minutes: z.number().int().min(1),
@@ -113,6 +115,7 @@ export type DeletePersonalRoutineParams = z.infer<
 
 export const CreateStandaloneProgramSchema = z.object({
   body: z.object({
+    id: z.string().cuid().optional(),
     name: z.string().min(1),
     description: z.string().min(1),
   }),
@@ -169,6 +172,7 @@ export type DeleteStandaloneProgramParams = z.infer<
 export const AddStandaloneProgramRoutineSchema = z.object({
   params: z.object({ programId: z.string().cuid() }),
   body: z.object({
+    id: z.string().cuid().optional(),
     routine_id: z.string().cuid(),
     order_in_program: z.number().int().min(1),
   }),
@@ -214,6 +218,7 @@ export type DeleteStandaloneProgramRoutineParams = z.infer<
 export const AddStandaloneRoutineExerciseSchema = z.object({
   params: z.object({ routineId: z.string().cuid() }),
   body: z.object({
+    id: z.string().cuid().optional(),
     exercise_id: z.string().cuid(),
     sets: z.number().int().min(1),
     reps_min: z.number().int().min(1),
@@ -281,6 +286,7 @@ const BuilderRoutineSchema = z.object({
 
 export const BuildStandaloneProgramSchema = z.object({
   body: z.object({
+    id: z.string().cuid().optional(),
     name: z.string().min(1),
     description: z.string().min(1),
     routines: z.array(BuilderRoutineSchema).min(1),
@@ -305,6 +311,7 @@ export type ActivateStandaloneProgramParams = z.infer<
 
 export const StartStandaloneSessionSchema = z.object({
   body: z.object({
+    id: z.string().cuid().optional(),
     program_routine_id: z.string().cuid(),
   }),
 });
@@ -351,6 +358,7 @@ export type GetStandaloneSessionByIdParams = z.infer<
 export const LogStandaloneSetSchema = z.object({
   params: z.object({ sessionId: z.string().cuid() }),
   body: z.object({
+    id: z.string().cuid().optional(),
     routine_exercise_id: z.string().cuid(),
     set_number: z.number().int().min(1),
     reps: z.number().int().min(0),

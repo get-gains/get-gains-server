@@ -129,6 +129,7 @@ export type GetProgramsQuery = z.infer<typeof GetProgramsSchema>['query'];
  */
 export const StartWorkoutSessionSchema = z.object({
   body: z.object({
+    id: z.string().cuid().optional(),
     assignedProgramRoutineId: z
       .string()
       .min(1, 'Assigned program routine ID is required'),
