@@ -45,7 +45,7 @@ export type ListInvitationsQuery = z.infer<
  */
 export const RevokeInvitationSchema = z.object({
   params: z.object({
-    id: z.string().cuid('Invalid invitation ID'),
+    id: z.string().cuid2('Invalid invitation ID'),
   }),
 });
 
