@@ -59,7 +59,7 @@ export const CreatePersonalRoutineSchema = z.object({
   body: z.object({
     id: z.string().cuid2().optional(),
     name: z.string().min(1),
-    description: z.string().min(1),
+    description: z.string().optional().default(''),
     estimated_duration_minutes: z.number().int().min(1),
   }),
 });
@@ -117,7 +117,7 @@ export const CreateStandaloneProgramSchema = z.object({
   body: z.object({
     id: z.string().cuid2().optional(),
     name: z.string().min(1),
-    description: z.string().min(1),
+    description: z.string().optional().default(''),
   }),
 });
 

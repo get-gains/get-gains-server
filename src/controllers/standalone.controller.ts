@@ -1047,8 +1047,8 @@ export const addStandaloneRoutineExercise = async (
     }
   }
 
-  const programRoutine = await prisma.standalone_program_routine.findUnique({
-    where: { id: routineId },
+  const programRoutine = await prisma.standalone_program_routine.findFirst({
+    where: { routine_id: routineId },
     include: { program: true },
   });
   if (
@@ -1064,7 +1064,7 @@ export const addStandaloneRoutineExercise = async (
   const exercise = await prisma.standalone_program_routine_exercise.create({
     data: {
       ...(input.id ? { id: input.id } : {}),
-      program_routine_id: routineId,
+      program_routine_id: programRoutine.id,
       exercise_id: input.exercise_id,
       sets: input.sets,
       reps_min: input.reps_min,
@@ -1097,7 +1097,7 @@ export const updateStandaloneRoutineExercise = async (
   });
   if (
     !re ||
-    re.program_routine_id !== routineId ||
+    re.program_routine.routine_id !== routineId ||
     re.program_routine.program.user_id !== appUser.supabase_auth_id
   ) {
     throw new NotFoundException(
@@ -1142,7 +1142,7 @@ export const deleteStandaloneRoutineExercise = async (
   });
   if (
     !re ||
-    re.program_routine_id !== routineId ||
+    re.program_routine.routine_id !== routineId ||
     re.program_routine.program.user_id !== appUser.supabase_auth_id
   ) {
     throw new NotFoundException(
