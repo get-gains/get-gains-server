@@ -697,10 +697,16 @@ export const startWorkoutSession = async (
   });
 
   if (activeSession) {
-    throw new ConflictException(
-      'WORKOUT_SESSION_ALREADY_ACTIVE',
-      'You already have an active workout session. Please complete or cancel it first.'
-    );
+    // Auto-complete the previous active session — starting a new workout
+    // implies the user is done with the old one.
+    await prisma.workout_session.update({
+      where: { id: activeSession.id },
+      data: { completed_at: new Date() },
+    });
+    logger.info('Auto-completed previous active session', {
+      previousSessionId: activeSession.id,
+      supabaseId,
+    });
   }
 
   const session = await prisma.workout_session.create({
