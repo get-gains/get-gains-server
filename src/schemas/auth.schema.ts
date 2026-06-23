@@ -125,3 +125,30 @@ export const CheckEmailVerifiedSchema = z.object({
 export type CheckEmailVerifiedInput = z.infer<
   typeof CheckEmailVerifiedSchema
 >['body'];
+
+/**
+ * Schema for sending email verification code
+ */
+export const SendEmailVerificationCodeSchema = z.object({
+  body: z.object({
+    email: z.email(),
+  }),
+});
+
+export type SendEmailVerificationCodeInput = z.infer<
+  typeof SendEmailVerificationCodeSchema
+>['body'];
+
+/**
+ * Schema for verifying email verification code
+ */
+export const VerifyEmailCodeSchema = z.object({
+  body: z.object({
+    email: z.email(),
+    code: z.string().length(6, 'Code must be 6 characters'),
+  }),
+});
+
+export type VerifyEmailCodeInput = z.infer<
+  typeof VerifyEmailCodeSchema
+>['body'];
