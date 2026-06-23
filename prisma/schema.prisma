@@ -534,6 +534,7 @@ model standalone_performed_set {
   session  standalone_session                @relation(fields: [session_id], references: [id], onDelete: Cascade)
   exercise standalone_program_routine_exercise @relation(fields: [routine_exercise_id], references: [id], onDelete: Cascade)
 
+  @@unique([session_id, routine_exercise_id, set_number])
   @@index([session_id])
   @@index([routine_exercise_id])
 }

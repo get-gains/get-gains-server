@@ -104,7 +104,7 @@ export type GetClientProgramsParams = z.infer<
  */
 export const UpdateAssignmentSchema = z.object({
   params: z.object({
-    assignmentId: z.string().cuid('Invalid assignment ID'),
+    assignmentId: z.string().cuid2('Invalid assignment ID'),
   }),
   body: z.object({
     startDate: z.string().datetime().optional(),
@@ -125,7 +125,7 @@ export type UpdateAssignmentInput = z.infer<
  */
 export const DeleteAssignmentSchema = z.object({
   params: z.object({
-    assignmentId: z.string().cuid('Invalid assignment ID'),
+    assignmentId: z.string().cuid2('Invalid assignment ID'),
   }),
 });
 
@@ -167,7 +167,7 @@ export type GetClientSessionsQuery = z.infer<
 export const GetClientSessionDetailSchema = z.object({
   params: z.object({
     userId: z.string().min(1, 'Invalid user ID'),
-    sessionId: z.string().cuid('Invalid session ID'),
+    sessionId: z.string().cuid2('Invalid session ID'),
   }),
 });
 
@@ -200,7 +200,7 @@ export type GetClientWeeklyStatsQuery = z.infer<
 export const GetClientExerciseHistorySchema = z.object({
   params: z.object({
     userId: z.string().min(1, 'Invalid user ID'),
-    exerciseId: z.string().cuid('Invalid exercise ID'),
+    exerciseId: z.string().cuid2('Invalid exercise ID'),
   }),
   query: z.object({
     limit: z.coerce.number().int().min(1).max(100).optional().default(20),

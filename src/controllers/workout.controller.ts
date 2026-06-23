@@ -31,7 +31,6 @@ import { calculateSessionCoins } from '../services/coin-calculation.service';
 import { recordMissionProgressAfterSession } from '../services/missions.service';
 import type { AuthenticatedUser } from '../middleware/auth.middleware';
 import {
-  BadRequestException,
   ConflictException,
   ForbiddenException,
   NotFoundException,
@@ -644,13 +643,34 @@ export const startWorkoutSession = async (
   if (!supabaseId) {
     throw new UnauthorizedException('UNAUTHENTICATED', 'Unauthorized');
   }
-  const { assignedProgramRoutineId } = res.locals.validated
+  const { id: clientId, assignedProgramRoutineId } = res.locals.validated
     ?.body as StartWorkoutSessionInput;
 
   logger.info('Starting workout session', {
     supabaseId,
     assignedProgramRoutineId,
+    clientId,
   });
+
+  if (clientId) {
+    const existing = await prisma.workout_session.findUnique({
+      where: { id: clientId },
+    });
+    if (existing) {
+      sendSuccess(res, {
+        session: {
+          id: existing.id,
+          assignedProgramRoutineId: existing.assigned_program_routine_id,
+          startedAt: existing.started_at,
+          completedAt: existing.completed_at,
+          feedback: existing.feedback,
+          performedSets: [],
+        },
+        alreadyCompleted: existing.completed_at != null,
+      });
+      return;
+    }
+  }
 
   // Verify the routine belongs to this user
   const routine = await prisma.assigned_program_routine.findFirst({
@@ -677,14 +697,21 @@ export const startWorkoutSession = async (
   });
 
   if (activeSession) {
-    throw new ConflictException(
-      'WORKOUT_SESSION_ALREADY_ACTIVE',
-      'You already have an active workout session. Please complete or cancel it first.'
-    );
+    // Auto-complete the previous active session — starting a new workout
+    // implies the user is done with the old one.
+    await prisma.workout_session.update({
+      where: { id: activeSession.id },
+      data: { completed_at: new Date() },
+    });
+    logger.info('Auto-completed previous active session', {
+      previousSessionId: activeSession.id,
+      supabaseId,
+    });
   }
 
   const session = await prisma.workout_session.create({
     data: {
+      ...(clientId ? { id: clientId } : {}),
       assigned_program_routine_id: assignedProgramRoutineId,
       started_at: new Date(),
     },
@@ -817,10 +844,19 @@ export const completeWorkoutSession = async (
   }
 
   if (session.completed_at) {
-    throw new BadRequestException(
-      'WORKOUT_SESSION_ALREADY_COMPLETED',
-      'Workout session is already completed'
-    );
+    sendSuccess(res, {
+      session: {
+        id: session.id,
+        assignedProgramRoutineId: session.assigned_program_routine_id,
+        startedAt: session.started_at,
+        completedAt: session.completed_at,
+        feedback: session.feedback,
+        performedSets: [],
+      },
+      alreadyCompleted: true,
+      message: 'Session was already completed',
+    });
+    return;
   }
 
   const updatedSession = await prisma.workout_session.update({

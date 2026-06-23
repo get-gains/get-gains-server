@@ -50,7 +50,7 @@ export type GetClientActiveProgramParams = z.infer<
  */
 export const UpdateClientProgramSchema = z.object({
   params: z.object({
-    programId: z.string().cuid(),
+    programId: z.string().cuid2(),
   }),
   body: z
     .object({
@@ -86,7 +86,7 @@ export type UpdateClientProgramInput = z.infer<
  */
 export const DeleteClientProgramSchema = z.object({
   params: z.object({
-    programId: z.string().cuid(),
+    programId: z.string().cuid2(),
   }),
 });
 
@@ -100,7 +100,7 @@ export type DeleteClientProgramParams = z.infer<
  */
 export const GetProgramByIdSchema = z.object({
   params: z.object({
-    programId: z.string().cuid(),
+    programId: z.string().cuid2(),
   }),
 });
 
@@ -114,7 +114,7 @@ export type GetProgramByIdParams = z.infer<
  * Inline exercise definition for creating a routine.
  */
 const InlineExerciseSchema = z.object({
-  exercise_id: z.string().cuid(),
+  exercise_id: z.string().cuid2(),
   sets: z.number().int().min(1),
   reps_min: z.number().int().min(1),
   reps_max: z.number().int().min(1),
@@ -128,12 +128,12 @@ const InlineExerciseSchema = z.object({
  */
 export const AddProgramRoutineSchema = z.object({
   params: z.object({
-    programId: z.string().cuid(),
+    programId: z.string().cuid2(),
   }),
   body: z.discriminatedUnion('mode', [
     z.object({
       mode: z.literal('template'),
-      source_routine_id: z.string().cuid(),
+      source_routine_id: z.string().cuid2(),
       days_of_week: z.array(DayOfWeekSchema).min(1),
       order_in_program: z.number().int().min(0),
     }),
@@ -162,8 +162,8 @@ export type AddProgramRoutineInput = z.infer<
  */
 export const UpdateProgramRoutineSchema = z.object({
   params: z.object({
-    programId: z.string().cuid(),
-    aprId: z.string().cuid(),
+    programId: z.string().cuid2(),
+    aprId: z.string().cuid2(),
   }),
   body: z
     .object({
@@ -197,8 +197,8 @@ export type UpdateProgramRoutineInput = z.infer<
  */
 export const DeleteProgramRoutineSchema = z.object({
   params: z.object({
-    programId: z.string().cuid(),
-    aprId: z.string().cuid(),
+    programId: z.string().cuid2(),
+    aprId: z.string().cuid2(),
   }),
 });
 
@@ -214,8 +214,8 @@ export type DeleteProgramRoutineParams = z.infer<
  */
 export const AddProgramRoutineExerciseSchema = z.object({
   params: z.object({
-    programId: z.string().cuid(),
-    aprId: z.string().cuid(),
+    programId: z.string().cuid2(),
+    aprId: z.string().cuid2(),
   }),
   body: InlineExerciseSchema,
 });
@@ -233,13 +233,13 @@ export type AddProgramRoutineExerciseInput = z.infer<
  */
 export const UpdateProgramRoutineExerciseSchema = z.object({
   params: z.object({
-    programId: z.string().cuid(),
-    aprId: z.string().cuid(),
-    apreId: z.string().cuid(),
+    programId: z.string().cuid2(),
+    aprId: z.string().cuid2(),
+    apreId: z.string().cuid2(),
   }),
   body: z
     .object({
-      exercise_id: z.string().cuid().optional(),
+      exercise_id: z.string().cuid2().optional(),
       sets: z.number().int().min(1).optional(),
       reps_min: z.number().int().min(1).optional(),
       reps_max: z.number().int().min(1).optional(),
@@ -271,9 +271,9 @@ export type UpdateProgramRoutineExerciseInput = z.infer<
  */
 export const DeleteProgramRoutineExerciseSchema = z.object({
   params: z.object({
-    programId: z.string().cuid(),
-    aprId: z.string().cuid(),
-    apreId: z.string().cuid(),
+    programId: z.string().cuid2(),
+    aprId: z.string().cuid2(),
+    apreId: z.string().cuid2(),
   }),
 });
 
@@ -306,7 +306,7 @@ export type GetCoachRoutinesQuery = z.infer<
 
 export const GetCoachRoutineByIdSchema = z.object({
   params: z.object({
-    routineId: z.string().cuid(),
+    routineId: z.string().cuid2(),
   }),
 });
 
@@ -316,7 +316,7 @@ export type GetCoachRoutineByIdParams = z.infer<
 
 export const UpdateRoutineSchema = z.object({
   params: z.object({
-    routineId: z.string().cuid(),
+    routineId: z.string().cuid2(),
   }),
   body: z.object({
     name: z.string().min(1).optional(),
@@ -330,7 +330,7 @@ export type UpdateRoutineInput = z.infer<typeof UpdateRoutineSchema>['body'];
 
 export const DeleteRoutineSchema = z.object({
   params: z.object({
-    routineId: z.string().cuid(),
+    routineId: z.string().cuid2(),
   }),
 });
 
