@@ -1,6 +1,15 @@
 import { z } from 'zod';
 
-const socialLinkSchema = z.string().url('Social link must be a valid URL');
+const socialLinkSchema = z.preprocess((val) => {
+  if (
+    typeof val === 'string' &&
+    !val.startsWith('http://') &&
+    !val.startsWith('https://')
+  ) {
+    return `https://${val}`;
+  }
+  return val;
+}, z.string().url('Social link must be a valid URL'));
 
 export const CreatePartnerSchema = z.object({
   body: z.object({

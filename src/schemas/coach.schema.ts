@@ -10,7 +10,20 @@ export const CreateCoachProfileSchema = z.object({
       invitation_code: z.string().length(6).optional(),
       certifications: z.array(z.string()).optional(),
       specialties: z.array(z.string()).optional(),
-      social_links: z.array(z.string().url()).optional(),
+      social_links: z
+        .array(
+          z.preprocess((val) => {
+            if (
+              typeof val === 'string' &&
+              !val.startsWith('http://') &&
+              !val.startsWith('https://')
+            ) {
+              return `https://${val}`;
+            }
+            return val;
+          }, z.string().url('Social link must be a valid URL'))
+        )
+        .optional(),
       years_experience: z.number().int().min(0).optional(),
       max_clients: z.number().int().min(1).optional(),
       accepting_clients: z.boolean().optional(),
