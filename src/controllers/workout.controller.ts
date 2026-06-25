@@ -31,7 +31,6 @@ import { calculateSessionCoins } from '../services/coin-calculation.service';
 import { recordMissionProgressAfterSession } from '../services/missions.service';
 import type { AuthenticatedUser } from '../middleware/auth.middleware';
 import {
-  ConflictException,
   ForbiddenException,
   NotFoundException,
   UnauthorizedException,
@@ -133,28 +132,6 @@ export const createExercise = async (
 
   logger.debug('Creating exercise', { name, supabaseId, is_public });
 
-  // Check for duplicate name within scope: global public OR this user's exercises
-  const existing = await prisma.exercise.findFirst({
-    where: {
-      name: { equals: name, mode: 'insensitive' },
-      OR: [{ is_public: true }, { user_id: supabaseId }],
-    },
-  });
-
-  if (existing) {
-    throw new ConflictException(
-      'WORKOUT_EXERCISE_DUPLICATE_NAME',
-      'An exercise with this name already exists',
-      [
-        {
-          code: 'WORKOUT_EXERCISE_DUPLICATE_NAME',
-          message: 'An exercise with this name already exists',
-          field: 'name',
-        },
-      ]
-    );
-  }
-
   const exercise = await prisma.exercise.create({
     data: {
       name,
@@ -222,34 +199,6 @@ export const updateExercise = async (
       'WORKOUT_EXERCISE_FORBIDDEN',
       'You do not have permission to update this exercise'
     );
-  }
-
-  // Check for duplicate name if name is being changed
-  if (
-    updates.name &&
-    updates.name.toLowerCase() !== exercise.name.toLowerCase()
-  ) {
-    const duplicate = await prisma.exercise.findFirst({
-      where: {
-        name: { equals: updates.name, mode: 'insensitive' },
-        id: { not: exerciseId },
-        OR: [{ is_public: true }, { user_id: supabaseId }],
-      },
-    });
-
-    if (duplicate) {
-      throw new ConflictException(
-        'WORKOUT_EXERCISE_DUPLICATE_NAME',
-        'An exercise with this name already exists',
-        [
-          {
-            code: 'WORKOUT_EXERCISE_DUPLICATE_NAME',
-            message: 'An exercise with this name already exists',
-            field: 'name',
-          },
-        ]
-      );
-    }
   }
 
   const updated = await prisma.exercise.update({
