@@ -38,13 +38,15 @@ async function flattenCoach(coach: {
   };
   [key: string]: unknown;
 }): Promise<Record<string, unknown>> {
-  const { user_id, user, social_links, created_at, ...rest } = coach;
+  const { user_id, user, social_links, created_at, years_experience, ...rest } =
+    coach;
   return {
     id: user_id,
     name: user.full_name,
     email: user.email,
     avatarUrl: await resolveAvatarUrl(user.avatar_key),
     bio: user.bio,
+    yearsExperience: years_experience ?? 0,
     ...rest,
     ...(social_links !== undefined ? { socialLinks: social_links } : {}),
     createdAt: created_at,
@@ -157,7 +159,7 @@ export const discoverCoaches = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  const { search, limit, offset } = res.locals.validated
+  const { search, specialty, limit, offset } = res.locals.validated
     ?.query as DiscoverCoachesQuery;
   const take = Math.min(Math.max(1, limit || 50), 100);
   const skip = Math.max(0, offset || 0);
@@ -165,16 +167,34 @@ export const discoverCoaches = async (
   // Only show coaches that are discoverable (is_discoverable defaults to true)
   const where: {
     is_discoverable: boolean;
-    AND?: {
-      OR: (
-        | { user: { full_name: { contains: string; mode: 'insensitive' } } }
-        | { user: { bio: { contains: string; mode: 'insensitive' } } }
-        | { specialties: { hasSome: string[] } }
-      )[];
-    }[];
+    AND?: Record<string, unknown>[];
+    user_id?: { in: string[] };
   } = {
     is_discoverable: true,
   };
+
+  // Case-insensitive specialty filter via raw SQL
+  // (Prisma's hasSome/has do case-sensitive exact matching on PostgreSQL arrays)
+  if (specialty) {
+    const specialtyLower = specialty.toLowerCase();
+    const matching = await prisma.$queryRaw<{ user_id: string }[]>`
+      SELECT "user_id" FROM "Coach"
+      WHERE "is_discoverable" = true
+      AND EXISTS (
+        SELECT 1 FROM unnest("specialties") AS s WHERE LOWER(s) = ${specialtyLower}
+      )
+    `;
+
+    if (matching.length === 0) {
+      sendSuccess(res, {
+        coaches: [],
+        pagination: { total: 0, limit: take, offset: skip, hasMore: false },
+      });
+      return;
+    }
+
+    where.user_id = { in: matching.map((r) => r.user_id) };
+  }
 
   if (search) {
     const searchLower = search.toLowerCase();
@@ -187,7 +207,6 @@ export const discoverCoaches = async (
             },
           },
           { user: { bio: { contains: searchLower, mode: 'insensitive' } } },
-          { specialties: { hasSome: [searchLower] } },
         ],
       },
     ];
@@ -200,6 +219,7 @@ export const discoverCoaches = async (
         user_id: true,
         certifications: true,
         specialties: true,
+        years_experience: true,
         created_at: true,
         user: {
           select: {
@@ -245,6 +265,7 @@ export const getCoachProfile = async (
       user_id: true,
       certifications: true,
       specialties: true,
+      years_experience: true,
       social_links: true,
       created_at: true,
       user: {
@@ -303,6 +324,7 @@ export const getSubscribedCoaches = async (
             user_id: true,
             certifications: true,
             specialties: true,
+            years_experience: true,
             created_at: true,
             user: {
               select: {

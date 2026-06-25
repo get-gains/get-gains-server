@@ -45,6 +45,7 @@ export type CreateUserFromGoogleData = z.infer<
 export const DiscoverCoachesSchema = z.object({
   query: z.object({
     search: z.string().optional(), // Search by name, bio, specialties
+    specialty: z.string().optional(), // Filter by specialty (case-insensitive)
     limit: z.coerce.number().int().min(1).max(100).optional().default(50),
     offset: z.coerce.number().int().min(0).optional().default(0),
   }),
