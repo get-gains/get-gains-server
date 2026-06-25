@@ -138,7 +138,6 @@ export const listInvitations = async (
     invitations: invitations.map((inv) => ({
       id: inv.id,
       email: inv.email,
-      code: inv.code,
       status: inv.status,
       attempts: inv.attempts,
       maxAttempts: inv.max_attempts,
@@ -190,7 +189,6 @@ export const createInvitation = async (
       invitation: {
         id: invitation.id,
         email: invitation.email,
-        code: invitation.code,
         status: invitation.status,
         expiresAt: invitation.expires_at,
         createdAt: invitation.created_at,

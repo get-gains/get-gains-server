@@ -7,6 +7,7 @@ export interface ErrorDetail {
   code: ErrorCode;
   message: string;
   field?: string;
+  meta?: Record<string, unknown>;
 }
 
 /**
@@ -19,15 +20,20 @@ export interface ErrorDetail {
 export abstract class AppException extends Error {
   abstract readonly status: number;
   readonly details?: ErrorDetail[];
+  readonly meta?: Record<string, unknown>;
 
   constructor(
     public readonly code: ErrorCode,
     message: string,
-    details?: ErrorDetail[]
+    detailsOrMeta?: ErrorDetail[] | Record<string, unknown>
   ) {
     super(message);
     this.name = this.constructor.name;
-    this.details = details;
+    if (Array.isArray(detailsOrMeta)) {
+      this.details = detailsOrMeta;
+    } else {
+      this.meta = detailsOrMeta;
+    }
   }
 }
 

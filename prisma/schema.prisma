@@ -125,7 +125,7 @@ enum CoachInviteStatus {
 model email_verification_code {
   id             String     @id @default(cuid())
   email          String
-  code           String
+  code_hash      String
   attempts       Int        @default(0)
   max_attempts   Int        @default(3)
   verified       Boolean    @default(false)
@@ -241,7 +241,7 @@ model subscribed_coach {
 model coach_invitation {
   id           String            @id @default(cuid())
   email        String
-  code         String
+  code_hash    String
   status       CoachInviteStatus @default(PENDING)
   attempts     Int               @default(0)
   max_attempts Int               @default(3)
@@ -259,7 +259,6 @@ model coach_invitation {
   revoker user? @relation("AdminRevokedInvitations", fields: [revoked_by], references: [supabase_auth_id], onDelete: SetNull)
 
   @@index([email, status, expires_at])
-  @@index([code, status])
 }
 
 // ============== Notifications ==============
