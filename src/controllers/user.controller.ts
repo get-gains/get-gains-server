@@ -178,7 +178,7 @@ export const discoverCoaches = async (
   if (specialty) {
     const specialtyLower = specialty.toLowerCase();
     const matching = await prisma.$queryRaw<{ user_id: string }[]>`
-      SELECT "user_id" FROM "Coach"
+      SELECT "user_id" FROM "coach"
       WHERE "is_discoverable" = true
       AND EXISTS (
         SELECT 1 FROM unnest("specialties") AS s WHERE LOWER(s) = ${specialtyLower}
