@@ -26,8 +26,15 @@ import {
   GetClientWeeklyStatsQuery,
   GetClientExerciseHistoryParams,
   GetClientExerciseHistoryQuery,
+  GetClientFormResultsParams,
+  GetClientFormResultsQuery,
+  UpdateCoachSettingsInput,
 } from '../schemas/coach.schema';
 import { getUserBySupabaseId } from './user.controller';
+import {
+  verifyCoachInviteCode,
+  markInvitationRedeemed,
+} from '../services/coach-invite.service';
 
 /**
  * Create coach profile (become a coach). Any authenticated user can call.
@@ -68,13 +75,20 @@ export const createCoachProfile = async (
 
   const body = (res.locals.validated?.body as CreateCoachProfileInput) ?? {};
 
-  const [coach] = await prisma.$transaction([
-    prisma.coach.create({
+  const invitation = body.invitation_code
+    ? await verifyCoachInviteCode(body.invitation_code, appUser.email)
+    : null;
+
+  const coach = await prisma.$transaction(async (tx) => {
+    const created = await tx.coach.create({
       data: {
         user_id: appUser.supabase_auth_id,
         certifications: body.certifications ?? [],
         specialties: body.specialties ?? [],
         social_links: body.social_links ?? [],
+        ...(body.years_experience !== undefined && {
+          years_experience: body.years_experience,
+        }),
         ...(body.max_clients !== undefined && {
           max_clients: body.max_clients,
         }),
@@ -85,12 +99,19 @@ export const createCoachProfile = async (
           is_discoverable: body.is_discoverable,
         }),
       },
-    }),
-    prisma.user.update({
+    });
+
+    await tx.user.update({
       where: { supabase_auth_id: appUser.supabase_auth_id },
       data: { is_coach: true },
-    }),
-  ]);
+    });
+
+    if (invitation) {
+      await markInvitationRedeemed(invitation.id, appUser.supabase_auth_id, tx);
+    }
+
+    return created;
+  });
 
   logger.info('Coach profile created', {
     userId: appUser.supabase_auth_id,
@@ -106,6 +127,7 @@ export const createCoachProfile = async (
         certifications: coach.certifications,
         specialties: coach.specialties,
         social_links: coach.social_links,
+        years_experience: coach.years_experience,
         max_clients: coach.max_clients,
         accepting_clients: coach.accepting_clients,
         is_discoverable: coach.is_discoverable,
@@ -114,6 +136,128 @@ export const createCoachProfile = async (
     },
     201
   );
+};
+
+type CoachSettingsRow = {
+  user_id: string;
+  max_clients: number;
+  accepting_clients: boolean;
+  is_discoverable: boolean;
+  created_at: Date;
+  updated_at: Date;
+};
+
+async function countActiveClients(coachId: string): Promise<number> {
+  return prisma.subscribed_coach.count({
+    where: { coach_id: coachId, ended_at: null },
+  });
+}
+
+function toCoachSettingsDto(
+  coach: CoachSettingsRow,
+  activeClientCount: number
+) {
+  return {
+    id: coach.user_id,
+    coachId: coach.user_id,
+    maxClients: coach.max_clients,
+    acceptingClients: coach.accepting_clients,
+    isDiscoverable: coach.is_discoverable,
+    activeClientCount,
+    createdAt: coach.created_at.toISOString(),
+    updatedAt: coach.updated_at.toISOString(),
+  };
+}
+
+/**
+ * Get the authenticated coach's settings.
+ * GET /coach/settings
+ */
+export const getCoachSettings = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const coach = req.coach;
+  if (!coach) {
+    throw new ForbiddenException('AUTH_COACH_REQUIRED', 'Coach required');
+  }
+
+  const activeClientCount = await countActiveClients(coach.user_id);
+
+  sendSuccess(res, {
+    settings: toCoachSettingsDto(coach, activeClientCount),
+  });
+};
+
+/**
+ * Update the authenticated coach's settings.
+ * PATCH /coach/settings
+ */
+export const updateCoachSettings = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const coach = req.coach;
+  if (!coach) {
+    throw new ForbiddenException('AUTH_COACH_REQUIRED', 'Coach required');
+  }
+
+  const body =
+    (res.locals.validated?.body as UpdateCoachSettingsInput | undefined) ?? {};
+
+  if (
+    body.maxClients === undefined &&
+    body.acceptingClients === undefined &&
+    body.isDiscoverable === undefined
+  ) {
+    throw new BadRequestException(
+      'VALIDATION_ERROR',
+      'At least one setting field must be provided'
+    );
+  }
+
+  if (body.maxClients !== undefined) {
+    const activeClientCount = await countActiveClients(coach.user_id);
+    if (body.maxClients < activeClientCount) {
+      throw new ConflictException(
+        'COACH_MAX_CLIENTS_BELOW_ACTIVE',
+        `Max clients cannot be set below your current active client count (${activeClientCount})`,
+        [
+          {
+            code: 'COACH_MAX_CLIENTS_BELOW_ACTIVE',
+            message: `Max clients cannot be set below your current active client count (${activeClientCount})`,
+            field: 'maxClients',
+          },
+        ]
+      );
+    }
+  }
+
+  const updated = await prisma.coach.update({
+    where: { user_id: coach.user_id },
+    data: {
+      ...(body.maxClients !== undefined && { max_clients: body.maxClients }),
+      ...(body.acceptingClients !== undefined && {
+        accepting_clients: body.acceptingClients,
+      }),
+      ...(body.isDiscoverable !== undefined && {
+        is_discoverable: body.isDiscoverable,
+      }),
+    },
+  });
+
+  const activeClientCount = await countActiveClients(coach.user_id);
+
+  logger.info('Coach settings updated', {
+    userId: coach.user_id,
+    maxClients: updated.max_clients,
+    acceptingClients: updated.accepting_clients,
+    isDiscoverable: updated.is_discoverable,
+  });
+
+  sendSuccess(res, {
+    settings: toCoachSettingsDto(updated, activeClientCount),
+  });
 };
 
 /**
@@ -1006,6 +1150,206 @@ export const getClientExerciseHistory = async (
       };
     }),
     total: sessionMap.size,
+  });
+};
+
+// ============== Client Form Results ==============
+
+/**
+ * GET /coach/clients/:userId/form-results
+ * Paginated form comparison results for a client, grouped by session and exercise.
+ *
+ * Returns only results where recorded_frames_key is present (form data was captured).
+ * Omits segmentScores, corrections, durationMs, totalFrames since those are
+ * not yet persisted in the database.
+ *
+ * @param req      Express request with coach auth, validated params { userId }, query { limit, offset, exerciseId? }
+ * @param res      Express response — sends { results, pagination } envelope
+ * @throws         NotFoundException if client is not in the coach's class
+ */
+export const getClientFormResults = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const coach = req.coach;
+  if (!coach) {
+    throw new ForbiddenException('AUTH_COACH_REQUIRED', 'Coach required');
+  }
+
+  const { userId } = res.locals.validated?.params as GetClientFormResultsParams;
+  const { limit, offset, exerciseId } = res.locals.validated
+    ?.query as GetClientFormResultsQuery;
+
+  await verifyCoachClientRelationship(coach.user_id, userId);
+
+  logger.debug('Fetching client form results', {
+    coachId: coach.user_id,
+    userId,
+    exerciseId,
+    limit,
+    offset,
+  });
+
+  // Build exercise filter if exerciseId is provided
+  const exerciseFilter: Prisma.assigned_program_routine_exerciseWhereInput =
+    exerciseId ? { exercise_id: exerciseId } : {};
+
+  // Count total matching performed_sets with form data
+  const where: Prisma.performed_setWhereInput = {
+    recorded_frames_key: { not: null },
+    assigned_program_routine_exercise: {
+      ...exerciseFilter,
+      assigned_program_routine: {
+        assigned_program: { user_id: userId },
+      },
+    },
+  };
+
+  // Fetch all qualifying sets with full relational context
+  const sets = await prisma.performed_set.findMany({
+    where,
+    include: {
+      workout_session: {
+        select: { id: true, started_at: true, completed_at: true },
+      },
+      assigned_program_routine_exercise: {
+        select: {
+          id: true,
+          exercise: {
+            select: {
+              id: true,
+              name: true,
+              user: {
+                select: {
+                  supabase_auth_id: true,
+                  full_name: true,
+                  coach: { select: { user_id: true } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    orderBy: [
+      { workout_session: { started_at: 'desc' } },
+      { created_at: 'desc' },
+      { set_number: 'asc' },
+    ],
+  });
+
+  // Find exercise_forms for each unique exercise to get camera_angle & coach context
+  const exerciseIds = [
+    ...new Set(
+      sets.map((s) => s.assigned_program_routine_exercise.exercise.id)
+    ),
+  ];
+  const forms = await prisma.exercise_form.findMany({
+    where: { exercise_id: { in: exerciseIds } },
+    select: { id: true, exercise_id: true, camera_angle: true },
+  });
+  const formByExercise = new Map<string, (typeof forms)[number]>();
+  for (const f of forms) {
+    if (!formByExercise.has(f.exercise_id)) {
+      formByExercise.set(f.exercise_id, f);
+    }
+  }
+
+  // Group by (session, exercise) — each group is one form-result entry
+  const groupMap = new Map<
+    string,
+    {
+      sessionId: string;
+      sessionDate: Date | null;
+      exercise: { id: string; name: string };
+      exerciseForm: {
+        id: string;
+        cameraAngle: string | null;
+        exercise: { id: string; name: string };
+        coach: { id: string; name: string } | null;
+      } | null;
+      exerciseName: string;
+      scores: number[];
+      recordedFramesKey: string | null;
+      performedAt: Date | null;
+    }
+  >();
+
+  for (const s of sets) {
+    const sess = s.workout_session;
+    const aprEx = s.assigned_program_routine_exercise;
+    const ex = aprEx.exercise;
+    const key = `${sess.id}:${ex.id}`;
+
+    if (!groupMap.has(key)) {
+      const ef = formByExercise.get(ex.id) ?? null;
+      const coachUser = ex.user?.coach
+        ? { id: ex.user.coach.user_id, name: ex.user.full_name }
+        : null;
+
+      groupMap.set(key, {
+        sessionId: sess.id,
+        sessionDate: sess.started_at,
+        exercise: { id: ex.id, name: ex.name },
+        exerciseForm: ef
+          ? {
+              id: ef.id,
+              cameraAngle: ef.camera_angle ?? null,
+              exercise: { id: ex.id, name: ex.name },
+              coach: coachUser,
+            }
+          : null,
+        exerciseName: ex.name,
+        scores: [],
+        recordedFramesKey: s.recorded_frames_key ?? null,
+        performedAt: s.created_at,
+      });
+    }
+
+    const group = groupMap.get(key)!;
+    if (s.overall_score !== null) {
+      group.scores.push(s.overall_score);
+    }
+    if (s.recorded_frames_key && !group.recordedFramesKey) {
+      group.recordedFramesKey = s.recorded_frames_key;
+    }
+    if (
+      s.created_at &&
+      (!group.performedAt || s.created_at < group.performedAt)
+    ) {
+      group.performedAt = s.created_at;
+    }
+  }
+
+  const results = [...groupMap.values()]
+    .map((g) => ({
+      id: `${g.sessionId}:${g.exercise.id}`,
+      overallScore:
+        g.scores.length > 0
+          ? +(
+              g.scores.reduce((a, b) => a + b, 0) /
+              g.scores.length /
+              100
+            ).toFixed(2)
+          : 0,
+      cameraAngle: g.exerciseForm?.cameraAngle ?? null,
+      recordedFramesKey: g.recordedFramesKey,
+      exerciseName: g.exerciseName,
+      createdAt:
+        g.performedAt?.toISOString() ??
+        g.sessionDate?.toISOString() ??
+        new Date().toISOString(),
+      exerciseForm: g.exerciseForm,
+    }))
+    .slice(offset, offset + limit);
+
+  sendSuccess(res, {
+    results,
+    pagination: {
+      total: groupMap.size,
+      limit,
+      offset,
+    },
   });
 };
 

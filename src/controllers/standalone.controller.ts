@@ -8,9 +8,6 @@ import {
   ConflictException,
   BadRequestException,
 } from '../lib/errors';
-import { calculateSessionCoins } from '../services/coin-calculation.service';
-import { recordMissionProgressAfterSession } from '../services/missions.service';
-import { createAssignment } from '../services/assignment.service';
 import type {
   CreatePersonalExerciseInput,
   GetPersonalExercisesQuery,
@@ -23,23 +20,38 @@ import type {
   UpdatePersonalRoutineParams,
   UpdatePersonalRoutineInput,
   DeletePersonalRoutineParams,
-  CreatePersonalProgramInput,
-  GetPersonalProgramsQuery,
-  GetPersonalProgramByIdParams,
-  UpdatePersonalProgramParams,
-  UpdatePersonalProgramInput,
-  DeletePersonalProgramParams,
+  CreateStandaloneProgramInput,
+  GetStandaloneProgramsQuery,
+  GetStandaloneProgramByIdParams,
+  UpdateStandaloneProgramParams,
+  UpdateStandaloneProgramInput,
+  DeleteStandaloneProgramParams,
+  AddStandaloneProgramRoutineInput,
+  AddStandaloneProgramRoutineParams,
+  UpdateStandaloneProgramRoutineParams,
+  UpdateStandaloneProgramRoutineInput,
+  DeleteStandaloneProgramRoutineParams,
+  AddStandaloneRoutineExerciseInput,
+  AddStandaloneRoutineExerciseParams,
+  UpdateStandaloneRoutineExerciseParams,
+  UpdateStandaloneRoutineExerciseInput,
+  DeleteStandaloneRoutineExerciseParams,
+  BuildStandaloneProgramInput,
+  ActivateStandaloneProgramParams,
   StartStandaloneSessionInput,
   CompleteStandaloneSessionParams,
   CompleteStandaloneSessionInput,
   GetStandaloneSessionsQuery,
   GetStandaloneSessionByIdParams,
-  CreateStandaloneAssignmentInput,
-  GetStandaloneAssignmentsQuery,
-  GetStandaloneAssignmentByIdParams,
+  LogStandaloneSetInput,
+  LogStandaloneSetParams,
+  UpdateStandaloneSetParams,
+  UpdateStandaloneSetInput,
+  DeleteStandaloneSetParams,
+  GetStandaloneExerciseStatParams,
 } from '../schemas/standalone.schema';
 
-// ============== Personal Exercise Controllers ==============
+// ============== Personal Exercise Controllers (shared `exercise` table) ==============
 
 export const createPersonalExercise = async (
   req: Request,
@@ -50,25 +62,27 @@ export const createPersonalExercise = async (
     throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
   }
 
-  const { name, description, target_muscles, is_public } = res.locals.validated
-    ?.body as CreatePersonalExerciseInput;
+  const {
+    id: clientId,
+    name,
+    description,
+    target_muscles,
+    is_public,
+  } = res.locals.validated?.body as CreatePersonalExerciseInput;
 
-  const existing = await prisma.exercise.findFirst({
-    where: {
-      name: { equals: name, mode: 'insensitive' },
-      OR: [{ is_public: true }, { user_id: appUser.supabase_auth_id }],
-    },
-  });
-
-  if (existing) {
-    throw new ConflictException(
-      'WORKOUT_EXERCISE_DUPLICATE_NAME',
-      'An exercise with this name already exists'
-    );
+  if (clientId) {
+    const existing = await prisma.exercise.findUnique({
+      where: { id: clientId },
+    });
+    if (existing) {
+      sendSuccess(res, { exercise: existing });
+      return;
+    }
   }
 
   const exercise = await prisma.exercise.create({
     data: {
+      ...(clientId ? { id: clientId } : {}),
       name,
       description,
       target_muscles: target_muscles ?? [],
@@ -167,25 +181,6 @@ export const updatePersonalExercise = async (
     );
   }
 
-  if (
-    updates.name &&
-    updates.name.toLowerCase() !== exercise.name.toLowerCase()
-  ) {
-    const duplicate = await prisma.exercise.findFirst({
-      where: {
-        name: { equals: updates.name, mode: 'insensitive' },
-        id: { not: exerciseId },
-        OR: [{ is_public: true }, { user_id: appUser.supabase_auth_id }],
-      },
-    });
-    if (duplicate) {
-      throw new ConflictException(
-        'WORKOUT_EXERCISE_DUPLICATE_NAME',
-        'An exercise with this name already exists'
-      );
-    }
-  }
-
   const updated = await prisma.exercise.update({
     where: { id: exerciseId },
     data: {
@@ -239,7 +234,7 @@ export const deletePersonalExercise = async (
   sendSuccess(res, { deleted: true });
 };
 
-// ============== Personal Routine Controllers ==============
+// ============== Personal Routine Controllers (shared `routine` table) ==============
 
 export const createPersonalRoutine = async (
   req: Request,
@@ -250,11 +245,26 @@ export const createPersonalRoutine = async (
     throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
   }
 
-  const { name, description, estimated_duration_minutes } = res.locals.validated
-    ?.body as CreatePersonalRoutineInput;
+  const {
+    id: clientId,
+    name,
+    description,
+    estimated_duration_minutes,
+  } = res.locals.validated?.body as CreatePersonalRoutineInput;
+
+  if (clientId) {
+    const existing = await prisma.routine.findUnique({
+      where: { id: clientId },
+    });
+    if (existing) {
+      sendSuccess(res, { routine: existing });
+      return;
+    }
+  }
 
   const routine = await prisma.routine.create({
     data: {
+      ...(clientId ? { id: clientId } : {}),
       user_id: appUser.supabase_auth_id,
       name,
       description,
@@ -410,11 +420,9 @@ export const deletePersonalRoutine = async (
   sendSuccess(res, { deleted: true });
 };
 
-// ============== Personal Program Controllers ==============
-// NOTE: With the program table dropped, "personal programs" are now
-// assigned_program rows where coach_id === user_id (self-assigned).
+// ============== Standalone Program Controllers (new `standalone_program` table) ==============
 
-export const createPersonalProgram = async (
+export const createStandaloneProgram = async (
   req: Request,
   res: Response
 ): Promise<void> => {
@@ -423,26 +431,39 @@ export const createPersonalProgram = async (
     throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
   }
 
-  const { name, description } = res.locals.validated
-    ?.body as CreatePersonalProgramInput;
+  const {
+    id: clientId,
+    name,
+    description,
+  } = res.locals.validated?.body as CreateStandaloneProgramInput;
 
-  const program = await prisma.assigned_program.create({
+  if (clientId) {
+    const existing = await prisma.standalone_program.findUnique({
+      where: { id: clientId },
+    });
+    if (existing) {
+      sendSuccess(res, { program: existing });
+      return;
+    }
+  }
+
+  const program = await prisma.standalone_program.create({
     data: {
+      ...(clientId ? { id: clientId } : {}),
       user_id: appUser.supabase_auth_id,
-      coach_id: appUser.supabase_auth_id,
       name,
       description,
     },
   });
 
-  logger.info('Personal program created', {
+  logger.info('Standalone program created', {
     programId: program.id,
     user_id: appUser.supabase_auth_id,
   });
   sendSuccess(res, { program }, 201);
 };
 
-export const getPersonalPrograms = async (
+export const getStandalonePrograms = async (
   req: Request,
   res: Response
 ): Promise<void> => {
@@ -452,26 +473,36 @@ export const getPersonalPrograms = async (
   }
 
   const { limit, offset } = res.locals.validated
-    ?.query as GetPersonalProgramsQuery;
+    ?.query as GetStandaloneProgramsQuery;
 
   const where = {
     user_id: appUser.supabase_auth_id,
-    coach_id: appUser.supabase_auth_id,
     deleted_at: null,
   };
 
   const [programs, total] = await Promise.all([
-    prisma.assigned_program.findMany({
+    prisma.standalone_program.findMany({
       where,
+      include: {
+        _count: { select: { routines: true } },
+      },
       orderBy: { created_at: 'desc' },
       take: limit,
       skip: offset,
     }),
-    prisma.assigned_program.count({ where }),
+    prisma.standalone_program.count({ where }),
   ]);
 
   sendSuccess(res, {
-    programs,
+    programs: programs.map((p) => ({
+      id: p.id,
+      name: p.name,
+      description: p.description,
+      is_active: p.is_active,
+      routine_count: p._count.routines,
+      created_at: p.created_at,
+      updated_at: p.updated_at,
+    })),
     pagination: {
       total,
       limit,
@@ -481,7 +512,7 @@ export const getPersonalPrograms = async (
   });
 };
 
-export const getPersonalProgramById = async (
+export const getStandaloneProgramById = async (
   req: Request,
   res: Response
 ): Promise<void> => {
@@ -491,24 +522,29 @@ export const getPersonalProgramById = async (
   }
 
   const { programId } = res.locals.validated
-    ?.params as GetPersonalProgramByIdParams;
+    ?.params as GetStandaloneProgramByIdParams;
 
-  const program = await prisma.assigned_program.findUnique({
+  const program = await prisma.standalone_program.findUnique({
     where: { id: programId },
     include: {
-      assigned_program_routines: {
+      routines: {
         where: { deleted_at: null },
         include: {
-          assigned_program_routine_exercises: { where: { deleted_at: null } },
+          routine: true,
+          exercises: {
+            where: { deleted_at: null },
+            include: { exercise: true },
+            orderBy: { order_in_routine: 'asc' },
+          },
         },
         orderBy: { order_in_program: 'asc' },
       },
     },
   });
+
   if (
     !program ||
     program.user_id !== appUser.supabase_auth_id ||
-    program.coach_id !== appUser.supabase_auth_id ||
     program.deleted_at !== null
   ) {
     throw new NotFoundException('PROGRAM_NOT_FOUND', 'Program not found');
@@ -517,7 +553,45 @@ export const getPersonalProgramById = async (
   sendSuccess(res, { program });
 };
 
-export const updatePersonalProgram = async (
+export const getActiveStandaloneProgram = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const appUser = req.appUser;
+  if (!appUser) {
+    throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
+  }
+
+  const program = await prisma.standalone_program.findFirst({
+    where: {
+      user_id: appUser.supabase_auth_id,
+      is_active: true,
+      deleted_at: null,
+    },
+    include: {
+      routines: {
+        where: { deleted_at: null },
+        include: {
+          routine: true,
+          exercises: {
+            where: { deleted_at: null },
+            include: { exercise: true },
+            orderBy: { order_in_routine: 'asc' },
+          },
+        },
+        orderBy: { order_in_program: 'asc' },
+      },
+    },
+  });
+
+  if (!program) {
+    throw new NotFoundException('PROGRAM_NOT_FOUND', 'No active program');
+  }
+
+  sendSuccess(res, { program });
+};
+
+export const updateStandaloneProgram = async (
   req: Request,
   res: Response
 ): Promise<void> => {
@@ -527,9 +601,9 @@ export const updatePersonalProgram = async (
   }
 
   const { programId } = res.locals.validated
-    ?.params as UpdatePersonalProgramParams;
+    ?.params as UpdateStandaloneProgramParams;
   const { name, description } = res.locals.validated
-    ?.body as UpdatePersonalProgramInput;
+    ?.body as UpdateStandaloneProgramInput;
 
   if (!name && !description) {
     throw new BadRequestException(
@@ -538,19 +612,18 @@ export const updatePersonalProgram = async (
     );
   }
 
-  const existing = await prisma.assigned_program.findUnique({
+  const existing = await prisma.standalone_program.findUnique({
     where: { id: programId },
   });
   if (
     !existing ||
     existing.user_id !== appUser.supabase_auth_id ||
-    existing.coach_id !== appUser.supabase_auth_id ||
     existing.deleted_at !== null
   ) {
     throw new NotFoundException('PROGRAM_NOT_FOUND', 'Program not found');
   }
 
-  const program = await prisma.assigned_program.update({
+  const program = await prisma.standalone_program.update({
     where: { id: programId },
     data: {
       ...(name !== undefined && { name }),
@@ -558,14 +631,14 @@ export const updatePersonalProgram = async (
     },
   });
 
-  logger.info('Personal program updated', {
+  logger.info('Standalone program updated', {
     programId,
     user_id: appUser.supabase_auth_id,
   });
   sendSuccess(res, { program });
 };
 
-export const deletePersonalProgram = async (
+export const deleteStandaloneProgram = async (
   req: Request,
   res: Response
 ): Promise<void> => {
@@ -575,37 +648,31 @@ export const deletePersonalProgram = async (
   }
 
   const { programId } = res.locals.validated
-    ?.params as DeletePersonalProgramParams;
+    ?.params as DeleteStandaloneProgramParams;
 
-  const existing = await prisma.assigned_program.findUnique({
+  const existing = await prisma.standalone_program.findUnique({
     where: { id: programId },
   });
   if (
     !existing ||
     existing.user_id !== appUser.supabase_auth_id ||
-    existing.coach_id !== appUser.supabase_auth_id ||
     existing.deleted_at !== null
   ) {
     throw new NotFoundException('PROGRAM_NOT_FOUND', 'Program not found');
   }
 
-  await prisma.assigned_program.update({
+  await prisma.standalone_program.update({
     where: { id: programId },
     data: { deleted_at: new Date() },
   });
-  logger.info('Personal program deleted', {
+  logger.info('Standalone program deleted', {
     programId,
     user_id: appUser.supabase_auth_id,
   });
   sendSuccess(res, { deleted: true });
 };
 
-// ============== Standalone Assignment Controllers ==============
-// NOTE: With the program table dropped, standalone assignments are created
-// directly. The program_id in the schema now refers to an assigned_program id
-// for backwards compat, but new flows should just create assigned_programs directly.
-
-export const createStandaloneAssignment = async (
+export const activateStandaloneProgram = async (
   req: Request,
   res: Response
 ): Promise<void> => {
@@ -614,82 +681,39 @@ export const createStandaloneAssignment = async (
     throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
   }
 
-  const { name, description, notes, start_date, end_date, routines } = res
-    .locals.validated?.body as CreateStandaloneAssignmentInput;
+  const { programId } = res.locals.validated
+    ?.params as ActivateStandaloneProgramParams;
 
-  const assignment = await createAssignment({
-    user_id: appUser.supabase_auth_id,
-    coach_id: appUser.supabase_auth_id,
-    name,
-    description,
-    notes,
-    start_date,
-    end_date,
-    routines,
+  const existing = await prisma.standalone_program.findUnique({
+    where: { id: programId },
   });
-
-  logger.info('Standalone assignment created', {
-    assignmentId: assignment.id,
-    user_id: appUser.supabase_auth_id,
-  });
-  sendSuccess(res, { assignment }, 201);
-};
-
-export const getStandaloneAssignments = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  const appUser = req.appUser;
-  if (!appUser) {
-    throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
+  if (
+    !existing ||
+    existing.user_id !== appUser.supabase_auth_id ||
+    existing.deleted_at !== null
+  ) {
+    throw new NotFoundException('PROGRAM_NOT_FOUND', 'Program not found');
   }
 
-  const { limit, offset } = res.locals.validated
-    ?.query as GetStandaloneAssignmentsQuery;
-
-  const where = {
-    user_id: appUser.supabase_auth_id,
-    coach_id: appUser.supabase_auth_id,
-    deleted_at: null,
-  };
-
-  const [assignments, total] = await Promise.all([
-    prisma.assigned_program.findMany({
-      where,
-      include: {
-        _count: { select: { assigned_program_routines: true } },
-      },
-      orderBy: { created_at: 'desc' },
-      take: limit,
-      skip: offset,
+  await prisma.$transaction([
+    prisma.standalone_program.updateMany({
+      where: { user_id: appUser.supabase_auth_id, is_active: true },
+      data: { is_active: false },
     }),
-    prisma.assigned_program.count({ where }),
+    prisma.standalone_program.update({
+      where: { id: programId },
+      data: { is_active: true },
+    }),
   ]);
 
-  sendSuccess(res, {
-    assignments: assignments.map((a) => ({
-      id: a.id,
-      name: a.name,
-      description: a.description,
-      user_id: a.user_id,
-      notes: a.notes,
-      is_active: a.is_active,
-      start_date: a.start_date,
-      end_date: a.end_date,
-      routine_count: a._count.assigned_program_routines,
-      created_at: a.created_at,
-      updated_at: a.updated_at,
-    })),
-    pagination: {
-      total,
-      limit,
-      offset,
-      hasMore: offset + assignments.length < total,
-    },
+  logger.info('Standalone program activated', {
+    programId,
+    user_id: appUser.supabase_auth_id,
   });
+  sendSuccess(res, { activated: true, programId });
 };
 
-export const getStandaloneAssignmentById = async (
+export const deactivateStandaloneProgram = async (
   req: Request,
   res: Response
 ): Promise<void> => {
@@ -698,29 +722,35 @@ export const getStandaloneAssignmentById = async (
     throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
   }
 
-  const { assignedProgramId } = res.locals.validated
-    ?.params as GetStandaloneAssignmentByIdParams;
+  const { programId } = res.locals.validated
+    ?.params as ActivateStandaloneProgramParams;
 
-  const assignment = await prisma.assigned_program.findUnique({
-    where: { id: assignedProgramId },
-    include: {
-      assigned_program_routines: {
-        include: { assigned_program_routine_exercises: true },
-        orderBy: { created_at: 'asc' },
-      },
-    },
+  const existing = await prisma.standalone_program.findUnique({
+    where: { id: programId },
   });
-
-  if (!assignment || assignment.user_id !== appUser.supabase_auth_id) {
-    throw new NotFoundException('ASSIGNMENT_NOT_FOUND', 'Assignment not found');
+  if (
+    !existing ||
+    existing.user_id !== appUser.supabase_auth_id ||
+    existing.deleted_at !== null
+  ) {
+    throw new NotFoundException('PROGRAM_NOT_FOUND', 'Program not found');
   }
 
-  sendSuccess(res, { assignment });
+  await prisma.standalone_program.update({
+    where: { id: programId },
+    data: { is_active: false },
+  });
+
+  logger.info('Standalone program deactivated', {
+    programId,
+    user_id: appUser.supabase_auth_id,
+  });
+  sendSuccess(res, { deactivated: true, programId });
 };
 
-// ============== Today's Workout Controller ==============
+// ============== Bulk Builder ==============
 
-export const getStandaloneToday = async (
+export const buildStandaloneProgram = async (
   req: Request,
   res: Response
 ): Promise<void> => {
@@ -729,52 +759,371 @@ export const getStandaloneToday = async (
     throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
   }
 
-  // Latest standalone assignment for user (self-assigned)
-  const assignment = await prisma.assigned_program.findFirst({
-    where: {
-      user_id: appUser.supabase_auth_id,
-      coach_id: appUser.supabase_auth_id,
-      deleted_at: null,
-      is_active: true,
-    },
-    orderBy: { created_at: 'desc' },
-    include: {
-      assigned_program_routines: {
-        include: { assigned_program_routine_exercises: true },
+  const {
+    id: clientId,
+    name,
+    description,
+    routines,
+  } = res.locals.validated?.body as BuildStandaloneProgramInput;
+
+  if (clientId) {
+    const existing = await prisma.standalone_program.findUnique({
+      where: { id: clientId },
+    });
+    if (existing) {
+      const program = await prisma.standalone_program.findUnique({
+        where: { id: clientId },
+        include: {
+          routines: {
+            include: {
+              routine: true,
+              exercises: {
+                include: { exercise: true },
+                orderBy: { order_in_routine: 'asc' },
+              },
+            },
+            orderBy: { order_in_program: 'asc' },
+          },
+        },
+      });
+      sendSuccess(res, { program });
+      return;
+    }
+  }
+
+  const program = await prisma.$transaction(async (tx) => {
+    const p = await tx.standalone_program.create({
+      data: {
+        ...(clientId ? { id: clientId } : {}),
+        user_id: appUser.supabase_auth_id,
+        name,
+        description,
+        is_active: true,
       },
+    });
+
+    // Deactivate other active programs
+    await tx.standalone_program.updateMany({
+      where: {
+        user_id: appUser.supabase_auth_id,
+        is_active: true,
+        id: { not: p.id },
+      },
+      data: { is_active: false },
+    });
+
+    for (const r of routines) {
+      const pr = await tx.standalone_program_routine.create({
+        data: {
+          program_id: p.id,
+          routine_id: r.routine_id,
+          order_in_program: r.order_in_program,
+        },
+      });
+
+      for (const e of r.exercises) {
+        await tx.standalone_program_routine_exercise.create({
+          data: {
+            program_routine_id: pr.id,
+            exercise_id: e.exercise_id,
+            sets: e.sets,
+            reps_min: e.reps_min,
+            reps_max: e.reps_max,
+            rest_seconds: e.rest_seconds,
+            order_in_routine: e.order_in_routine,
+          },
+        });
+      }
+    }
+
+    return tx.standalone_program.findUnique({
+      where: { id: p.id },
+      include: {
+        routines: {
+          include: {
+            routine: true,
+            exercises: {
+              include: { exercise: true },
+              orderBy: { order_in_routine: 'asc' },
+            },
+          },
+          orderBy: { order_in_program: 'asc' },
+        },
+      },
+    });
+  });
+
+  logger.info('Standalone program built', {
+    programId: program?.id,
+    user_id: appUser.supabase_auth_id,
+  });
+  sendSuccess(res, { program }, 201);
+};
+
+// ============== Program Routine Controllers ==============
+
+export const addStandaloneProgramRoutine = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const appUser = req.appUser;
+  if (!appUser) {
+    throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
+  }
+
+  const { programId } = res.locals.validated
+    ?.params as AddStandaloneProgramRoutineParams;
+  const {
+    id: clientId,
+    routine_id,
+    order_in_program,
+  } = res.locals.validated?.body as AddStandaloneProgramRoutineInput;
+
+  if (clientId) {
+    const existing = await prisma.standalone_program_routine.findUnique({
+      where: { id: clientId },
+    });
+    if (existing) {
+      sendSuccess(res, { program_routine: existing });
+      return;
+    }
+  }
+
+  const program = await prisma.standalone_program.findUnique({
+    where: { id: programId },
+  });
+  if (
+    !program ||
+    program.user_id !== appUser.supabase_auth_id ||
+    program.deleted_at !== null
+  ) {
+    throw new NotFoundException('PROGRAM_NOT_FOUND', 'Program not found');
+  }
+
+  const programRoutine = await prisma.standalone_program_routine.create({
+    data: {
+      ...(clientId ? { id: clientId } : {}),
+      program_id: programId,
+      routine_id,
+      order_in_program,
     },
   });
 
-  if (!assignment) {
+  logger.info('Routine added to standalone program', {
+    programRoutineId: programRoutine.id,
+    programId,
+  });
+  sendSuccess(res, { program_routine: programRoutine }, 201);
+};
+
+export const updateStandaloneProgramRoutine = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const appUser = req.appUser;
+  if (!appUser) {
+    throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
+  }
+
+  const { programId, programRoutineId } = res.locals.validated
+    ?.params as UpdateStandaloneProgramRoutineParams;
+  const { order_in_program } = res.locals.validated
+    ?.body as UpdateStandaloneProgramRoutineInput;
+
+  const pr = await prisma.standalone_program_routine.findUnique({
+    where: { id: programRoutineId },
+    include: { program: true },
+  });
+  if (
+    !pr ||
+    pr.program_id !== programId ||
+    pr.program.user_id !== appUser.supabase_auth_id
+  ) {
     throw new NotFoundException(
-      'STANDALONE_NOT_FOUND',
-      'No program assignment found'
+      'PROGRAM_ROUTINE_NOT_FOUND',
+      'Program routine not found'
     );
   }
 
-  const TODAY = new Date()
-    .toLocaleDateString('en-US', { weekday: 'long' })
-    .toUpperCase(); // e.g. "MONDAY"
+  const updated = await prisma.standalone_program_routine.update({
+    where: { id: programRoutineId },
+    data: { order_in_program },
+  });
 
-  const todayRoutines = assignment.assigned_program_routines.filter((apr) =>
-    apr.days_of_week.includes(TODAY)
-  );
+  sendSuccess(res, { program_routine: updated });
+};
 
-  if (todayRoutines.length === 0) {
-    sendSuccess(res, {
-      today: null,
-      is_rest_day: true,
-      message: 'Rest day — no routines scheduled for today',
-      assignment_id: assignment.id,
-    });
-    return;
+export const deleteStandaloneProgramRoutine = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const appUser = req.appUser;
+  if (!appUser) {
+    throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
   }
 
-  sendSuccess(res, {
-    today: todayRoutines,
-    is_rest_day: false,
-    assignment_id: assignment.id,
+  const { programId, programRoutineId } = res.locals.validated
+    ?.params as DeleteStandaloneProgramRoutineParams;
+
+  const pr = await prisma.standalone_program_routine.findUnique({
+    where: { id: programRoutineId },
+    include: { program: true },
   });
+  if (
+    !pr ||
+    pr.program_id !== programId ||
+    pr.program.user_id !== appUser.supabase_auth_id
+  ) {
+    throw new NotFoundException(
+      'PROGRAM_ROUTINE_NOT_FOUND',
+      'Program routine not found'
+    );
+  }
+
+  await prisma.standalone_program_routine.update({
+    where: { id: programRoutineId },
+    data: { deleted_at: new Date() },
+  });
+
+  sendSuccess(res, { deleted: true });
+};
+
+// ============== Routine Exercise Controllers ==============
+
+export const addStandaloneRoutineExercise = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const appUser = req.appUser;
+  if (!appUser) {
+    throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
+  }
+
+  const { routineId } = res.locals.validated
+    ?.params as AddStandaloneRoutineExerciseParams;
+  const input = res.locals.validated?.body as AddStandaloneRoutineExerciseInput;
+
+  if (input.id) {
+    const existing =
+      await prisma.standalone_program_routine_exercise.findUnique({
+        where: { id: input.id },
+      });
+    if (existing) {
+      sendSuccess(res, { routine_exercise: existing });
+      return;
+    }
+  }
+
+  const programRoutine = await prisma.standalone_program_routine.findFirst({
+    where: { routine_id: routineId },
+    include: { program: true },
+  });
+  if (
+    !programRoutine ||
+    programRoutine.program.user_id !== appUser.supabase_auth_id
+  ) {
+    throw new NotFoundException(
+      'PROGRAM_ROUTINE_NOT_FOUND',
+      'Program routine not found'
+    );
+  }
+
+  const exercise = await prisma.standalone_program_routine_exercise.create({
+    data: {
+      ...(input.id ? { id: input.id } : {}),
+      program_routine_id: programRoutine.id,
+      exercise_id: input.exercise_id,
+      sets: input.sets,
+      reps_min: input.reps_min,
+      reps_max: input.reps_max,
+      rest_seconds: input.rest_seconds,
+      order_in_routine: input.order_in_routine,
+    },
+  });
+
+  sendSuccess(res, { routine_exercise: exercise }, 201);
+};
+
+export const updateStandaloneRoutineExercise = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const appUser = req.appUser;
+  if (!appUser) {
+    throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
+  }
+
+  const { routineId, routineExerciseId } = res.locals.validated
+    ?.params as UpdateStandaloneRoutineExerciseParams;
+  const updates = res.locals.validated
+    ?.body as UpdateStandaloneRoutineExerciseInput;
+
+  const re = await prisma.standalone_program_routine_exercise.findUnique({
+    where: { id: routineExerciseId },
+    include: { program_routine: { include: { program: true } } },
+  });
+  if (
+    !re ||
+    re.program_routine.routine_id !== routineId ||
+    re.program_routine.program.user_id !== appUser.supabase_auth_id
+  ) {
+    throw new NotFoundException(
+      'WORKOUT_EXERCISE_NOT_FOUND',
+      'Routine exercise not found'
+    );
+  }
+
+  const updated = await prisma.standalone_program_routine_exercise.update({
+    where: { id: routineExerciseId },
+    data: {
+      ...(updates.sets !== undefined && { sets: updates.sets }),
+      ...(updates.reps_min !== undefined && { reps_min: updates.reps_min }),
+      ...(updates.reps_max !== undefined && { reps_max: updates.reps_max }),
+      ...(updates.rest_seconds !== undefined && {
+        rest_seconds: updates.rest_seconds,
+      }),
+      ...(updates.order_in_routine !== undefined && {
+        order_in_routine: updates.order_in_routine,
+      }),
+    },
+  });
+
+  sendSuccess(res, { routine_exercise: updated });
+};
+
+export const deleteStandaloneRoutineExercise = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const appUser = req.appUser;
+  if (!appUser) {
+    throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
+  }
+
+  const { routineId, routineExerciseId } = res.locals.validated
+    ?.params as DeleteStandaloneRoutineExerciseParams;
+
+  const re = await prisma.standalone_program_routine_exercise.findUnique({
+    where: { id: routineExerciseId },
+    include: { program_routine: { include: { program: true } } },
+  });
+  if (
+    !re ||
+    re.program_routine.routine_id !== routineId ||
+    re.program_routine.program.user_id !== appUser.supabase_auth_id
+  ) {
+    throw new NotFoundException(
+      'WORKOUT_EXERCISE_NOT_FOUND',
+      'Routine exercise not found'
+    );
+  }
+
+  await prisma.standalone_program_routine_exercise.update({
+    where: { id: routineExerciseId },
+    data: { deleted_at: new Date() },
+  });
+
+  sendSuccess(res, { deleted: true });
 };
 
 // ============== Session Controllers ==============
@@ -788,30 +1137,38 @@ export const startStandaloneSession = async (
     throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
   }
 
-  const { assigned_program_routine_id } = res.locals.validated
+  const { id: clientId, program_routine_id } = res.locals.validated
     ?.body as StartStandaloneSessionInput;
 
-  // Validate ownership via relational path
-  const apr = await prisma.assigned_program_routine.findUnique({
-    where: { id: assigned_program_routine_id },
-    include: { assigned_program: true },
-  });
+  if (clientId) {
+    const existing = await prisma.standalone_session.findUnique({
+      where: { id: clientId },
+    });
+    if (existing) {
+      sendSuccess(res, {
+        session: existing,
+        alreadyCompleted: existing.completed_at != null,
+      });
+      return;
+    }
+  }
 
-  if (!apr || apr.assigned_program.user_id !== appUser.supabase_auth_id) {
+  const pr = await prisma.standalone_program_routine.findUnique({
+    where: { id: program_routine_id },
+    include: { program: true },
+  });
+  if (!pr || pr.program.user_id !== appUser.supabase_auth_id) {
     throw new NotFoundException(
       'STANDALONE_NOT_FOUND',
-      'Assigned routine not found'
+      'Program routine not found'
     );
   }
 
-  // Check for already-active session
-  const activeSession = await prisma.workout_session.findFirst({
+  const activeSession = await prisma.standalone_session.findFirst({
     where: {
+      user_id: appUser.supabase_auth_id,
       completed_at: null,
       deleted_at: null,
-      assigned_program_routine: {
-        assigned_program: { user_id: appUser.supabase_auth_id },
-      },
     },
   });
 
@@ -822,9 +1179,11 @@ export const startStandaloneSession = async (
     );
   }
 
-  const session = await prisma.workout_session.create({
+  const session = await prisma.standalone_session.create({
     data: {
-      assigned_program_routine_id,
+      ...(clientId ? { id: clientId } : {}),
+      user_id: appUser.supabase_auth_id,
+      program_routine_id,
       started_at: new Date(),
     },
   });
@@ -845,13 +1204,24 @@ export const getStandaloneActiveSession = async (
     throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
   }
 
-  const session = await prisma.workout_session.findFirst({
+  const session = await prisma.standalone_session.findFirst({
     where: {
+      user_id: appUser.supabase_auth_id,
       completed_at: null,
       deleted_at: null,
-      assigned_program_routine: {
-        assigned_program: { user_id: appUser.supabase_auth_id },
+    },
+    include: {
+      program_routine: {
+        include: {
+          routine: true,
+          exercises: {
+            where: { deleted_at: null },
+            include: { exercise: true },
+            orderBy: { order_in_routine: 'asc' },
+          },
+        },
       },
+      performed_sets: { orderBy: { set_number: 'asc' } },
     },
   });
 
@@ -872,12 +1242,11 @@ export const completeStandaloneSession = async (
   const { feedback } = res.locals.validated
     ?.body as CompleteStandaloneSessionInput;
 
-  const session = await prisma.workout_session.findFirst({
+  const session = await prisma.standalone_session.findFirst({
     where: {
       id: sessionId,
-      assigned_program_routine: {
-        assigned_program: { user_id: appUser.supabase_auth_id },
-      },
+      user_id: appUser.supabase_auth_id,
+      deleted_at: null,
     },
   });
 
@@ -889,49 +1258,65 @@ export const completeStandaloneSession = async (
   }
 
   if (session.completed_at) {
-    throw new BadRequestException(
-      'STANDALONE_ALREADY_COMPLETED',
-      'Workout session is already completed'
-    );
+    sendSuccess(res, {
+      session,
+      alreadyCompleted: true,
+      message: 'Session was already completed',
+    });
+    return;
   }
 
-  const updatedSession = await prisma.workout_session.update({
+  const now = new Date();
+  const updatedSession = await prisma.standalone_session.update({
     where: { id: sessionId },
-    data: { completed_at: new Date(), feedback },
+    data: { completed_at: now, feedback },
   });
+
+  // Update standalone streak
+  const user = await prisma.user.findUnique({
+    where: { supabase_auth_id: appUser.supabase_auth_id },
+    select: {
+      standalone_streak_days: true,
+      standalone_last_workout_date: true,
+    },
+  });
+
+  if (user) {
+    const lastDate = user.standalone_last_workout_date;
+    let newStreak = 1;
+
+    if (lastDate) {
+      const dayMs = 24 * 60 * 60 * 1000;
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const last = new Date(
+        lastDate.getFullYear(),
+        lastDate.getMonth(),
+        lastDate.getDate()
+      );
+      const diffDays = Math.round((today.getTime() - last.getTime()) / dayMs);
+
+      if (diffDays === 1) {
+        newStreak = user.standalone_streak_days + 1;
+      } else if (diffDays === 0) {
+        newStreak = user.standalone_streak_days;
+      }
+    }
+
+    await prisma.user.update({
+      where: { supabase_auth_id: appUser.supabase_auth_id },
+      data: {
+        standalone_streak_days: newStreak,
+        standalone_last_workout_date: now,
+      },
+    });
+  }
 
   logger.info('Standalone session completed', {
     sessionId,
     user_id: appUser.supabase_auth_id,
   });
 
-  let coinReward = null;
-  try {
-    coinReward = await calculateSessionCoins(
-      appUser.supabase_auth_id,
-      sessionId,
-      prisma
-    );
-  } catch (coinError) {
-    logger.error('Failed to award coins for standalone session', {
-      sessionId,
-      user_id: appUser.supabase_auth_id,
-      error: coinError,
-    });
-  }
-
-  if (coinReward) {
-    await recordMissionProgressAfterSession(
-      appUser.supabase_auth_id,
-      coinReward.total,
-      prisma
-    );
-  }
-
-  sendSuccess(res, {
-    session: updatedSession,
-    ...(coinReward ? { coinReward } : {}),
-  });
+  sendSuccess(res, { session: updatedSession });
 };
 
 export const getStandaloneSessions = async (
@@ -943,35 +1328,42 @@ export const getStandaloneSessions = async (
     throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
   }
 
-  const { limit, offset, startDate, endDate } = res.locals.validated
+  const { limit, offset } = res.locals.validated
     ?.query as GetStandaloneSessionsQuery;
 
-  const where: Record<string, unknown> = {
+  const where = {
+    user_id: appUser.supabase_auth_id,
     completed_at: { not: null },
-    assigned_program_routine: {
-      assigned_program: { user_id: appUser.supabase_auth_id },
-    },
+    deleted_at: null,
   };
 
-  if (startDate || endDate) {
-    where.started_at = {
-      ...(startDate && { gte: new Date(startDate) }),
-      ...(endDate && { lte: new Date(endDate) }),
-    };
-  }
-
   const [sessions, total] = await Promise.all([
-    prisma.workout_session.findMany({
+    prisma.standalone_session.findMany({
       where,
+      include: {
+        program_routine: {
+          include: {
+            routine: { select: { name: true } },
+          },
+        },
+        _count: { select: { performed_sets: true } },
+      },
       orderBy: { started_at: 'desc' },
       take: limit,
       skip: offset,
     }),
-    prisma.workout_session.count({ where }),
+    prisma.standalone_session.count({ where }),
   ]);
 
   sendSuccess(res, {
-    sessions,
+    sessions: sessions.map((s) => ({
+      id: s.id,
+      routine_name: s.program_routine.routine.name,
+      started_at: s.started_at,
+      completed_at: s.completed_at,
+      feedback: s.feedback,
+      set_count: s._count.performed_sets,
+    })),
     pagination: {
       total,
       limit,
@@ -993,11 +1385,25 @@ export const getStandaloneSessionById = async (
   const { sessionId } = res.locals.validated
     ?.params as GetStandaloneSessionByIdParams;
 
-  const session = await prisma.workout_session.findFirst({
+  const session = await prisma.standalone_session.findFirst({
     where: {
       id: sessionId,
-      assigned_program_routine: {
-        assigned_program: { user_id: appUser.supabase_auth_id },
+      user_id: appUser.supabase_auth_id,
+      deleted_at: null,
+    },
+    include: {
+      program_routine: {
+        include: {
+          routine: true,
+          exercises: {
+            where: { deleted_at: null },
+            include: { exercise: true },
+            orderBy: { order_in_routine: 'asc' },
+          },
+        },
+      },
+      performed_sets: {
+        orderBy: [{ routine_exercise_id: 'asc' }, { set_number: 'asc' }],
       },
     },
   });
@@ -1009,7 +1415,9 @@ export const getStandaloneSessionById = async (
   sendSuccess(res, { session });
 };
 
-export const getStandaloneWeeklyStats = async (
+// ============== Performed Set Controllers ==============
+
+export const logStandaloneSet = async (
   req: Request,
   res: Response
 ): Promise<void> => {
@@ -1018,20 +1426,162 @@ export const getStandaloneWeeklyStats = async (
     throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
   }
 
-  // Start of current week (Monday)
+  const { sessionId } = res.locals.validated?.params as LogStandaloneSetParams;
+  const {
+    id: clientId,
+    routine_exercise_id,
+    set_number,
+    reps,
+    weight,
+  } = res.locals.validated?.body as LogStandaloneSetInput;
+
+  const session = await prisma.standalone_session.findFirst({
+    where: {
+      id: sessionId,
+      user_id: appUser.supabase_auth_id,
+      deleted_at: null,
+    },
+  });
+  if (!session) {
+    throw new NotFoundException('SESSION_NOT_FOUND', 'Session not found');
+  }
+
+  if (session.completed_at) {
+    throw new BadRequestException(
+      'STANDALONE_ALREADY_COMPLETED',
+      'Session is already completed'
+    );
+  }
+
+  const performedSet = await prisma.standalone_performed_set.upsert({
+    where: {
+      session_id_routine_exercise_id_set_number: {
+        session_id: sessionId,
+        routine_exercise_id,
+        set_number,
+      },
+    },
+    create: {
+      ...(clientId ? { id: clientId } : {}),
+      session_id: sessionId,
+      routine_exercise_id,
+      set_number,
+      reps,
+      weight,
+    },
+    update: {
+      reps,
+      weight,
+    },
+  });
+
+  sendSuccess(res, { performed_set: performedSet }, 201);
+};
+
+export const updateStandaloneSet = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const appUser = req.appUser;
+  if (!appUser) {
+    throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
+  }
+
+  const { sessionId, setId } = res.locals.validated
+    ?.params as UpdateStandaloneSetParams;
+  const { reps, weight } = res.locals.validated
+    ?.body as UpdateStandaloneSetInput;
+
+  const existing = await prisma.standalone_performed_set.findUnique({
+    where: { id: setId },
+    include: { session: true },
+  });
+
+  if (
+    !existing ||
+    existing.session_id !== sessionId ||
+    existing.session.user_id !== appUser.supabase_auth_id
+  ) {
+    throw new NotFoundException(
+      'WORKOUT_SET_NOT_FOUND',
+      'Performed set not found'
+    );
+  }
+
+  const updated = await prisma.standalone_performed_set.update({
+    where: { id: setId },
+    data: {
+      ...(reps !== undefined && { reps }),
+      ...(weight !== undefined && { weight }),
+    },
+  });
+
+  sendSuccess(res, { performed_set: updated });
+};
+
+export const deleteStandaloneSet = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const appUser = req.appUser;
+  if (!appUser) {
+    throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
+  }
+
+  const { sessionId, setId } = res.locals.validated
+    ?.params as DeleteStandaloneSetParams;
+
+  const existing = await prisma.standalone_performed_set.findUnique({
+    where: { id: setId },
+    include: { session: true },
+  });
+
+  if (
+    !existing ||
+    existing.session_id !== sessionId ||
+    existing.session.user_id !== appUser.supabase_auth_id
+  ) {
+    throw new NotFoundException(
+      'WORKOUT_SET_NOT_FOUND',
+      'Performed set not found'
+    );
+  }
+
+  await prisma.standalone_performed_set.delete({ where: { id: setId } });
+  sendSuccess(res, { deleted: true });
+};
+
+// ============== Stats Controllers ==============
+
+export const getStandaloneStats = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const appUser = req.appUser;
+  if (!appUser) {
+    throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
+  }
+
   const now = new Date();
-  const dayOfWeek = now.getDay(); // 0=Sun
+  const dayOfWeek = now.getDay();
   const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
   const weekStart = new Date(now);
   weekStart.setDate(now.getDate() - daysFromMonday);
   weekStart.setHours(0, 0, 0, 0);
 
-  const sessions = await prisma.workout_session.findMany({
+  const user = await prisma.user.findUnique({
+    where: { supabase_auth_id: appUser.supabase_auth_id },
+    select: {
+      standalone_streak_days: true,
+      standalone_last_workout_date: true,
+    },
+  });
+
+  const sessions = await prisma.standalone_session.findMany({
     where: {
+      user_id: appUser.supabase_auth_id,
       completed_at: { not: null, gte: weekStart },
-      assigned_program_routine: {
-        assigned_program: { user_id: appUser.supabase_auth_id },
-      },
+      deleted_at: null,
     },
     select: { id: true, started_at: true, completed_at: true },
   });
@@ -1043,9 +1593,61 @@ export const getStandaloneWeeklyStats = async (
     return sum;
   }, 0);
 
+  const allTimeCount = await prisma.standalone_session.count({
+    where: {
+      user_id: appUser.supabase_auth_id,
+      completed_at: { not: null },
+      deleted_at: null,
+    },
+  });
+
+  const totalSets = await prisma.standalone_performed_set.count({
+    where: {
+      session: {
+        user_id: appUser.supabase_auth_id,
+        completed_at: { not: null },
+        deleted_at: null,
+      },
+    },
+  });
+
   sendSuccess(res, {
-    week_start: weekStart,
-    sessions_completed: sessions.length,
+    workouts_this_week: sessions.length,
+    streak_days: user?.standalone_streak_days ?? 0,
     total_duration_minutes: Math.round(totalDurationMs / 60000),
+    total_workouts: allTimeCount,
+    total_sets: totalSets,
+    week_start: weekStart,
+  });
+};
+
+export const getStandaloneExerciseStat = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const appUser = req.appUser;
+  if (!appUser) {
+    throw new UnauthorizedException('AUTH_APP_USER_NOT_FOUND', 'User required');
+  }
+
+  const { exerciseId } = res.locals.validated
+    ?.params as GetStandaloneExerciseStatParams;
+
+  const lastSet = await prisma.standalone_performed_set.findFirst({
+    where: {
+      exercise: { exercise_id: exerciseId },
+      session: {
+        user_id: appUser.supabase_auth_id,
+        completed_at: { not: null },
+        deleted_at: null,
+      },
+    },
+    orderBy: { created_at: 'desc' },
+    select: { reps: true, weight: true, set_number: true, created_at: true },
+  });
+
+  sendSuccess(res, {
+    exercise_id: exerciseId,
+    last_set: lastSet ?? null,
   });
 };

@@ -25,6 +25,11 @@ import missionsRoutes from './routes/missions.routes';
 import formLibraryRoutes from './routes/form-library.routes';
 import exerciseRatingRoutes from './routes/exercise-rating.routes';
 import notificationRoutes from './routes/notification.routes';
+import adminRoutes from './routes/admin.routes';
+import adminUploadRoutes from './routes/admin-upload.routes';
+import adminPartnerRoutes from './routes/admin-partners.routes';
+import adminCosmeticRoutes from './routes/admin-cosmetics.routes';
+import adminMissionRoutes from './routes/admin-missions.routes';
 
 dotenv.config();
 
@@ -57,6 +62,11 @@ const startServer = () => {
   app.use('/api/subscriptions', subscriptionRoutes);
   app.use('/api/webhooks', webhookRoutes);
   app.use('/api/coach', coachRoutes);
+  app.use('/api/admin', adminRoutes);
+  app.use('/api/admin/upload', adminUploadRoutes);
+  app.use('/api/admin/partners', adminPartnerRoutes);
+  app.use('/api/admin/cosmetics', adminCosmeticRoutes);
+  app.use('/api/admin/missions', adminMissionRoutes);
   app.use('/api/user', userRoutes);
   app.use('/api/profile', profileRoutes);
   app.use('/api/pose', poseRoutes);

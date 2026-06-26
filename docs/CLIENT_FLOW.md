@@ -59,7 +59,7 @@ Client                          Server                          Coach
 | List subscribed coaches | `GET`    | `/api/user/coaches/subscribed` | `getSubscribedCoaches` | Yes                         |
 | Unsubscribe             | `DELETE` | `/api/user/coaches/:coachId`   | `unsubscribeFromCoach` | Yes                         |
 
-**Data model**: `SubscribedCoach` junction (`userId`, `coachId`) with `startedAt`/`endedAt` soft-delete. Coach capacity enforced via `CoachSettings.maxClients` and `acceptingClients`.
+**Data model**: `SubscribedCoach` junction (`userId`, `coachId`) with `startedAt`/`endedAt` soft-delete. Coach capacity enforced via `coach.max_clients`, `coach.accepting_clients`, and `coach.is_discoverable` (exposed via `GET/PATCH /api/coach/settings`).
 
 **Prerequisite**: Client must have an active platform subscription (`requireSubscription` middleware).
 

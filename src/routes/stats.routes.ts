@@ -2,8 +2,14 @@ import { Router } from 'express';
 import { validateRequest } from '../middleware/validate.middleware';
 import { authenticateSupabaseUser } from '../middleware/auth.middleware';
 import { attachSubscription } from '../middleware/subscription.middleware';
-import { WeeklyStatsQuerySchema } from '../schemas/stats.schema';
-import { getWeeklyStats } from '../controllers/stats.controller';
+import {
+  WeeklyStatsQuerySchema,
+  MonthlyInsightQuerySchema,
+} from '../schemas/stats.schema';
+import {
+  getWeeklyStats,
+  getMonthlyInsight,
+} from '../controllers/stats.controller';
 
 const router = Router();
 
@@ -18,6 +24,18 @@ router.get(
   attachSubscription,
   validateRequest(WeeklyStatsQuerySchema),
   getWeeklyStats
+);
+
+/**
+ * @route   GET /stats/monthly-insight
+ * @desc    Get monthly training insight: avg volume/session, trend %, sparkline, exercise weight gains
+ * @access  Protected
+ */
+router.get(
+  '/monthly-insight',
+  authenticateSupabaseUser,
+  validateRequest(MonthlyInsightQuerySchema),
+  getMonthlyInsight
 );
 
 export default router;

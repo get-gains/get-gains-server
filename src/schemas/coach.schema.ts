@@ -7,9 +7,24 @@ import { z } from 'zod';
 export const CreateCoachProfileSchema = z.object({
   body: z
     .object({
+      invitation_code: z.string().length(6).optional(),
       certifications: z.array(z.string()).optional(),
       specialties: z.array(z.string()).optional(),
-      social_links: z.array(z.string().url()).optional(),
+      social_links: z
+        .array(
+          z.preprocess((val) => {
+            if (
+              typeof val === 'string' &&
+              !val.startsWith('http://') &&
+              !val.startsWith('https://')
+            ) {
+              return `https://${val}`;
+            }
+            return val;
+          }, z.string().url('Social link must be a valid URL'))
+        )
+        .optional(),
+      years_experience: z.number().int().min(0).optional(),
       max_clients: z.number().int().min(1).optional(),
       accepting_clients: z.boolean().optional(),
       is_discoverable: z.boolean().optional(),
@@ -20,6 +35,43 @@ export const CreateCoachProfileSchema = z.object({
 
 export type CreateCoachProfileInput = z.infer<
   typeof CreateCoachProfileSchema
+>['body'];
+
+/**
+ * Schema for verifying a coach invitation code in the mobile app.
+ */
+export const VerifyCoachInviteSchema = z.object({
+  body: z.object({
+    code: z.string().length(6, 'Code must be 6 characters'),
+  }),
+});
+
+export type VerifyCoachInviteInput = z.infer<
+  typeof VerifyCoachInviteSchema
+>['body'];
+
+/**
+ * Schema for updating coach settings (capacity, intake, discoverability).
+ * CamelCase body matches the Flutter client contract.
+ */
+export const UpdateCoachSettingsSchema = z.object({
+  body: z
+    .object({
+      maxClients: z.number().int().min(1).max(1000).optional(),
+      acceptingClients: z.boolean().optional(),
+      isDiscoverable: z.boolean().optional(),
+    })
+    .refine(
+      (data) =>
+        data.maxClients !== undefined ||
+        data.acceptingClients !== undefined ||
+        data.isDiscoverable !== undefined,
+      { message: 'At least one setting field must be provided' }
+    ),
+});
+
+export type UpdateCoachSettingsInput = z.infer<
+  typeof UpdateCoachSettingsSchema
 >['body'];
 
 /**
@@ -65,7 +117,7 @@ export type GetClientProgramsParams = z.infer<
  */
 export const UpdateAssignmentSchema = z.object({
   params: z.object({
-    assignmentId: z.string().cuid('Invalid assignment ID'),
+    assignmentId: z.string().cuid2('Invalid assignment ID'),
   }),
   body: z.object({
     startDate: z.string().datetime().optional(),
@@ -86,7 +138,7 @@ export type UpdateAssignmentInput = z.infer<
  */
 export const DeleteAssignmentSchema = z.object({
   params: z.object({
-    assignmentId: z.string().cuid('Invalid assignment ID'),
+    assignmentId: z.string().cuid2('Invalid assignment ID'),
   }),
 });
 
@@ -128,7 +180,7 @@ export type GetClientSessionsQuery = z.infer<
 export const GetClientSessionDetailSchema = z.object({
   params: z.object({
     userId: z.string().min(1, 'Invalid user ID'),
-    sessionId: z.string().cuid('Invalid session ID'),
+    sessionId: z.string().cuid2('Invalid session ID'),
   }),
 });
 
@@ -161,7 +213,7 @@ export type GetClientWeeklyStatsQuery = z.infer<
 export const GetClientExerciseHistorySchema = z.object({
   params: z.object({
     userId: z.string().min(1, 'Invalid user ID'),
-    exerciseId: z.string().cuid('Invalid exercise ID'),
+    exerciseId: z.string().cuid2('Invalid exercise ID'),
   }),
   query: z.object({
     limit: z.coerce.number().int().min(1).max(100).optional().default(20),
@@ -173,4 +225,25 @@ export type GetClientExerciseHistoryParams = z.infer<
 >['params'];
 export type GetClientExerciseHistoryQuery = z.infer<
   typeof GetClientExerciseHistorySchema
+>['query'];
+
+/**
+ * Get paginated form comparison results for a client.
+ */
+export const GetClientFormResultsSchema = z.object({
+  params: z.object({
+    userId: z.string().min(1, 'Invalid user ID'),
+  }),
+  query: z.object({
+    limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+    offset: z.coerce.number().int().min(0).optional().default(0),
+    exerciseId: z.string().optional(),
+  }),
+});
+
+export type GetClientFormResultsParams = z.infer<
+  typeof GetClientFormResultsSchema
+>['params'];
+export type GetClientFormResultsQuery = z.infer<
+  typeof GetClientFormResultsSchema
 >['query'];

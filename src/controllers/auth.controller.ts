@@ -11,6 +11,8 @@ import {
   ResetPasswordWithOtpInput,
   SendOtpInput,
   VerifyOtpInput,
+  VerifyEmailCodeInput,
+  SendEmailVerificationCodeInput,
 } from '../schemas/auth.schema';
 import supabase from '../config/supabase';
 import { createUser, getUserBySupabaseId } from './user.controller';
@@ -28,6 +30,10 @@ import {
   verifyOtp,
   consumeResetToken,
 } from '../services/otp.service';
+import {
+  generateVerificationCode,
+  verifyEmailCode,
+} from '../services/email_verification.service';
 
 const resolveIsCoach = async (
   supabaseId: string,
@@ -68,13 +74,11 @@ export const registerWithEmailAndPassword = async (
     );
   }
 
-  // Create user in supabase with email verification redirect
-  const { data, error: supabaseError } = await supabase.auth.signUp({
+  // Create user in Supabase via admin API without sending confirmation email
+  const { data, error: supabaseError } = await supabase.auth.admin.createUser({
     email: email.toLowerCase(),
     password,
-    options: {
-      emailRedirectTo: process.env.EMAIL_VERIFICATION_REDIRECT_URL,
-    },
+    email_confirm: false,
   });
 
   if (supabaseError || !data.user) {
@@ -104,7 +108,20 @@ export const registerWithEmailAndPassword = async (
     supabase_auth_id: supabaseId,
   });
 
-  // Always return user data without tokens — email verification is required
+  // Generate and send email verification code
+  try {
+    await generateVerificationCode(email);
+  } catch (emailErr) {
+    logger.error(
+      'Failed to send verification email — user created but email not sent',
+      {
+        email,
+        error: emailErr,
+      }
+    );
+  }
+
+  // Return user data without tokens — email verification is required
   sendSuccess(
     res,
     {
@@ -115,7 +132,7 @@ export const registerWithEmailAndPassword = async (
         nickname: user.nickname,
       },
       message:
-        'Registration successful. Please check your email to verify your account.',
+        'Registration successful. Please check your email for the verification code.',
     },
     201
   );
@@ -226,6 +243,34 @@ export const loginWithEmailAndPassword = async (
     throw new NotFoundException('AUTH_APP_USER_NOT_FOUND', 'User not found');
   }
 
+  // Gate: prevent login if email is not verified in Supabase
+  if (!data.user.email_confirmed_at) {
+    const latestCode = await prisma.email_verification_code.findFirst({
+      where: {
+        email: email.toLowerCase(),
+        verified: false,
+        expires_at: { gt: new Date() },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+
+    throw new BadRequestException(
+      'AUTH_EMAIL_NOT_VERIFIED',
+      'Please verify your email before signing in.',
+      latestCode
+        ? {
+            codeSentAt: latestCode.created_at.toISOString(),
+            codeExpiresAt: latestCode.expires_at.toISOString(),
+            canResend: false,
+          }
+        : {
+            codeSentAt: null,
+            codeExpiresAt: null,
+            canResend: true,
+          }
+    );
+  }
+
   const isCoach = await resolveIsCoach(user.supabase_auth_id, user.is_coach);
 
   const accessToken = data.session?.access_token;
@@ -313,6 +358,33 @@ export const signInWithGoogleWithUserData = async (
       supabaseId: supabaseData.user.id,
     });
     throw new NotFoundException('AUTH_APP_USER_NOT_FOUND', 'User not found');
+  }
+
+  if (!supabaseData.user.email_confirmed_at) {
+    const latestCode = await prisma.email_verification_code.findFirst({
+      where: {
+        email: payload.email.toLowerCase(),
+        verified: false,
+        expires_at: { gt: new Date() },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+
+    throw new BadRequestException(
+      'AUTH_EMAIL_NOT_VERIFIED',
+      'Please verify your email before signing in.',
+      latestCode
+        ? {
+            codeSentAt: latestCode.created_at.toISOString(),
+            codeExpiresAt: latestCode.expires_at.toISOString(),
+            canResend: false,
+          }
+        : {
+            codeSentAt: null,
+            codeExpiresAt: null,
+            canResend: true,
+          }
+    );
   }
 
   const isCoach = await resolveIsCoach(
@@ -489,6 +561,15 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
     appUser.is_coach
   );
 
+  let coachDeactivated = false;
+  if (isCoach) {
+    const coachProfile = await prisma.coach.findUnique({
+      where: { user_id: appUser.supabase_auth_id },
+      select: { deactivated_at: true },
+    });
+    coachDeactivated = coachProfile?.deactivated_at != null;
+  }
+
   sendSuccess(res, {
     user: {
       supabase_auth_id: appUser.supabase_auth_id,
@@ -497,6 +578,7 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
       nickname: appUser.nickname,
     },
     isCoach,
+    coachDeactivated,
     tier: appUser.active_subscription_tier,
   });
 };
@@ -636,4 +718,93 @@ export const checkEmailVerified = async (
   const verified = !!supabaseUser.email_confirmed_at;
 
   sendSuccess(res, { verified });
+};
+
+/**
+ * Send (or resend) an email verification code.
+ *
+ * POST /api/auth/send-verification-code
+ */
+export const sendEmailVerificationCodeHandler = async (
+  _req: Request,
+  res: Response
+): Promise<void> => {
+  const { email } = res.locals.validated
+    ?.body as SendEmailVerificationCodeInput;
+
+  logger.debug('Email verification code request', { email });
+
+  const result = await generateVerificationCode(email);
+
+  if (!result.success) {
+    throw new BadRequestException(
+      'AUTH_VERIFICATION_COOLDOWN',
+      `Please wait ${result.cooldownRemaining} seconds before requesting a new code.`
+    );
+  }
+
+  sendSuccess(res, { message: 'Verification code sent' }, 200);
+};
+
+/**
+ * Verify an email verification code and confirm the user's email in Supabase.
+ *
+ * POST /api/auth/verify-email-code
+ */
+export const verifyEmailCodeHandler = async (
+  _req: Request,
+  res: Response
+): Promise<void> => {
+  const { email, code } = res.locals.validated?.body as VerifyEmailCodeInput;
+
+  logger.debug('Verifying email code', { email });
+
+  // Validate the verification code
+  await verifyEmailCode(email, code);
+
+  // Look up the Supabase user
+  const { data, error: listError } = await supabase.auth.admin.listUsers();
+
+  if (listError) {
+    logger.error('Failed to look up user for email verification', {
+      email,
+      error: listError,
+    });
+    throw new UnexpectedException(
+      'UNEXPECTED_EXCEPTION',
+      'Failed to verify email. Please try again.'
+    );
+  }
+
+  const supabaseUser = data.users.find(
+    (u) => u.email?.toLowerCase() === email.toLowerCase()
+  );
+
+  if (!supabaseUser || !supabaseUser.id) {
+    throw new NotFoundException(
+      'AUTH_USER_NOT_FOUND',
+      'No account found with this email.'
+    );
+  }
+
+  // Confirm the email via Supabase admin API
+  const { error } = await supabase.auth.admin.updateUserById(supabaseUser.id, {
+    email_confirm: true,
+  });
+
+  if (error) {
+    logger.error('Failed to confirm email in Supabase', {
+      error,
+      supabaseUserId: supabaseUser.id,
+    });
+    throw mapSupabaseError(
+      error,
+      'email verification',
+      'Failed to verify email. Please try again.'
+    );
+  }
+
+  logger.info('Email verified successfully', { email });
+
+  sendSuccess(res, { message: 'Email verified successfully' }, 200);
 };

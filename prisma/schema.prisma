@@ -82,6 +82,19 @@ enum RcEventStatus {
   FAILED
 }
 
+enum RewardType {
+  COINS
+  RAFFLE
+  COUPON
+}
+
+enum CosmeticCategory {
+  HEADWEAR
+  TOP
+  BOTTOM
+  ACCESSORY
+}
+
 enum DayOfWeek {
   SUNDAY
   MONDAY
@@ -97,9 +110,31 @@ enum NotificationType {
   coach_subscribed
   roster_removed
   subscription_expiring
+  mission_raffle_won
+  mission_coupon_earned
+}
+
+enum CoachInviteStatus {
+  PENDING
+  REDEEMED
+  REVOKED
 }
 
 // ============== Auth / OTP ==============
+
+model email_verification_code {
+  id             String     @id @default(cuid())
+  email          String
+  code_hash      String
+  attempts       Int        @default(0)
+  max_attempts   Int        @default(3)
+  verified       Boolean    @default(false)
+  expires_at     DateTime   @db.Timestamptz
+  cooldown_until DateTime?  @db.Timestamptz
+  created_at     DateTime   @default(now()) @db.Timestamptz
+
+  @@index([email, verified, expires_at])
+}
 
 model password_reset_otp {
   id             String     @id @default(cuid())
@@ -125,6 +160,7 @@ model user {
   full_name           String
   nickname            String
   is_coach            Boolean     @default(false)
+  is_admin            Boolean     @default(false)
   bio                 String?     @db.Text
   avatar_key          String?
   height_cm           Int?
@@ -143,8 +179,15 @@ model user {
   // Denormalized for O(1) tier gate checks. Updated by RC webhook handler.
   active_subscription_tier SubscriptionTier @default(FREE)
 
+  // Standalone (free-tier) workout stats — separate from coach-tier counters.
+  standalone_streak_days       Int       @default(0)
+  standalone_last_workout_date DateTime? @db.Timestamptz
+
   coach                  coach?
   subscribed_coaches     subscribed_coach[]
+  created_invitations    coach_invitation[]    @relation("AdminCreatedInvitations")
+  redeemed_invitations   coach_invitation[]    @relation("CoachRedeemedInvitations")
+  revoked_invitations    coach_invitation[]    @relation("AdminRevokedInvitations")
   routines               routine[]
   exercises              exercise[]
   coached_programs       assigned_program[]      @relation("CoachPrograms")
@@ -152,10 +195,14 @@ model user {
   coin_transactions      coin_transactions[]
   user_cosmetics         user_cosmetic[]
   user_missions          user_mission[]
+  user_coupons           user_coupon[]
+  raffle_winners         raffle_winner[]
   user_subscription      user_subscription?
   rc_subscription_events rc_subscription_event[]
   exercise_ratings       exercise_rating[]
   notifications          notification[]
+  standalone_programs    standalone_program[]
+  standalone_sessions    standalone_session[]
 }
 
 model coach {
@@ -166,6 +213,8 @@ model coach {
   max_clients       Int      @default(40)
   accepting_clients Boolean  @default(true)
   is_discoverable   Boolean  @default(true)
+  years_experience  Int?
+  deactivated_at    DateTime? @db.Timestamptz
   created_at        DateTime @default(now()) @db.Timestamptz
   updated_at        DateTime @updatedAt @db.Timestamptz
 
@@ -187,6 +236,29 @@ model subscribed_coach {
 
   @@index([user_id])
   @@index([coach_id])
+}
+
+model coach_invitation {
+  id           String            @id @default(cuid())
+  email        String
+  code_hash    String
+  status       CoachInviteStatus @default(PENDING)
+  attempts     Int               @default(0)
+  max_attempts Int               @default(3)
+  expires_at   DateTime          @db.Timestamptz
+  created_by   String
+  redeemed_by  String?
+  redeemed_at  DateTime?         @db.Timestamptz
+  revoked_by   String?
+  revoked_at   DateTime?         @db.Timestamptz
+  created_at   DateTime          @default(now()) @db.Timestamptz
+  updated_at   DateTime          @updatedAt @db.Timestamptz
+
+  creator user? @relation("AdminCreatedInvitations", fields: [created_by], references: [supabase_auth_id], onDelete: Cascade)
+  redeemer user? @relation("CoachRedeemedInvitations", fields: [redeemed_by], references: [supabase_auth_id], onDelete: SetNull)
+  revoker user? @relation("AdminRevokedInvitations", fields: [revoked_by], references: [supabase_auth_id], onDelete: SetNull)
+
+  @@index([email, status, expires_at])
 }
 
 // ============== Notifications ==============
@@ -223,6 +295,7 @@ model routine {
 
   user                      user                       @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
   assigned_program_routines assigned_program_routine[]
+  standalone_routines       standalone_program_routine[]
 
   @@index([user_id])
 }
@@ -243,6 +316,7 @@ model exercise {
   user                               user                                @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
   exercise_forms                     exercise_form[]
   assigned_program_routine_exercises assigned_program_routine_exercise[]
+  standalone_exercises               standalone_program_routine_exercise[]
   exercise_ratings                   exercise_rating[]
 
   @@index([user_id])
@@ -388,21 +462,112 @@ model performed_set {
   @@index([completed_at])
 }
 
+// ============== Standalone Workout (Free Tier) ==============
+
+model standalone_program {
+  id          String    @id @default(cuid())
+  user_id     String
+  name        String
+  description String    @default("") @db.Text
+  is_active   Boolean   @default(false)
+  deleted_at  DateTime? @db.Timestamptz
+  created_at  DateTime  @default(now()) @db.Timestamptz
+  updated_at  DateTime  @updatedAt @db.Timestamptz
+
+  user     user                          @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
+  routines standalone_program_routine[]
+
+  @@index([user_id, deleted_at])
+}
+
+model standalone_program_routine {
+  id               String    @id @default(cuid())
+  program_id       String
+  routine_id       String
+  order_in_program Int       @default(1)
+  deleted_at       DateTime? @db.Timestamptz
+  created_at       DateTime  @default(now()) @db.Timestamptz
+
+  program   standalone_program                 @relation(fields: [program_id], references: [id], onDelete: Cascade)
+  routine   routine                            @relation(fields: [routine_id], references: [id], onDelete: Restrict)
+  exercises standalone_program_routine_exercise[]
+  sessions  standalone_session[]
+
+  @@index([program_id])
+  @@index([routine_id])
+}
+
+model standalone_program_routine_exercise {
+  id                String    @id @default(cuid())
+  program_routine_id String
+  exercise_id       String
+  sets              Int       @default(3)
+  reps_min          Int       @default(8)
+  reps_max          Int       @default(12)
+  rest_seconds      Int       @default(60)
+  order_in_routine  Int       @default(1)
+  deleted_at        DateTime? @db.Timestamptz
+  created_at        DateTime  @default(now()) @db.Timestamptz
+
+  program_routine standalone_program_routine @relation(fields: [program_routine_id], references: [id], onDelete: Cascade)
+  exercise        exercise                   @relation(fields: [exercise_id], references: [id], onDelete: Restrict)
+  performed_sets  standalone_performed_set[]
+
+  @@index([program_routine_id])
+  @@index([exercise_id])
+}
+
+model standalone_session {
+  id                String    @id @default(cuid())
+  user_id           String
+  program_routine_id String
+  started_at        DateTime  @default(now()) @db.Timestamptz
+  completed_at      DateTime? @db.Timestamptz
+  feedback          String?   @db.Text
+  deleted_at        DateTime? @db.Timestamptz
+  created_at        DateTime  @default(now()) @db.Timestamptz
+
+  user            user                        @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
+  program_routine standalone_program_routine  @relation(fields: [program_routine_id], references: [id], onDelete: Cascade)
+  performed_sets  standalone_performed_set[]
+
+  @@index([user_id, completed_at])
+  @@index([program_routine_id])
+}
+
+model standalone_performed_set {
+  id                 String   @id @default(cuid())
+  session_id         String
+  routine_exercise_id String
+  set_number         Int
+  reps               Int
+  weight             Float    @default(0)
+  created_at         DateTime @default(now()) @db.Timestamptz
+
+  session  standalone_session                @relation(fields: [session_id], references: [id], onDelete: Cascade)
+  exercise standalone_program_routine_exercise @relation(fields: [routine_exercise_id], references: [id], onDelete: Cascade)
+
+  @@unique([session_id, routine_exercise_id, set_number])
+  @@index([session_id])
+  @@index([routine_exercise_id])
+}
+
 // ============== Gamification ==============
 
 model cosmetics {
-  id                String    @id @default(cuid())
+  id                String           @id @default(cuid())
   name              String
-  description       String    @db.Text
+  description       String           @db.Text
   tier              Int
   price             Int
   preview_image_key String
-  unity_asset_ref   String    @unique @default("")
-  status            String    @default("ACTIVE")
-  sort_order        Int       @default(0)
-  deleted_at        DateTime? @db.Timestamptz
-  created_at        DateTime  @default(now()) @db.Timestamptz
-  updated_at        DateTime  @updatedAt @db.Timestamptz
+  unity_asset_ref   String           @unique @default("")
+  category          CosmeticCategory @default(HEADWEAR)
+  status            String           @default("ACTIVE")
+  sort_order        Int              @default(0)
+  deleted_at        DateTime?        @db.Timestamptz
+  created_at        DateTime         @default(now()) @db.Timestamptz
+  updated_at        DateTime         @updatedAt @db.Timestamptz
 
   user_cosmetics user_cosmetic[]
 }
@@ -470,29 +635,34 @@ model partner {
 }
 
 model mission {
-  id                 String    @id @default(cuid())
+  id                 String     @id @default(cuid())
   partner_id         String?
   title              String
-  description        String    @db.Text
+  description        String     @db.Text
   goal_type          String
   goal_to_reach      Int
-  reward_coins       Int       @default(0)
+  reward_type        RewardType @default(COINS)
+  reward_coins       Int        @default(0)
   reward_title       String?
-  reward_description String?   @db.Text
+  reward_description String?    @db.Text
   reward_image_key   String?
   max_winners        Int?
-  is_repeatable      Boolean   @default(false)
-  starts_at          DateTime? @db.Timestamptz
-  ends_at            DateTime? @db.Timestamptz
-  created_at         DateTime  @default(now()) @db.Timestamptz
-  updated_at         DateTime  @updatedAt @db.Timestamptz
+  is_repeatable      Boolean    @default(false)
+  is_closed          Boolean    @default(false)
+  starts_at          DateTime?  @db.Timestamptz
+  ends_at            DateTime?  @db.Timestamptz
+  created_at         DateTime   @default(now()) @db.Timestamptz
+  updated_at         DateTime   @updatedAt @db.Timestamptz
 
   partner       partner?       @relation(fields: [partner_id], references: [id], onDelete: SetNull)
   user_missions user_mission[]
+  coupon        coupon?
+  raffle_winners raffle_winner[]
 
   @@index([partner_id])
   @@index([starts_at, ends_at])
 }
+
 
 model user_mission {
   id           String    @id @default(cuid())
@@ -524,6 +694,48 @@ model raffle_entry {
   user_mission user_mission @relation(fields: [user_mission_id], references: [id], onDelete: Cascade)
 
   @@index([user_mission_id])
+}
+
+model coupon {
+  id               String   @id @default(cuid())
+  mission_id       String   @unique
+  offer_tag        String
+  description      String?  @db.Text
+  discount_percent Int      @default(20)
+  created_at       DateTime @default(now()) @db.Timestamptz
+  updated_at       DateTime @updatedAt @db.Timestamptz
+
+  mission      mission       @relation(fields: [mission_id], references: [id], onDelete: Cascade)
+  user_coupons user_coupon[]
+}
+
+model user_coupon {
+  id           String    @id @default(cuid())
+  user_id      String
+  coupon_id    String
+  claimed_at   DateTime  @default(now()) @db.Timestamptz
+  created_at   DateTime  @default(now()) @db.Timestamptz
+
+  user   user    @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
+  coupon coupon  @relation(fields: [coupon_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, coupon_id])
+  @@index([user_id])
+  @@index([coupon_id])
+}
+
+model raffle_winner {
+  id         String   @id @default(cuid())
+  mission_id String
+  user_id    String
+  rank       Int
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  mission mission @relation(fields: [mission_id], references: [id], onDelete: Cascade)
+  user    user    @relation(fields: [user_id], references: [supabase_auth_id], onDelete: Cascade)
+
+  @@index([mission_id])
+  @@index([user_id])
 }
 
 // ============== RevenueCat Subscription Domain ==============

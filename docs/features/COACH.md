@@ -17,6 +17,7 @@ The Coach Dashboard feature provides backend APIs for coaches to manage their cl
 - **Client List (GG-29)**: List clients with filters (assigned / unassigned)
 - **Performance Reports (GG-29)**: Aggregate client performance (good / falling behind)
 - **Program Assignment (GG-29)**: Assign programs to clients
+- **Coach Settings (GG-110)**: Capacity, intake toggle, and discoverability (`GET/PATCH /api/coach/settings`)
 
 ### Scope
 
@@ -146,6 +147,19 @@ All coach dashboard routes use `requireCoach` except POST /api/coach/profile. Cl
 | `POST` | `/api/coach/profile` | Create coach profile (become a coach) | Yes (no requireCoach) |
 
 **POST /api/coach/profile** – Body optional. If omitted, name/email are copied from the current user. Optional overrides: `name`, `email`, `avatarUrl`, `bio`, `yearsExperience`, `certifications`, `certificationImageUrls`, `awards`, `specialties`, `socialLinks`. Returns 409 if user is already a coach.
+
+### Coach Settings (GG-110)
+
+Settings are stored on the `coach` row (`max_clients`, `accepting_clients`, `is_discoverable`).
+
+| Method  | Endpoint               | Description                          | Auth          |
+| ------- | ---------------------- | ------------------------------------ | ------------- |
+| `GET`   | `/api/coach/settings`  | Fetch own capacity/discovery settings | requireCoach |
+| `PATCH` | `/api/coach/settings`  | Update settings (partial, camelCase)  | requireCoach |
+
+**GET /api/coach/settings** – Returns `{ settings: { id, coachId, maxClients, acceptingClients, isDiscoverable, activeClientCount, createdAt, updatedAt } }`.
+
+**PATCH /api/coach/settings** – Body (all optional, at least one required): `maxClients` (1–1000), `acceptingClients`, `isDiscoverable`. Returns 409 `COACH_MAX_CLIENTS_BELOW_ACTIVE` if `maxClients` is below the current active client count.
 
 ### Class Endpoints (GG-28)
 

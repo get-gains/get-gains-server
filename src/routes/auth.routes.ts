@@ -10,6 +10,8 @@ import {
   ResetPasswordWithOtpSchema,
   SendOtpSchema,
   VerifyOtpSchema,
+  SendEmailVerificationCodeSchema,
+  VerifyEmailCodeSchema,
 } from '../schemas/auth.schema';
 import {
   checkEmailVerified,
@@ -22,6 +24,8 @@ import {
   signInWithGoogle,
   signInWithGoogleWithUserData,
   verifyOtpHandler,
+  sendEmailVerificationCodeHandler,
+  verifyEmailCodeHandler,
 } from '../controllers/auth.controller';
 import { CreateUserFromGoogleSchema } from '../schemas/user.schema';
 import { createUserFromGoogle } from '../controllers/user.controller';
@@ -125,6 +129,28 @@ router.post(
   '/check-email-verified',
   validateRequest(CheckEmailVerifiedSchema),
   checkEmailVerified
+);
+
+/**
+ * @route   POST /auth/send-verification-code
+ * @desc    Send (or resend) an email verification code
+ * @access  Public
+ */
+router.post(
+  '/send-verification-code',
+  validateRequest(SendEmailVerificationCodeSchema),
+  sendEmailVerificationCodeHandler
+);
+
+/**
+ * @route   POST /auth/verify-email-code
+ * @desc    Verify email verification code and confirm email
+ * @access  Public
+ */
+router.post(
+  '/verify-email-code',
+  validateRequest(VerifyEmailCodeSchema),
+  verifyEmailCodeHandler
 );
 
 export default router;

@@ -440,20 +440,36 @@ export const getProfileStats = async (
   const todayEnd = new Date(todayStart);
   todayEnd.setUTCDate(todayStart.getUTCDate() + 1);
 
-  // ── Fetch sessions for the week ──
-  const weeklySessions = await prisma.workout_session.findMany({
-    where: {
-      assigned_program_routine: { assigned_program: { user_id: supabaseId } },
-      completed_at: { not: null },
-      started_at: { gte: weekStart, lt: weekEnd },
-    },
-    select: {
-      started_at: true,
-      completed_at: true,
-    },
-    orderBy: { started_at: 'asc' },
-  });
+  // ── Fetch sessions for the week from both systems ──
+  const [weeklyCoach, weeklyStandalone] = await Promise.all([
+    prisma.workout_session.findMany({
+      where: {
+        assigned_program_routine: { assigned_program: { user_id: supabaseId } },
+        completed_at: { not: null },
+        started_at: { gte: weekStart, lt: weekEnd },
+      },
+      select: {
+        started_at: true,
+        completed_at: true,
+      },
+      orderBy: { started_at: 'asc' },
+    }),
+    prisma.standalone_session.findMany({
+      where: {
+        user_id: supabaseId,
+        completed_at: { not: null },
+        deleted_at: null,
+        started_at: { gte: weekStart, lt: weekEnd },
+      },
+      select: {
+        started_at: true,
+        completed_at: true,
+      },
+      orderBy: { started_at: 'asc' },
+    }),
+  ]);
 
+  const weeklySessions = [...weeklyCoach, ...weeklyStandalone];
   const workoutsThisWeek = weeklySessions.length;
   const totalMinutesWeek = weeklySessions.reduce((sum, s) => {
     if (s.started_at && s.completed_at) {
@@ -465,33 +481,60 @@ export const getProfileStats = async (
     return sum;
   }, 0);
 
-  // ── Sets completed today ──
-  const sessionsToday = await prisma.workout_session.findMany({
-    where: {
-      assigned_program_routine: { assigned_program: { user_id: supabaseId } },
-      completed_at: { not: null },
-      started_at: { gte: todayStart, lt: todayEnd },
-    },
-    select: { id: true },
-  });
+  // ── Sets completed today from both systems ──
+  const [sessionsTodayCoach, sessionsTodayStandalone] = await Promise.all([
+    prisma.workout_session.findMany({
+      where: {
+        assigned_program_routine: { assigned_program: { user_id: supabaseId } },
+        completed_at: { not: null },
+        started_at: { gte: todayStart, lt: todayEnd },
+      },
+      select: { id: true },
+    }),
+    prisma.standalone_session.findMany({
+      where: {
+        user_id: supabaseId,
+        completed_at: { not: null },
+        deleted_at: null,
+        started_at: { gte: todayStart, lt: todayEnd },
+      },
+      select: { id: true },
+    }),
+  ]);
 
-  const sessionIdsToday = sessionsToday.map((s) => s.id);
+  const coachSessionIdsToday = sessionsTodayCoach.map((s) => s.id);
+  const standaloneSessionIdsToday = sessionsTodayStandalone.map((s) => s.id);
 
   let setsToday = 0;
-  if (sessionIdsToday.length > 0) {
-    const setCounts = await prisma.performed_set.groupBy({
-      by: ['workout_session_id'],
-      where: {
-        workout_session_id: { in: sessionIdsToday },
-        deleted_at: null,
-        completed_at: { gte: todayStart, lt: todayEnd },
-      },
-      _count: { id: true },
-    });
-    setsToday = setCounts.reduce((sum, g) => sum + g._count.id, 0);
-  }
 
-  const completedToday = sessionIdsToday.length > 0;
+  const [coachSetCountsToday, standaloneSetCountsToday] = await Promise.all([
+    coachSessionIdsToday.length > 0
+      ? prisma.performed_set.groupBy({
+          by: ['workout_session_id'],
+          where: {
+            workout_session_id: { in: coachSessionIdsToday },
+          },
+          _count: { id: true },
+        })
+      : ([] as { _count: { id: number } }[]),
+
+    standaloneSessionIdsToday.length > 0
+      ? prisma.standalone_performed_set.groupBy({
+          by: ['session_id'],
+          where: {
+            session_id: { in: standaloneSessionIdsToday },
+          },
+          _count: { id: true },
+        })
+      : ([] as { _count: { id: number } }[]),
+  ]);
+
+  setsToday =
+    coachSetCountsToday.reduce((sum, g) => sum + g._count.id, 0) +
+    standaloneSetCountsToday.reduce((sum, g) => sum + g._count.id, 0);
+
+  const completedToday =
+    coachSessionIdsToday.length > 0 || standaloneSessionIdsToday.length > 0;
 
   // ── Streak ──
   const { combinedStreak } = await calculateStreaksBySource(
@@ -500,24 +543,49 @@ export const getProfileStats = async (
     prisma
   );
 
-  // ── All-time totals ──
-  const allTimeSessions = await prisma.workout_session.count({
-    where: {
-      assigned_program_routine: { assigned_program: { user_id: supabaseId } },
-      completed_at: { not: null },
-    },
-  });
-
-  const allTimeSets = await prisma.performed_set.count({
-    where: {
-      deleted_at: null,
-      workout_session: {
+  // ── All-time totals (both systems) ──
+  const [
+    allTimeCoach,
+    allTimeStandalone,
+    allTimeCoachSets,
+    allTimeStandaloneSets,
+  ] = await Promise.all([
+    prisma.workout_session.count({
+      where: {
         assigned_program_routine: {
           assigned_program: { user_id: supabaseId },
         },
+        completed_at: { not: null },
       },
-    },
-  });
+    }),
+    prisma.standalone_session.count({
+      where: {
+        user_id: supabaseId,
+        completed_at: { not: null },
+        deleted_at: null,
+      },
+    }),
+    prisma.performed_set.count({
+      where: {
+        workout_session: {
+          assigned_program_routine: {
+            assigned_program: { user_id: supabaseId },
+          },
+        },
+      },
+    }),
+    prisma.standalone_performed_set.count({
+      where: {
+        session: {
+          user_id: supabaseId,
+          deleted_at: null,
+        },
+      },
+    }),
+  ]);
+
+  const allTimeSessions = allTimeCoach + allTimeStandalone;
+  const allTimeSets = allTimeCoachSets + allTimeStandaloneSets;
 
   // ── Session dates for the week (for calendar display) ──
   const sessionDates = weeklySessions

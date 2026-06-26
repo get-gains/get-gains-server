@@ -9,6 +9,7 @@ export interface ApiError {
   code: ErrorCode;
   message: string;
   field?: string;
+  meta?: Record<string, unknown>;
 }
 
 /**

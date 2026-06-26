@@ -2,10 +2,13 @@ import { Router } from 'express';
 import { validateRequest } from '../middleware/validate.middleware';
 import {
   authenticateSupabaseUser,
+  requireAppUser,
   requireCoach,
 } from '../middleware/auth.middleware';
 import {
   CreateCoachProfileSchema,
+  UpdateCoachSettingsSchema,
+  VerifyCoachInviteSchema,
   GetClientsSchema,
   GetPerformanceSchema,
   GetClientProgramsSchema,
@@ -15,9 +18,12 @@ import {
   GetClientSessionDetailSchema,
   GetClientWeeklyStatsSchema,
   GetClientExerciseHistorySchema,
+  GetClientFormResultsSchema,
 } from '../schemas/coach.schema';
 import {
   createCoachProfile,
+  getCoachSettings,
+  updateCoachSettings,
   getClients,
   getPerformance,
   getClientPrograms,
@@ -27,8 +33,10 @@ import {
   getClientSessionDetail,
   getClientWeeklyStats,
   getClientExerciseHistory,
+  getClientFormResults,
   getDetailedPerformance,
 } from '../controllers/coach.controller';
+import { verifyCoachInviteForUser } from '../controllers/admin.controller';
 import classRoutes from './class.routes';
 import programRoutes from './program.routes';
 import routineTemplateRoutes from './routine.routes';
@@ -45,6 +53,44 @@ router.post(
   authenticateSupabaseUser,
   validateRequest(CreateCoachProfileSchema),
   createCoachProfile
+);
+
+/**
+ * @route   POST /coach/verify-invite
+ * @desc    Verify a coach invitation code for the authenticated user
+ * @access  Protected (authenticateSupabaseUser + requireAppUser)
+ */
+router.post(
+  '/verify-invite',
+  authenticateSupabaseUser,
+  requireAppUser,
+  validateRequest(VerifyCoachInviteSchema),
+  verifyCoachInviteForUser
+);
+
+/**
+ * @route   GET /coach/settings
+ * @desc    Get authenticated coach's capacity and discoverability settings
+ * @access  Protected (authenticateSupabaseUser + requireCoach)
+ */
+router.get(
+  '/settings',
+  authenticateSupabaseUser,
+  requireCoach,
+  getCoachSettings
+);
+
+/**
+ * @route   PATCH /coach/settings
+ * @desc    Update coach settings (partial)
+ * @access  Protected (authenticateSupabaseUser + requireCoach)
+ */
+router.patch(
+  '/settings',
+  authenticateSupabaseUser,
+  requireCoach,
+  validateRequest(UpdateCoachSettingsSchema),
+  updateCoachSettings
 );
 
 router.use('/class', classRoutes);
@@ -170,6 +216,19 @@ router.get(
   requireCoach,
   validateRequest(GetClientExerciseHistorySchema),
   getClientExerciseHistory
+);
+
+/**
+ * @route   GET /coach/clients/:userId/form-results
+ * @desc    Get paginated form comparison results for a client
+ * @access  Protected (authenticateSupabaseUser + requireCoach)
+ */
+router.get(
+  '/clients/:userId/form-results',
+  authenticateSupabaseUser,
+  requireCoach,
+  validateRequest(GetClientFormResultsSchema),
+  getClientFormResults
 );
 
 // ============== Enhanced Performance Route (GAP 2) ==============
