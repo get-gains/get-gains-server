@@ -80,20 +80,6 @@ export const createPersonalExercise = async (
     }
   }
 
-  const existing = await prisma.exercise.findFirst({
-    where: {
-      name: { equals: name, mode: 'insensitive' },
-      OR: [{ is_public: true }, { user_id: appUser.supabase_auth_id }],
-    },
-  });
-
-  if (existing) {
-    throw new ConflictException(
-      'WORKOUT_EXERCISE_DUPLICATE_NAME',
-      'An exercise with this name already exists'
-    );
-  }
-
   const exercise = await prisma.exercise.create({
     data: {
       ...(clientId ? { id: clientId } : {}),
@@ -193,25 +179,6 @@ export const updatePersonalExercise = async (
       'WORKOUT_EXERCISE_NOT_FOUND',
       'Exercise not found'
     );
-  }
-
-  if (
-    updates.name &&
-    updates.name.toLowerCase() !== exercise.name.toLowerCase()
-  ) {
-    const duplicate = await prisma.exercise.findFirst({
-      where: {
-        name: { equals: updates.name, mode: 'insensitive' },
-        id: { not: exerciseId },
-        OR: [{ is_public: true }, { user_id: appUser.supabase_auth_id }],
-      },
-    });
-    if (duplicate) {
-      throw new ConflictException(
-        'WORKOUT_EXERCISE_DUPLICATE_NAME',
-        'An exercise with this name already exists'
-      );
-    }
   }
 
   const updated = await prisma.exercise.update({

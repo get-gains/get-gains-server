@@ -61,8 +61,15 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
         code: d.code,
         message: d.message,
         field: d.field,
+        meta: d.meta,
       }))
-    : [{ code: exc.code, message: exc.message }];
+    : [
+        {
+          code: exc.code,
+          message: exc.message,
+          meta: exc.meta,
+        },
+      ];
 
   res.status(exc.status).json({ data: null, errors });
 };

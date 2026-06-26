@@ -243,6 +243,34 @@ export const loginWithEmailAndPassword = async (
     throw new NotFoundException('AUTH_APP_USER_NOT_FOUND', 'User not found');
   }
 
+  // Gate: prevent login if email is not verified in Supabase
+  if (!data.user.email_confirmed_at) {
+    const latestCode = await prisma.email_verification_code.findFirst({
+      where: {
+        email: email.toLowerCase(),
+        verified: false,
+        expires_at: { gt: new Date() },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+
+    throw new BadRequestException(
+      'AUTH_EMAIL_NOT_VERIFIED',
+      'Please verify your email before signing in.',
+      latestCode
+        ? {
+            codeSentAt: latestCode.created_at.toISOString(),
+            codeExpiresAt: latestCode.expires_at.toISOString(),
+            canResend: false,
+          }
+        : {
+            codeSentAt: null,
+            codeExpiresAt: null,
+            canResend: true,
+          }
+    );
+  }
+
   const isCoach = await resolveIsCoach(user.supabase_auth_id, user.is_coach);
 
   const accessToken = data.session?.access_token;
@@ -330,6 +358,33 @@ export const signInWithGoogleWithUserData = async (
       supabaseId: supabaseData.user.id,
     });
     throw new NotFoundException('AUTH_APP_USER_NOT_FOUND', 'User not found');
+  }
+
+  if (!supabaseData.user.email_confirmed_at) {
+    const latestCode = await prisma.email_verification_code.findFirst({
+      where: {
+        email: payload.email.toLowerCase(),
+        verified: false,
+        expires_at: { gt: new Date() },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+
+    throw new BadRequestException(
+      'AUTH_EMAIL_NOT_VERIFIED',
+      'Please verify your email before signing in.',
+      latestCode
+        ? {
+            codeSentAt: latestCode.created_at.toISOString(),
+            codeExpiresAt: latestCode.expires_at.toISOString(),
+            canResend: false,
+          }
+        : {
+            codeSentAt: null,
+            codeExpiresAt: null,
+            canResend: true,
+          }
+    );
   }
 
   const isCoach = await resolveIsCoach(

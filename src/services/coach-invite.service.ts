@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
+import { hashCode } from '../utils/hash';
 import { sendCoachInvitationCode } from './email.service';
 import {
   BadRequestException,
@@ -74,7 +75,7 @@ export const createCoachInvitation = async (
   const invitation = await prisma.coach_invitation.create({
     data: {
       email: normalizedEmail,
-      code,
+      code_hash: hashCode(code),
       max_attempts: MAX_ATTEMPTS,
       expires_at: getInviteExpiry(),
       created_by: createdBy,
@@ -103,11 +104,11 @@ export const createCoachInvitation = async (
  */
 export const verifyCoachInviteCode = async (code: string, email: string) => {
   const normalizedEmail = email.toLowerCase();
-  const normalizedCode = code.trim();
+  const trimmedCode = code.trim();
 
   const invitation = await prisma.coach_invitation.findFirst({
     where: {
-      code: normalizedCode,
+      email: normalizedEmail,
       expires_at: { gt: new Date() },
     },
     orderBy: { created_at: 'desc' },
@@ -141,7 +142,7 @@ export const verifyCoachInviteCode = async (code: string, email: string) => {
     );
   }
 
-  if (invitation.email !== normalizedEmail) {
+  if (invitation.code_hash !== hashCode(trimmedCode)) {
     await prisma.coach_invitation.update({
       where: { id: invitation.id },
       data: { attempts: { increment: 1 } },

@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
+import { hashCode } from '../utils/hash';
 import { BadRequestException } from '../lib/errors';
 import { sendEmailVerificationCode as sendVerificationEmail } from './email.service';
 
@@ -72,7 +73,7 @@ export const generateVerificationCode = async (
   await prisma.email_verification_code.create({
     data: {
       email: normalizedEmail,
-      code,
+      code_hash: hashCode(code),
       expires_at: expiresAt,
       cooldown_until: cooldownUntil,
     },
@@ -115,7 +116,7 @@ export const verifyEmailCode = async (
     );
   }
 
-  if (record.code !== normalizedCode) {
+  if (record.code_hash !== hashCode(normalizedCode)) {
     await prisma.email_verification_code.update({
       where: { id: record.id },
       data: { attempts: { increment: 1 } },

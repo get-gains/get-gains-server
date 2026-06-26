@@ -429,6 +429,7 @@ export const downloadExerciseForm = async (
   const exercise = await prisma.exercise.findUnique({
     where: { id: exerciseId },
     include: {
+      user: { select: { full_name: true } },
       exercise_forms: {
         select: {
           id: true,
@@ -449,6 +450,7 @@ export const downloadExerciseForm = async (
   sendSuccess(res, {
     exerciseId: exercise.id,
     exerciseName: exercise.name,
+    coachName: exercise.user?.full_name ?? null,
     activeSegments: exercise.active_segments,
     forms: exercise.exercise_forms.map((f) => ({
       id: f.id,
