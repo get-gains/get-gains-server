@@ -408,7 +408,15 @@ export const subscribeToCoach = async (
     ]);
   }
 
-  // Guard 1: manual intake toggle
+  // Guard 1: cannot subscribe to self
+  if (appUser.supabase_auth_id === coachId) {
+    throw new ConflictException(
+      'USER_COACH_SELF_SUBSCRIBE',
+      'You cannot subscribe to yourself'
+    );
+  }
+
+  // Guard 2: manual intake toggle
   if (!coach.accepting_clients) {
     throw new ConflictException(
       'USER_COACH_NOT_ACCEPTING',
