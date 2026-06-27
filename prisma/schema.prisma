@@ -341,6 +341,7 @@ model exercise_form {
   exercise_id         String
   camera_angle        CameraAngle
   recorded_frames_key String
+  is_active           Boolean     @default(false)
   created_at          DateTime    @default(now()) @db.Timestamptz
   updated_at          DateTime    @updatedAt @db.Timestamptz
 
