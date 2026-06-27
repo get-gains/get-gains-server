@@ -29,6 +29,7 @@ export const UpdateFormSchema = z.object({
   body: z.object({
     cameraAngle: CameraAngleEnum.optional(),
     recorded_frames_key: z.string().min(1).optional(),
+    isActive: z.boolean().optional(),
   }),
 });
 export type UpdateFormInput = z.infer<typeof UpdateFormSchema>['body'];

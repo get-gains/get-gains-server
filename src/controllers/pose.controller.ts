@@ -58,11 +58,18 @@ export const uploadCoachForm = async (
     );
   }
 
+  // Deactivate all other forms for this exercise so the new one is the active form
+  await prisma.exercise_form.updateMany({
+    where: { exercise_id: exerciseId, is_active: true },
+    data: { is_active: false },
+  });
+
   const form = await prisma.exercise_form.create({
     data: {
       exercise_id: exerciseId,
       camera_angle: cameraAngle,
       recorded_frames_key,
+      is_active: true,
     },
   });
 
@@ -80,6 +87,7 @@ export const uploadCoachForm = async (
         exercise_id: form.exercise_id,
         camera_angle: form.camera_angle,
         recorded_frames_key: form.recorded_frames_key,
+        is_active: form.is_active,
         created_at: form.created_at,
       },
     },
@@ -174,6 +182,7 @@ export const getExerciseForms = async (
       exercise_id: true,
       camera_angle: true,
       recorded_frames_key: true,
+      is_active: true,
       created_at: true,
       updated_at: true,
     },
@@ -220,6 +229,17 @@ export const updateForm = async (
     );
   }
 
+  if (updateData.isActive === true) {
+    await prisma.exercise_form.updateMany({
+      where: {
+        exercise_id: existingForm.exercise_id,
+        id: { not: formId },
+        is_active: true,
+      },
+      data: { is_active: false },
+    });
+  }
+
   const updatedForm = await prisma.exercise_form.update({
     where: { id: formId },
     data: {
@@ -228,6 +248,9 @@ export const updateForm = async (
       }),
       ...(updateData.recorded_frames_key !== undefined && {
         recorded_frames_key: updateData.recorded_frames_key,
+      }),
+      ...(updateData.isActive !== undefined && {
+        is_active: updateData.isActive,
       }),
     },
   });
@@ -240,6 +263,7 @@ export const updateForm = async (
       exercise_id: updatedForm.exercise_id,
       camera_angle: updatedForm.camera_angle,
       recorded_frames_key: updatedForm.recorded_frames_key,
+      is_active: updatedForm.is_active,
       updated_at: updatedForm.updated_at,
     },
   });
@@ -431,6 +455,7 @@ export const downloadExerciseForm = async (
     include: {
       user: { select: { full_name: true } },
       exercise_forms: {
+        where: { is_active: true },
         select: {
           id: true,
           camera_angle: true,
@@ -447,12 +472,28 @@ export const downloadExerciseForm = async (
     );
   }
 
+  // Fallback: if no form is marked active, return the most recently created
+  let activeForms = exercise.exercise_forms;
+  if (activeForms.length === 0) {
+    const latest = await prisma.exercise_form.findMany({
+      where: { exercise_id: exerciseId },
+      orderBy: { created_at: 'desc' },
+      take: 1,
+      select: {
+        id: true,
+        camera_angle: true,
+        recorded_frames_key: true,
+      },
+    });
+    activeForms = latest;
+  }
+
   sendSuccess(res, {
     exerciseId: exercise.id,
     exerciseName: exercise.name,
     coachName: exercise.user?.full_name ?? null,
     activeSegments: exercise.active_segments,
-    forms: exercise.exercise_forms.map((f) => ({
+    forms: activeForms.map((f) => ({
       id: f.id,
       camera_angle: f.camera_angle,
       recorded_frames_key: f.recorded_frames_key,
