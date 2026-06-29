@@ -91,7 +91,9 @@ export const adminLogin = async (
       },
     });
 
-    if (!pendingInvite) {
+    const hasExistingScopes = appUser.admin_scopes.length > 0;
+
+    if (!pendingInvite && !hasExistingScopes) {
       throw new ForbiddenException(
         'AUTH_ADMIN_REQUIRED',
         'Admin access required'
