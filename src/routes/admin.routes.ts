@@ -17,6 +17,7 @@ import {
 } from '../schemas/admin.schema';
 import {
   adminLogin,
+  adminMe,
   listInvitations,
   createInvitation,
   revokeInvitation,
@@ -34,6 +35,13 @@ const router = Router();
  * @access  Public
  */
 router.post('/auth/login', validateRequest(AdminLoginSchema), adminLogin);
+
+/**
+ * @route   GET /admin/auth/me
+ * @desc    Get current admin user info + scopes
+ * @access  Admin only
+ */
+router.get('/auth/me', authenticateSupabaseUser, requireAdmin, adminMe);
 
 /**
  * @route   GET /admin/invitations

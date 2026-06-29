@@ -123,6 +123,35 @@ export const adminLogin = async (
 };
 
 /**
+ * Return the current authenticated admin's user info with scopes.
+ * Used by the web admin panel to read session state.
+ */
+export const adminMe = async (req: Request, res: Response): Promise<void> => {
+  const appUser = req.appUser;
+
+  if (!appUser) {
+    throw new UnauthorizedException(
+      'UNAUTHENTICATED',
+      'Authentication required'
+    );
+  }
+
+  const scopes = await prisma.admin_scope.findMany({
+    where: { supabase_auth_id: appUser.supabase_auth_id },
+    select: { scope: true },
+  });
+
+  sendSuccess(res, {
+    user: {
+      supabase_auth_id: appUser.supabase_auth_id,
+      email: appUser.email,
+      full_name: appUser.full_name,
+      scopes: scopes.map((s) => s.scope),
+    },
+  });
+};
+
+/**
  * List coach invitations with optional status filter and pagination.
  */
 export const listInvitations = async (
