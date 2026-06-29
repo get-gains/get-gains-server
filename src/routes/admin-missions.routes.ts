@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { authenticateSupabaseUser } from '../middleware/auth.middleware';
-import { requireAdmin } from '../middleware/admin.middleware';
+import {
+  requireAdmin,
+  requireAdminScope,
+} from '../middleware/admin.middleware';
 import { validateRequest } from '../middleware/validate.middleware';
 import {
   CreateMissionSchema,
@@ -22,7 +25,11 @@ import {
 
 const router = Router();
 
-router.use(authenticateSupabaseUser, requireAdmin);
+router.use(
+  authenticateSupabaseUser,
+  requireAdmin,
+  requireAdminScope('manage_missions')
+);
 
 router.get('/', validateRequest(ListMissionsQuerySchema), listMissions);
 router.post('/', validateRequest(CreateMissionSchema), createMission);

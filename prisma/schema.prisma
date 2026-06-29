@@ -203,6 +203,10 @@ model user {
   notifications          notification[]
   standalone_programs    standalone_program[]
   standalone_sessions    standalone_session[]
+  admin_scopes           admin_scope[]
+  created_admin_invites  admin_invitation[]     @relation("AdminInvitationCreatedBy")
+  accepted_admin_invites admin_invitation[]     @relation("AdminInvitationAcceptedBy")
+  revoked_admin_invites  admin_invitation[]     @relation("AdminInvitationRevokedBy")
 }
 
 model coach {
@@ -259,6 +263,41 @@ model coach_invitation {
   revoker user? @relation("AdminRevokedInvitations", fields: [revoked_by], references: [supabase_auth_id], onDelete: SetNull)
 
   @@index([email, status, expires_at])
+}
+
+model admin_scope {
+  supabase_auth_id String
+  scope            String
+
+  user user @relation(fields: [supabase_auth_id], references: [supabase_auth_id], onDelete: Cascade)
+
+  @@id([supabase_auth_id, scope])
+}
+
+model admin_invitation {
+  id            String    @id @default(cuid())
+  email         String
+  token_hash    String    @unique
+  scopes        String[]
+  status        String    @default("PENDING")
+  attempts      Int       @default(0)
+  max_attempts  Int       @default(5)
+  created_by    String
+  accepted_by   String?
+  revoked_by    String?
+  accepted_at   DateTime? @db.Timestamptz
+  revoked_at    DateTime? @db.Timestamptz
+  expires_at    DateTime  @db.Timestamptz
+  created_at    DateTime  @default(now()) @db.Timestamptz
+  updated_at    DateTime  @updatedAt @db.Timestamptz
+
+  created_by_user  user @relation("AdminInvitationCreatedBy", fields: [created_by], references: [supabase_auth_id], onDelete: Cascade)
+  accepted_by_user user? @relation("AdminInvitationAcceptedBy", fields: [accepted_by], references: [supabase_auth_id], onDelete: SetNull)
+  revoked_by_user  user? @relation("AdminInvitationRevokedBy", fields: [revoked_by], references: [supabase_auth_id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([email])
+  @@index([expires_at])
 }
 
 // ============== Notifications ==============

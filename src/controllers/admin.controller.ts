@@ -73,6 +73,9 @@ export const adminLogin = async (
 
   const appUser = await prisma.user.findUnique({
     where: { supabase_auth_id: data.user.id },
+    include: {
+      admin_scopes: { select: { scope: true } },
+    },
   });
 
   if (!appUser) {
@@ -80,10 +83,20 @@ export const adminLogin = async (
   }
 
   if (!appUser.is_admin) {
-    throw new ForbiddenException(
-      'AUTH_ADMIN_REQUIRED',
-      'Admin access required'
-    );
+    const pendingInvite = await prisma.admin_invitation.findFirst({
+      where: {
+        email: appUser.email,
+        status: 'PENDING',
+        expires_at: { gt: new Date() },
+      },
+    });
+
+    if (!pendingInvite) {
+      throw new ForbiddenException(
+        'AUTH_ADMIN_REQUIRED',
+        'Admin access required'
+      );
+    }
   }
 
   const accessToken = data.session?.access_token;
@@ -104,6 +117,7 @@ export const adminLogin = async (
       supabase_auth_id: appUser.supabase_auth_id,
       email: appUser.email,
       full_name: appUser.full_name,
+      scopes: appUser.admin_scopes.map((s) => s.scope),
     },
   });
 };

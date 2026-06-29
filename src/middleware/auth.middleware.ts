@@ -113,6 +113,55 @@ export const authenticateSupabaseUser = async (
 };
 
 /**
+ * Optional Supabase authentication. Attempts to authenticate a Bearer token
+ * if present, but does NOT throw if no token is provided or the token is
+ * invalid. Sets `req.user` on success, leaves it undefined on failure.
+ *
+ * Useful for endpoints that behave differently for authenticated vs anonymous
+ * users (e.g. invite acceptance).
+ */
+export const maybeAuthenticateSupabaseUser = async (
+  req: Request,
+  _res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.split(' ')[1];
+
+    if (!token) {
+      return next();
+    }
+
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser(token);
+
+    if (error || !user) {
+      return next();
+    }
+
+    const dbUser = await prisma.user.findUnique({
+      where: { supabase_auth_id: user.id },
+      select: { active_subscription_tier: true },
+    });
+
+    const tier = dbUser?.active_subscription_tier ?? SubscriptionTier.FREE;
+
+    (user as AuthenticatedUser).subscription = {
+      tier,
+      isSubscribed: tier !== SubscriptionTier.FREE,
+    };
+
+    req.user = user as AuthenticatedUser;
+    next();
+  } catch {
+    next();
+  }
+};
+
+/**
  * Middleware to attach app User to request. Must run after authenticateSupabaseUser.
  * Looks up app User by supabase_auth_id and attaches to req.appUser.
  * Returns 404 if user not found in database.

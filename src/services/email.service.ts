@@ -177,3 +177,58 @@ export const sendCoachInvitationCode = async (
 
   logger.info('Coach invitation code sent', { email });
 };
+
+const ADMIN_INVITE_EMAIL_TEMPLATE = (acceptanceUrl: string): string => `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background-color:#0a0a0a;font-family:system-ui,-apple-system,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0a0a0a;padding:40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background-color:#171717;border-radius:16px;border:1px solid #262626;">
+          <tr>
+            <td style="padding:40px 32px;text-align:center;">
+              <h1 style="color:#ffffff;font-size:24px;font-weight:700;margin:0 0 8px;">You're Invited to Manage Get Gains</h1>
+              <p style="color:#a3a3a3;font-size:15px;line-height:1.6;margin:0 0 32px;">
+                You have been invited to join the Get Gains admin team. Click the button below to accept your invitation. This link expires in 7 days.
+              </p>
+
+              <a href="${acceptanceUrl}" style="display:inline-block;background-color:#f97316;color:#ffffff;font-size:16px;font-weight:600;text-decoration:none;padding:14px 32px;border-radius:10px;margin:0 0 24px;">
+                Accept Invitation
+              </a>
+
+              <p style="color:#737373;font-size:13px;line-height:1.5;margin:32px 0 0;">
+                If you weren't expecting this invitation, you can safely ignore this email.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+`;
+
+export const sendAdminInvitationEmail = async (
+  email: string,
+  acceptanceUrl: string
+): Promise<void> => {
+  const senderEmail = process.env.BREVO_SENDER_EMAIL || 'noreply@getgains.app';
+  const senderName = process.env.BREVO_SENDER_NAME || 'Get Gains';
+
+  logger.info('Sending admin invitation email', { email });
+
+  await brevo.transactionalEmails.sendTransacEmail({
+    sender: { name: senderName, email: senderEmail },
+    to: [{ email }],
+    subject: 'You are invited to manage Get Gains',
+    htmlContent: ADMIN_INVITE_EMAIL_TEMPLATE(acceptanceUrl),
+  });
+
+  logger.info('Admin invitation email sent', { email });
+};

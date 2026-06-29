@@ -30,6 +30,7 @@ import adminUploadRoutes from './routes/admin-upload.routes';
 import adminPartnerRoutes from './routes/admin-partners.routes';
 import adminCosmeticRoutes from './routes/admin-cosmetics.routes';
 import adminMissionRoutes from './routes/admin-missions.routes';
+import adminAdminsRoutes from './routes/admin-admins.routes';
 
 dotenv.config();
 
@@ -67,6 +68,7 @@ const startServer = () => {
   app.use('/api/admin/partners', adminPartnerRoutes);
   app.use('/api/admin/cosmetics', adminCosmeticRoutes);
   app.use('/api/admin/missions', adminMissionRoutes);
+  app.use('/api/admin/admins', adminAdminsRoutes);
   app.use('/api/user', userRoutes);
   app.use('/api/profile', profileRoutes);
   app.use('/api/pose', poseRoutes);

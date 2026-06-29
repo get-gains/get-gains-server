@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import { validateRequest } from '../middleware/validate.middleware';
 import { authenticateSupabaseUser } from '../middleware/auth.middleware';
-import { requireAdmin } from '../middleware/admin.middleware';
+import {
+  requireAdmin,
+  requireAdminScope,
+} from '../middleware/admin.middleware';
 import {
   AdminLoginSchema,
   CreateInvitationSchema,
@@ -41,6 +44,7 @@ router.get(
   '/invitations',
   authenticateSupabaseUser,
   requireAdmin,
+  requireAdminScope('manage_coaches'),
   validateRequest(ListInvitationsSchema),
   listInvitations
 );
@@ -54,6 +58,7 @@ router.post(
   '/invitations',
   authenticateSupabaseUser,
   requireAdmin,
+  requireAdminScope('manage_coaches'),
   validateRequest(CreateInvitationSchema),
   createInvitation
 );
@@ -67,6 +72,7 @@ router.patch(
   '/invitations/:id/revoke',
   authenticateSupabaseUser,
   requireAdmin,
+  requireAdminScope('manage_coaches'),
   validateRequest(RevokeInvitationSchema),
   revokeInvitation
 );
@@ -80,6 +86,7 @@ router.get(
   '/coaches',
   authenticateSupabaseUser,
   requireAdmin,
+  requireAdminScope('manage_coaches'),
   validateRequest(ListCoachesSchema),
   listCoaches
 );
@@ -93,6 +100,7 @@ router.patch(
   '/coaches/:userId/deactivate',
   authenticateSupabaseUser,
   requireAdmin,
+  requireAdminScope('manage_coaches'),
   validateRequest(DeactivateCoachSchema),
   deactivateCoach
 );
@@ -106,6 +114,7 @@ router.patch(
   '/coaches/:userId/activate',
   authenticateSupabaseUser,
   requireAdmin,
+  requireAdminScope('manage_coaches'),
   validateRequest(ActivateCoachSchema),
   activateCoach
 );
@@ -119,6 +128,7 @@ router.get(
   '/analytics',
   authenticateSupabaseUser,
   requireAdmin,
+  requireAdminScope('manage_analytics'),
   validateRequest(AnalyticsQuerySchema),
   getAnalytics
 );

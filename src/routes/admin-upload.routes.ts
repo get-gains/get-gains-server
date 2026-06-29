@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { authenticateSupabaseUser } from '../middleware/auth.middleware';
-import { requireAdmin } from '../middleware/admin.middleware';
+import {
+  requireAdmin,
+  requireAdminScope,
+} from '../middleware/admin.middleware';
 import { validateRequest } from '../middleware/validate.middleware';
 import { uploadGenericImageWithFields } from '../middleware/upload.middleware';
 import {
@@ -18,6 +21,7 @@ router.post(
   '/image',
   authenticateSupabaseUser,
   requireAdmin,
+  requireAdminScope('manage_uploads'),
   uploadGenericImageWithFields,
   validateRequest(UploadAdminImageSchema),
   uploadAdminImage
@@ -27,6 +31,7 @@ router.get(
   '/image-url',
   authenticateSupabaseUser,
   requireAdmin,
+  requireAdminScope('manage_uploads'),
   validateRequest(AdminImageUrlSchema),
   getAdminImageUrl
 );
